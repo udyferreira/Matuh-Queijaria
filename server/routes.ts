@@ -337,10 +337,19 @@ export async function registerRoutes(
     // Store based on type
     if (type === 'ph') {
         const phs = measurements.ph || [];
-        phs.push({ value, timestamp, notes });
+        phs.push({ value, timestamp, notes, stageId: batch.currentStageId });
         measurements.ph = phs;
         // Also update latest ph_value for quick access
-        measurements.ph_value = value; 
+        measurements.ph_value = value;
+        
+        // Also sync to _history and ph_measurements for consistency
+        const inputHistory = measurements._history || [];
+        inputHistory.push({ key: 'ph_value', value, timestamp, stageId: batch.currentStageId });
+        measurements._history = inputHistory;
+        
+        const phMeasurements = measurements.ph_measurements || [];
+        phMeasurements.push({ value, timestamp, stageId: batch.currentStageId });
+        measurements.ph_measurements = phMeasurements;
     } else if (type === 'time') {
         // e.g. flocculation time
         // We need to know WHICH time it is. 

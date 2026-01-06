@@ -472,11 +472,21 @@ export default function BatchDetail() {
                     // Fallback para dados sem histórico
                     // Primeiro, processar medições de pH do array 'ph'
                     const phArray = measurements.ph as Array<{value: number; timestamp: string; stageId?: number}> || [];
+                    
+                    // Agrupar por etapa para numerar corretamente
+                    const phByStage: Record<number, number> = {};
+                    
                     phArray.forEach((entry, idx) => {
-                      const stageId = entry.stageId || 13;
-                      const label = idx === 0 
+                      // Inferir stageId: primeira medição é etapa 13, subsequentes são etapa 15
+                      // (a menos que já tenha stageId salvo)
+                      const stageId = entry.stageId ?? (idx === 0 ? 13 : 15);
+                      
+                      phByStage[stageId] = (phByStage[stageId] || 0) + 1;
+                      const count = phByStage[stageId];
+                      
+                      const label = count === 1
                         ? `Etapa ${stageId} - Medição de pH`
-                        : `Etapa ${stageId} - ${idx + 1}ª Medição de pH`;
+                        : `Etapa ${stageId} - ${count}ª Medição de pH`;
                       items.push({ label, value: String(entry.value) });
                     });
                     
