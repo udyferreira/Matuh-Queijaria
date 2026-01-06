@@ -63,6 +63,45 @@ export const insertLogSchema = createInsertSchema(batchLogs).omit({
   timestamp: true 
 });
 
+// === CHEESE TYPES ===
+
+export const CHEESE_TYPES = {
+  QUEIJO_NETE: {
+    id: "QUEIJO_NETE",
+    name: "Nete",
+    description: "Queijo artesanal tradicional da Matuh",
+    available: true
+  },
+  QUEIJO_NINA: {
+    id: "QUEIJO_NINA",
+    name: "Nina",
+    description: "Queijo maturado especial",
+    available: false
+  },
+  QUEIJO_LALA: {
+    id: "QUEIJO_LALA",
+    name: "Lala",
+    description: "Queijo fresco suave",
+    available: false
+  }
+} as const;
+
+export type CheeseTypeId = keyof typeof CHEESE_TYPES;
+export type CheeseType = typeof CHEESE_TYPES[CheeseTypeId];
+
+export function getCheeseTypeName(recipeId: string): string {
+  const cheese = Object.values(CHEESE_TYPES).find(c => c.id === recipeId);
+  return cheese?.name || recipeId.replace("QUEIJO_", "");
+}
+
+export function getAvailableCheeseTypes(): CheeseType[] {
+  return Object.values(CHEESE_TYPES).filter(c => c.available);
+}
+
+export function getAllCheeseTypes(): CheeseType[] {
+  return Object.values(CHEESE_TYPES);
+}
+
 // === EXPLICIT API CONTRACT TYPES ===
 
 // Batch Types
@@ -72,6 +111,7 @@ export type InsertBatch = z.infer<typeof insertBatchSchema>;
 // Request Types
 export type StartBatchRequest = {
   milkVolumeL: number;
+  recipeId?: string; // Cheese type ID (defaults to QUEIJO_NETE)
 };
 
 export type AdvanceStageRequest = {
