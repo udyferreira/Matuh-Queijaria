@@ -219,7 +219,7 @@ export default function BatchDetail() {
                     {isResuming ? "Retomando..." : "Retomar"}
                   </Button>
                 ) : (
-                  <Dialog open={showPauseDialog} onOpenChange={(open) => !open && handleClosePauseDialog()}>
+                  <Dialog open={showPauseDialog} onOpenChange={(open) => open ? setShowPauseDialog(true) : handleClosePauseDialog()}>
                     <DialogTrigger asChild>
                       <Button variant="outline" data-testid="button-pause">
                         <Pause className="w-4 h-4 mr-2" />
@@ -256,7 +256,7 @@ export default function BatchDetail() {
                   {isCompleting ? "..." : "Concluir"}
                 </Button>
                 
-                <Dialog open={showCancelDialog} onOpenChange={(open) => !open && handleCloseCancelDialog()}>
+                <Dialog open={showCancelDialog} onOpenChange={(open) => open ? setShowCancelDialog(true) : handleCloseCancelDialog()}>
                   <DialogTrigger asChild>
                     <Button variant="destructive" size="icon" data-testid="button-cancel-open">
                       <XCircle className="w-4 h-4" />
