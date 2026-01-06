@@ -1,0 +1,742 @@
+openapi: 3.0.3
+info:
+  title: Matuh Queijaria API
+  description: |
+    API para o sistema de rastreamento de produção de queijo artesanal Matuh Queijaria.
+    
+    O sistema guia o produtor através de 20 etapas de produção, calculando automaticamente 
+    proporções de ingredientes baseadas no volume de leite, gerenciando timers bloqueantes 
+    para etapas críticas, e registrando medições do operador.
+    
+    ## Funcionalidades Principais
+    - **Gestão de Lotes**: Criar, acompanhar e avançar lotes de produção
+    - **Cálculos Automáticos**: Proporções de fermentos e coalho baseados no volume de leite
+    - **Timers Bloqueantes**: Controle de tempo para etapas críticas (fermentação, salga)
+    - **Medições**: Registro de pH, temperatura e horários
+    - **Assistente IA**: Chat com assistente inteligente para dúvidas sobre produção
+    - **Integração Alexa**: Controle por voz via Amazon Alexa
+  version: 1.0.0
+  contact:
+    name: Matuh Queijaria
+    url: https://www.matuh.com.br
+
+servers:
+  - url: /api
+    description: API Principal
+
+tags:
+  - name: Batches
+    description: Operações de lotes de produção
+  - name: Conversations
+    description: Chat com assistente de IA
+  - name: Integrations
+    description: Integrações externas (Alexa, geração de imagens)
+
+paths:
+  /batches:
+    get:
+      tags:
+        - Batches
+      summary: Listar lotes ativos
+      description: Retorna todos os lotes de produção ativos no sistema
+      operationId: listBatches
+      responses:
+        '200':
+          description: Lista de lotes ativos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Batch'
+              example:
+                - id: 1
+                  recipeId: "QUEIJO_NETE"
+                  currentStageId: 4
+                  milkVolumeL: "50"
+                  status: "active"
+                  calculatedInputs:
+                    FERMENT_LR: 25
+                    FERMENT_DX: 25
+                    FERMENT_KL: 20
+                    RENNET: 2.5
+                  startedAt: "2026-01-06T02:16:44.742Z"
+
+    post:
+      tags:
+        - Batches
+      summary: Iniciar novo lote
+      description: |
+        Cria um novo lote de produção. O sistema calcula automaticamente as proporções 
+        de fermentos e coalho baseado no volume de leite informado.
+        
+        **Fórmulas de cálculo:**
+        - Fermento LR: 1ml por 2L de leite
+        - Fermento DX: 1ml por 2L de leite
+        - Fermento KL: 8ml por 20L de leite
+        - Coalho: 1ml por 20L de leite
+      operationId: createBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - milkVolumeL
+              properties:
+                milkVolumeL:
+                  type: number
+                  minimum: 10
+                  maximum: 200
+                  description: Volume de leite em litros
+            example:
+              milkVolumeL: 50
+      responses:
+        '201':
+          description: Lote criado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Batch'
+        '400':
+          description: Dados inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /batches/{id}:
+    get:
+      tags:
+        - Batches
+      summary: Obter detalhes do lote
+      description: Retorna informações detalhadas de um lote específico
+      operationId: getBatch
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Detalhes do lote
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Batch'
+        '404':
+          description: Lote não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /batches/{id}/status:
+    get:
+      tags:
+        - Batches
+      summary: Obter status do lote
+      description: |
+        Retorna o status atual do lote incluindo timers ativos, 
+        próxima ação recomendada e orientações
+      operationId: getBatchStatus
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Status do lote
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchStatus'
+              example:
+                batchId: 1
+                currentStageId: 4
+                status: "active"
+                activeTimers:
+                  - stageId: 4
+                    startTime: "2026-01-06T02:17:57.026Z"
+                    endTime: "2026-01-06T02:47:57.026Z"
+                    durationMinutes: 30
+                    blocking: true
+                    isComplete: false
+                nextAction: "wait_timer"
+                guidance: "Aguarde o timer de 30 minutos para ação dos fermentos LR e DX"
+        '404':
+          description: Lote não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /batches/{id}/advance:
+    post:
+      tags:
+        - Batches
+      summary: Avançar etapa
+      description: |
+        Move o lote para a próxima etapa de produção.
+        
+        **Validações:**
+        - Verifica se inputs obrigatórios foram registrados
+        - Verifica se timers bloqueantes foram concluídos
+        - Valida condições de loop (ex: pH mínimo)
+        
+        **Etapas com timer bloqueante:**
+        - Etapa 4: 30 minutos (fermentos LR/DX)
+        - Etapa 10: 30 minutos (mexedura)
+        - Etapa 17: 8 horas (salga)
+      operationId: advanceBatch
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inputs:
+                  type: object
+                  additionalProperties: true
+                  description: Inputs opcionais para a etapa
+      responses:
+        '200':
+          description: Lote avançado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Batch'
+        '400':
+          description: Não é possível avançar (timer ativo ou input faltando)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: "Aguarde o timer. Faltam 15 minutos."
+        '404':
+          description: Lote não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /batches/{id}/input:
+    post:
+      tags:
+        - Batches
+      summary: Registrar medição
+      description: |
+        Registra uma entrada/medição do operador para o lote.
+        
+        **Tipos de input:**
+        - `ph`: Valor de pH (número)
+        - `temperature`: Temperatura em °C (número)
+        - `time`: Horário (string no formato HH:MM)
+        
+        **Etapas que requerem input:**
+        - Etapa 1: Volume de leite (automático na criação)
+        - Etapa 6: Horário de floculação
+        - Etapa 7: Horário do ponto de corte
+        - Etapa 13: Valor do pH
+        - Etapa 14: Horário de início da prensa
+      operationId: logBatchInput
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - type
+                - value
+              properties:
+                type:
+                  type: string
+                  enum: [ph, temperature, time]
+                  description: Tipo da medição
+                value:
+                  oneOf:
+                    - type: number
+                    - type: string
+                  description: Valor da medição
+                notes:
+                  type: string
+                  description: Observações adicionais
+            examples:
+              ph:
+                summary: Registro de pH
+                value:
+                  type: "ph"
+                  value: 5.2
+                  notes: "pH medido após dessora"
+              time:
+                summary: Registro de horário
+                value:
+                  type: "time"
+                  value: "14:30"
+      responses:
+        '200':
+          description: Medição registrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Batch'
+        '404':
+          description: Lote não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /batches/{id}/logs:
+    get:
+      tags:
+        - Batches
+      summary: Histórico do lote
+      description: Retorna o log de todas as ações realizadas no lote
+      operationId: getBatchLogs
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Lista de logs do lote
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BatchLog'
+              example:
+                - id: 1
+                  batchId: 1
+                  stageId: 1
+                  action: "start"
+                  details:
+                    milkVolume: 50
+                  timestamp: "2026-01-06T02:16:44.739Z"
+                - id: 2
+                  batchId: 1
+                  stageId: 2
+                  action: "advance"
+                  timestamp: "2026-01-06T02:17:00.000Z"
+        '404':
+          description: Lote não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /conversations:
+    get:
+      tags:
+        - Conversations
+      summary: Listar conversas
+      description: Retorna todas as conversas salvas com o assistente
+      operationId: listConversations
+      responses:
+        '200':
+          description: Lista de conversas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Conversation'
+
+    post:
+      tags:
+        - Conversations
+      summary: Criar conversa
+      description: Inicia uma nova conversa com o assistente de IA
+      operationId: createConversation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: Título da conversa
+            example:
+              title: "Dúvida sobre fermentação"
+      responses:
+        '201':
+          description: Conversa criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+
+  /conversations/{id}:
+    get:
+      tags:
+        - Conversations
+      summary: Obter conversa
+      description: Busca uma conversa específica com todas as mensagens
+      operationId: getConversation
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Conversa com mensagens
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Conversation'
+                  - type: object
+                    properties:
+                      messages:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Message'
+        '404':
+          description: Conversa não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags:
+        - Conversations
+      summary: Excluir conversa
+      description: Remove uma conversa e todas as suas mensagens
+      operationId: deleteConversation
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '204':
+          description: Conversa excluída
+        '404':
+          description: Conversa não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /conversations/{id}/messages:
+    post:
+      tags:
+        - Conversations
+      summary: Enviar mensagem
+      description: |
+        Envia uma mensagem para o assistente e recebe a resposta via streaming (SSE).
+        
+        A resposta é enviada em tempo real via Server-Sent Events (SSE), 
+        permitindo exibir a resposta conforme é gerada.
+      operationId: sendMessage
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+                  description: Conteúdo da mensagem
+            example:
+              content: "Qual a temperatura ideal para adicionar o coalho?"
+      responses:
+        '200':
+          description: Stream de resposta (SSE)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |
+                data: {"content":"A temperatura"}
+                data: {"content":" ideal para"}
+                data: {"content":" adicionar o coalho"}
+                data: {"content":" é entre 35°C e 37°C."}
+                data: {"done":true}
+
+  /generate-image:
+    post:
+      tags:
+        - Integrations
+      summary: Gerar imagem
+      description: Cria uma imagem baseada em um prompt de texto usando IA
+      operationId: generateImage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - prompt
+              properties:
+                prompt:
+                  type: string
+                  description: Descrição da imagem a ser gerada
+                size:
+                  type: string
+                  enum: ["256x256", "512x512", "1024x1024"]
+                  default: "1024x1024"
+                  description: Tamanho da imagem
+            example:
+              prompt: "Queijo artesanal maturando em prateleira de madeira"
+              size: "1024x1024"
+      responses:
+        '200':
+          description: Imagem gerada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    description: URL da imagem gerada
+                  b64_json:
+                    type: string
+                    description: Imagem em base64 (se disponível)
+        '400':
+          description: Prompt não informado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /alexa/webhook:
+    post:
+      tags:
+        - Integrations
+      summary: Webhook Alexa
+      description: |
+        Endpoint para receber comandos de voz da Amazon Alexa.
+        
+        **Intents suportados:**
+        - `StatusIntent`: Consulta status do lote ativo
+        - `AdvanceIntent`: Avança para próxima etapa
+        - `TimerIntent`: Consulta tempo restante do timer
+        - `HelpIntent`: Solicita ajuda sobre a etapa atual
+      operationId: alexaWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - intent
+              properties:
+                intent:
+                  type: string
+                  description: Nome do intent da Alexa
+                slots:
+                  type: object
+                  additionalProperties: true
+                  description: Slots extraídos do comando de voz
+                userId:
+                  type: string
+                  description: ID do usuário Alexa
+            example:
+              intent: "StatusIntent"
+              userId: "amzn1.ask.account.ABC123"
+      responses:
+        '200':
+          description: Resposta para a Alexa
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  speech:
+                    type: string
+                    description: Texto a ser falado pela Alexa
+                  shouldEndSession:
+                    type: boolean
+                    description: Se a sessão deve ser encerrada
+              example:
+                speech: "Seu lote está na etapa 4, adição de fermentos. Faltam 15 minutos para completar o timer."
+                shouldEndSession: false
+
+components:
+  parameters:
+    BatchId:
+      name: id
+      in: path
+      required: true
+      description: ID do lote de produção
+      schema:
+        type: integer
+        example: 1
+
+    ConversationId:
+      name: id
+      in: path
+      required: true
+      description: ID da conversa
+      schema:
+        type: integer
+        example: 1
+
+  schemas:
+    Batch:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: ID único do lote
+        recipeId:
+          type: string
+          description: ID da receita utilizada
+          example: "QUEIJO_NETE"
+        currentStageId:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: Etapa atual da produção (1-20)
+        milkVolumeL:
+          type: string
+          description: Volume de leite em litros
+        status:
+          type: string
+          enum: [active, completed, paused]
+          description: Status do lote
+        calculatedInputs:
+          type: object
+          description: Ingredientes calculados automaticamente
+          properties:
+            FERMENT_LR:
+              type: number
+              description: Fermento LR em ml
+            FERMENT_DX:
+              type: number
+              description: Fermento DX em ml
+            FERMENT_KL:
+              type: number
+              description: Fermento KL em ml
+            RENNET:
+              type: number
+              description: Coalho em ml
+        measurements:
+          type: object
+          description: Medições registradas pelo operador
+          additionalProperties: true
+        activeTimers:
+          type: array
+          description: Timers ativos no momento
+          items:
+            $ref: '#/components/schemas/Timer'
+        history:
+          type: array
+          description: Histórico de ações do lote
+          items:
+            type: object
+        startedAt:
+          type: string
+          format: date-time
+          description: Data/hora de início do lote
+        updatedAt:
+          type: string
+          format: date-time
+          description: Data/hora da última atualização
+
+    Timer:
+      type: object
+      properties:
+        stageId:
+          type: integer
+          description: Etapa associada ao timer
+        startTime:
+          type: string
+          format: date-time
+          description: Hora de início do timer
+        endTime:
+          type: string
+          format: date-time
+          description: Hora de término do timer
+        durationMinutes:
+          type: integer
+          description: Duração em minutos
+        blocking:
+          type: boolean
+          description: Se o timer bloqueia o avanço
+        isComplete:
+          type: boolean
+          description: Se o timer já foi concluído
+
+    BatchStatus:
+      type: object
+      properties:
+        batchId:
+          type: integer
+        currentStageId:
+          type: integer
+        status:
+          type: string
+        activeTimers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Timer'
+        nextAction:
+          type: string
+          description: Próxima ação recomendada
+        guidance:
+          type: string
+          description: Orientação para o operador
+
+    BatchLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        batchId:
+          type: integer
+        stageId:
+          type: integer
+        action:
+          type: string
+          description: Tipo de ação (start, advance, input, etc)
+        details:
+          type: object
+          additionalProperties: true
+        timestamp:
+          type: string
+          format: date-time
+
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Mensagem de erro
+      example:
+        message: "Batch not found"
