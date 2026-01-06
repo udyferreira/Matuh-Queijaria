@@ -1,0 +1,108 @@
+🧠 PROMPT MESTRE — REPLIT AGENT
+(Backend do Agente de Produção – Queijo Nete v1.0)
+Contexto do projeto
+Você está criando um backend server-side para um agente de IA que acompanha a produção artesanal de queijos, com interação por voz via Alexa.
+O backend deve:
+controlar rigorosamente o processo produtivo,
+calcular proporções,
+gerenciar timers e lembretes,
+armazenar medições (pH, horários),
+usar um LLM apenas como apoio cognitivo, nunca como executor do processo.
+Existe um modelo canônico congelado (v1.0) da receita do Queijo Nete, que não pode ser alterado.
+Stack técnica desejada
+Linguagem: Python
+Framework HTTP: FastAPI
+Execução: servidor web (pronto para ser exposto via HTTPS)
+Persistência (MVP): SQLite ou Replit DB
+LLM: integração via API (OpenAI ou compatível)
+Arquitetura: determinística + LLM supervisionado
+Regras arquiteturais obrigatórias
+1. Separação de responsabilidades
+O backend é soberano sobre:
+ordem das etapas
+cálculos
+timers
+validações
+O LLM nunca pode:
+calcular proporções
+avançar etapas
+pular etapas
+alterar timers
+sobrescrever medições humanas
+2. Uso do LLM
+O LLM deve ser usado somente para:
+interpretar linguagem natural ambígua
+explicar etapas
+reforçar cuidados do processo
+emitir alertas e lembretes verbais
+Implementar tool-calling:
+o LLM apenas sugere intenções
+o backend decide e executa
+Modelo canônico da receita (IMUTÁVEL)
+Carregue a receita Queijo Nete v1.0 a partir de um arquivo YAML interno do projeto.
+Ela contém 20 etapas, incluindo:
+cálculo de fermentos (LR, DX, KL, Coalho)
+timers críticos (30 min, 8 horas, 36 horas, diário)
+registros obrigatórios:
+volume de leite
+horário de floculação
+horário de ponto de corte
+medições de pH
+horário de início da prensa
+O backend deve executar exatamente essas etapas, nessa ordem.
+Modelo de estado do lote (obrigatório)
+Crie uma estrutura persistente chamada ProductionBatch contendo, no mínimo:
+batch_id
+recipe_id
+current_stage_id
+milk_volume_l
+calculated_inputs (fermentos, coalho)
+timestamps:
+flocculation_time
+cut_point_time
+press_start_time
+ph_measurements (lista com timestamp + valor)
+active_timers
+status (active | paused | completed)
+Endpoints HTTP obrigatórios
+Crie endpoints REST claros e documentados:
+POST /batch/start
+inicia um novo lote
+recebe volume de leite
+POST /batch/{id}/advance
+tenta avançar para a próxima etapa
+valida regras antes de permitir
+POST /batch/{id}/input
+registra entradas humanas (pH, horários)
+GET /batch/{id}/status
+retorna etapa atual, timers ativos e próximos passos
+POST /alexa/webhook
+endpoint para integração com Alexa Skill
+recebe texto interpretado
+responde texto para fala
+Comportamento esperado do backend
+Nunca permitir avanço fora de ordem
+Bloquear etapas enquanto timers não expirarem
+Registrar todos os eventos importantes
+Sempre informar:
+etapa atual (ex: “etapa 10 de 20”)
+próxima ação esperada
+Ser resiliente a chamadas repetidas (idempotente)
+Observabilidade mínima
+Logar:
+início e fim de cada etapa
+timers criados e concluídos
+erros de validação
+Estruturar logs para futura análise
+O que gerar agora
+Estrutura completa do projeto
+Código funcional do backend
+Loader do YAML da receita
+Modelo de estado do lote
+Integração inicial com LLM (com funções bem delimitadas)
+Endpoint pronto para Alexa
+Não gerar código fictício ou “TODOs” críticos.
+O projeto deve subir e rodar.
+Objetivo final
+Este backend será usado em produção por funcionários da queijaria.
+Previsibilidade, clareza e segurança são mais importantes do que criatividade.
