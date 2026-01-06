@@ -45,24 +45,28 @@ export async function registerRoutes(
       // Calculate inputs immediately
       const inputs = recipeManager.calculateInputs(milkVolumeL);
 
+      // Etapas 1 e 2 são concluídas automaticamente:
+      // 1 - Separar leite (informado pelo usuário)
+      // 2 - Calcular proporções (feito automaticamente)
+      // Inicia na etapa 3 - Aquecer o leite
       const batch = await storage.createBatch({
         recipeId: "QUEIJO_NETE",
-        currentStageId: 1, // Start at stage 1
+        currentStageId: 3, // Start at stage 3 (heating milk)
         milkVolumeL: milkVolumeL.toString(),
         calculatedInputs: inputs,
         status: "active",
-        history: [{ 
-            stageId: 1, 
-            action: "start", 
-            timestamp: new Date().toISOString() 
-        }]
+        history: [
+          { stageId: 1, action: "complete", timestamp: new Date().toISOString(), auto: true },
+          { stageId: 2, action: "complete", timestamp: new Date().toISOString(), auto: true },
+          { stageId: 3, action: "start", timestamp: new Date().toISOString() }
+        ]
       });
 
       await storage.logBatchAction({
         batchId: batch.id,
-        stageId: 1,
+        stageId: 3,
         action: "start",
-        details: { milkVolume: milkVolumeL }
+        details: { milkVolume: milkVolumeL, calculatedInputs: inputs }
       });
 
       res.status(201).json(batch);
