@@ -432,65 +432,80 @@ export default function BatchDetail() {
                   <span className="text-muted-foreground">Iniciado</span>
                   <span className="font-mono">{new Date(batch.startedAt).toLocaleTimeString('pt-BR')}</span>
                 </div>
-                {Object.entries(batch.measurements as Record<string, any> || {}).map(([key, val]) => {
-                  // Traduzir labels para português (normaliza camelCase e snake_case)
-                  const normalizedKey = key.toLowerCase().replace(/([A-Z])/g, '_$1').replace(/_+/g, '_').replace(/^_/, '');
-                  const labelMap: Record<string, string> = {
-                    'ph_value': 'Valor do pH',
-                    'ph value': 'Valor do pH',
-                    'ph': 'pH',
-                    'ph_history': 'Histórico de pH',
-                    'phhistory': 'Histórico de pH',
-                    'temperature': 'Temperatura',
-                    'temp': 'Temperatura',
-                    'time': 'Horário',
-                    'start_time': 'Hora de Início',
-                    'starttime': 'Hora de Início',
-                    'end_time': 'Hora de Término',
-                    'endtime': 'Hora de Término',
-                    'milk_volume': 'Volume de Leite',
-                    'milkvolume': 'Volume de Leite',
-                    'stage': 'Etapa',
-                    'duration': 'Duração',
-                  };
-                  const translatedLabel = labelMap[normalizedKey] || labelMap[key.toLowerCase()] || key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+                {(() => {
+                  const measurements = batch.measurements as Record<string, any> || {};
+                  const history = measurements._history as Array<{key: string; value: any; stageId: number; timestamp: string}> || [];
                   
-                  // Formatar valor - extrair valor mais recente de arrays ou objetos
-                  let displayValue: string;
-                  if (Array.isArray(val)) {
-                    if (val.length === 0) {
-                      displayValue = '-';
-                    } else {
-                      // Pegar o último valor (mais recente)
-                      const lastEntry = val[val.length - 1];
-                      if (typeof lastEntry === 'object' && lastEntry !== null && 'value' in lastEntry) {
-                        displayValue = String(lastEntry.value);
+                  // Mapa de tradução para labels
+                  const labelMap: Record<string, string> = {
+                    'ph_value': 'Medição de pH',
+                    'cut_point_time': 'Horário do Ponto de Corte',
+                    'press_start_time': 'Horário de Início da Prensagem',
+                    'flocculation_time': 'Horário de Floculação',
+                    'temperature': 'Temperatura',
+                    'time': 'Horário',
+                    'recorded_time': 'Horário Registrado',
+                  };
+                  
+                  const items: Array<{label: string; value: string}> = [];
+                  
+                  // Se temos histórico, usar para contexto de etapa
+                  if (history.length > 0) {
+                    const phByStage: Record<number, number> = {};
+                    
+                    history.forEach((entry) => {
+                      let label: string;
+                      
+                      if (entry.key === 'ph_value') {
+                        phByStage[entry.stageId] = (phByStage[entry.stageId] || 0) + 1;
+                        const count = phByStage[entry.stageId];
+                        label = count === 1 
+                          ? `Etapa ${entry.stageId} - Medição de pH`
+                          : `Etapa ${entry.stageId} - ${count}ª Medição de pH`;
                       } else {
-                        displayValue = String(lastEntry);
+                        label = `Etapa ${entry.stageId} - ${labelMap[entry.key] || entry.key.replace(/_/g, ' ')}`;
                       }
-                    }
-                  } else if (typeof val === 'object' && val !== null) {
-                    if ('value' in val) {
-                      displayValue = String(val.value);
-                    } else {
-                      displayValue = '-';
-                    }
+                      
+                      items.push({ label, value: String(entry.value) });
+                    });
                   } else {
-                    displayValue = String(val);
+                    // Fallback para dados sem histórico
+                    // Primeiro, processar medições de pH do array 'ph'
+                    const phArray = measurements.ph as Array<{value: number; timestamp: string; stageId?: number}> || [];
+                    phArray.forEach((entry, idx) => {
+                      const stageId = entry.stageId || 13;
+                      const label = idx === 0 
+                        ? `Etapa ${stageId} - Medição de pH`
+                        : `Etapa ${stageId} - ${idx + 1}ª Medição de pH`;
+                      items.push({ label, value: String(entry.value) });
+                    });
+                    
+                    // Depois, processar outros valores
+                    Object.entries(measurements).forEach(([key, val]) => {
+                      // Ignorar campos internos e arrays de pH
+                      if (key.startsWith('_') || key === 'ph_measurements' || key === 'ph' || key === 'ph_value') return;
+                      
+                      const label = labelMap[key] || key.replace(/_/g, ' ');
+                      const displayValue = typeof val === 'object' ? String(val?.value ?? val) : String(val);
+                      items.push({ label, value: displayValue });
+                    });
                   }
                   
-                  return (
-                    <div key={key} className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
-                      <span className="capitalize text-muted-foreground">{translatedLabel}</span>
-                      <span className="font-mono font-bold">{displayValue}</span>
+                  if (items.length === 0) {
+                    return (
+                      <div className="text-center text-muted-foreground py-4 text-sm italic">
+                        Nenhuma medição registrada ainda.
+                      </div>
+                    );
+                  }
+                  
+                  return items.map((item, idx) => (
+                    <div key={idx} className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
+                      <span className="text-muted-foreground">{item.label}</span>
+                      <span className="font-mono font-bold">{item.value}</span>
                     </div>
-                  );
-                })}
-                {(!batch.measurements || Object.keys(batch.measurements as object).length === 0) && (
-                   <div className="text-center text-muted-foreground py-4 text-sm italic">
-                     Nenhuma medição registrada ainda.
-                   </div>
-                )}
+                  ));
+                })()}
               </div>
             </div>
 
