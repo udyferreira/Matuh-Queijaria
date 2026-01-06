@@ -12,10 +12,19 @@ info:
     - **Gestão de Lotes**: Criar, acompanhar e avançar lotes de produção
     - **Cálculos Automáticos**: Proporções de fermentos e coalho baseados no volume de leite
     - **Timers Bloqueantes**: Controle de tempo para etapas críticas (fermentação, salga)
-    - **Medições**: Registro de pH, temperatura e horários
+    - **Medições**: Registro de pH, temperatura e horários com rastreamento por etapa
     - **Assistente IA**: Chat com assistente inteligente para dúvidas sobre produção
     - **Integração Alexa**: Controle por voz via Amazon Alexa
-  version: 1.0.0
+    
+    ## Etapas de Medição de pH
+    - **Etapa 13**: Primeira medição de pH
+    - **Etapa 15**: Loop de medições de pH até atingir pH <= 5.2
+    
+    ## Estrutura de Medições
+    Todas as medições são armazenadas com `stageId` para rastreabilidade:
+    - Array `measurements.ph[]` contém histórico completo de pH
+    - Array `measurements._history[]` contém todas as medições com metadados
+  version: 1.1.0
   contact:
     name: Matuh Queijaria
     url: https://www.matuh.com.br
@@ -286,8 +295,15 @@ paths:
         - Etapa 1: Volume de leite (automático na criação)
         - Etapa 6: Horário de floculação
         - Etapa 7: Horário do ponto de corte
-        - Etapa 13: Valor do pH
+        - Etapa 13: Valor do pH (primeira medição)
         - Etapa 14: Horário de início da prensa
+        - Etapa 15: Valor do pH (loop - medições subsequentes até pH <= 5.2)
+        
+        **Armazenamento de medições de pH:**
+        - Salvo em `measurements.ph[]` com `{value, timestamp, stageId}`
+        - Valor mais recente também em `measurements.ph_value`
+        - Histórico completo em `measurements._history[]` com `{key, value, timestamp, stageId}`
+        - Array separado em `measurements.ph_measurements[]` para compatibilidade
       operationId: logBatchInput
       parameters:
         - $ref: '#/components/parameters/BatchId'
@@ -956,7 +972,73 @@ components:
               description: Coalho em ml
         measurements:
           type: object
-          description: Medições registradas pelo operador
+          description: |
+            Medições registradas pelo operador. Estrutura:
+            - `ph_value`: Último valor de pH registrado
+            - `ph[]`: Array de medições de pH com {value, timestamp, stageId}
+            - `ph_measurements[]`: Array de medições de pH (compatibilidade)
+            - `_history[]`: Histórico completo de todas as medições com {key, value, timestamp, stageId}
+            - `flocculation_time`: Horário de floculação (formato HH:MM)
+            - `cut_point_time`: Horário do ponto de corte (formato HH:MM)
+            - `press_start_time`: Horário de início da prensagem (formato HH:MM)
+          properties:
+            ph_value:
+              type: number
+              description: Último valor de pH registrado
+            ph:
+              type: array
+              description: Histórico de medições de pH
+              items:
+                type: object
+                properties:
+                  value:
+                    type: number
+                  timestamp:
+                    type: string
+                    format: date-time
+                  stageId:
+                    type: integer
+                    description: Etapa em que a medição foi feita (13 ou 15)
+            ph_measurements:
+              type: array
+              description: Array de medições de pH (compatibilidade)
+              items:
+                type: object
+                properties:
+                  value:
+                    type: number
+                  timestamp:
+                    type: string
+                    format: date-time
+                  stageId:
+                    type: integer
+            _history:
+              type: array
+              description: Histórico completo de todas as medições
+              items:
+                type: object
+                properties:
+                  key:
+                    type: string
+                    description: Chave canônica (ph_value, flocculation_time, etc)
+                  value:
+                    oneOf:
+                      - type: number
+                      - type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+                  stageId:
+                    type: integer
+            flocculation_time:
+              type: string
+              description: Horário de floculação (formato HH:MM)
+            cut_point_time:
+              type: string
+              description: Horário do ponto de corte (formato HH:MM)
+            press_start_time:
+              type: string
+              description: Horário de início da prensagem (formato HH:MM)
           additionalProperties: true
         activeTimers:
           type: array
