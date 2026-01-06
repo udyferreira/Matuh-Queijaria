@@ -4,6 +4,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Button } from "@/components/ui/button";
 import { useBatches } from "@/hooks/use-batches";
 import { ChatAssistant } from "@/components/widgets/ChatAssistant";
+import { getCheeseTypeName } from "@shared/schema";
 
 export default function Home() {
   const { data: batches, isLoading } = useBatches();
@@ -67,7 +68,7 @@ export default function Home() {
                       </span>
                     </div>
 
-                    <h3 className="text-2xl font-bold mb-1">Matuh Queijaria</h3>
+                    <h3 className="text-2xl font-bold mb-1">Queijo {getCheeseTypeName(batch.recipeId)}</h3>
                     <div className="text-sm text-muted-foreground mb-6">
                       Vol: <span className="text-foreground font-medium">{batch.milkVolumeL}L</span> • Iniciado em {new Date(batch.startedAt).toLocaleDateString('pt-BR')}
                     </div>
