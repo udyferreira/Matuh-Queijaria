@@ -184,7 +184,7 @@ export default function BatchDetail() {
             </motion.div>
 
             {/* Ingredients Summary (if applicable) */}
-            {batch.currentStageId > 2 && batch.calculatedInputs && (
+            {batch.currentStageId >= 2 && batch.calculatedInputs && (
                <div className="glass-card p-6 rounded-2xl">
                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                    <Scale className="w-5 h-5 text-primary" />

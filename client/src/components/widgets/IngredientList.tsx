@@ -1,24 +1,21 @@
-import { Droplet, Milk, TestTube } from "lucide-react";
+import { Droplet, TestTube } from "lucide-react";
 
 interface CalculatedInputs {
-  milk_volume_l?: number;
-  ingredients?: {
-    ferment_lr_ml?: number;
-    ferment_dx_ml?: number;
-    ferment_kl_ml?: number;
-    rennet_ml?: number;
-  };
+  FERMENT_LR?: number;
+  FERMENT_DX?: number;
+  FERMENT_KL?: number;
+  RENNET?: number;
 }
 
 export function IngredientList({ inputs }: { inputs: CalculatedInputs }) {
-  if (!inputs.ingredients) return null;
+  if (!inputs || Object.keys(inputs).length === 0) return null;
 
   const items = [
-    { name: "Ferment LR", value: inputs.ingredients.ferment_lr_ml, unit: "ml", icon: TestTube, color: "text-blue-400" },
-    { name: "Ferment DX", value: inputs.ingredients.ferment_dx_ml, unit: "ml", icon: TestTube, color: "text-purple-400" },
-    { name: "Ferment KL", value: inputs.ingredients.ferment_kl_ml, unit: "ml", icon: TestTube, color: "text-pink-400" },
-    { name: "Rennet", value: inputs.ingredients.rennet_ml, unit: "ml", icon: Droplet, color: "text-amber-400" },
-  ];
+    { name: "Fermento LR", value: inputs.FERMENT_LR, unit: "ml", icon: TestTube, color: "text-blue-400" },
+    { name: "Fermento DX", value: inputs.FERMENT_DX, unit: "ml", icon: TestTube, color: "text-purple-400" },
+    { name: "Fermento KL", value: inputs.FERMENT_KL, unit: "ml", icon: TestTube, color: "text-pink-400" },
+    { name: "Coalho", value: inputs.RENNET, unit: "ml", icon: Droplet, color: "text-amber-400" },
+  ].filter(item => item.value !== undefined);
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
