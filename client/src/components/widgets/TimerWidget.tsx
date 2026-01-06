@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 
 interface TimerWidgetProps {
   durationMinutes: number;
-  startTime: string; // ISO string
+  startTime: string;
   label: string;
 }
 
@@ -44,7 +44,7 @@ export function TimerWidget({ durationMinutes, startTime, label }: TimerWidgetPr
             <span className="text-4xl font-display font-bold tabular-nums">
               {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
             </span>
-            <span className="text-sm text-muted-foreground">remaining</span>
+            <span className="text-sm text-muted-foreground">restantes</span>
           </div>
         </div>
         <div className={`p-3 rounded-full ${isComplete ? 'bg-green-500/20 text-green-500' : 'bg-primary/20 text-primary'}`}>
@@ -68,7 +68,7 @@ export function TimerWidget({ durationMinutes, startTime, label }: TimerWidgetPr
           className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 text-sm font-medium flex items-center justify-center gap-2"
         >
           <AlertCircle className="w-4 h-4" />
-          Timer Complete! Proceed to next step.
+          Timer concluído! Prossiga para a próxima etapa.
         </motion.div>
       )}
     </div>

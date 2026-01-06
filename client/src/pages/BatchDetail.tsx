@@ -11,6 +11,29 @@ import { ChatAssistant } from "@/components/widgets/ChatAssistant";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 
+const STAGE_NAMES: Record<number, string> = {
+  1: "Separar o leite",
+  2: "Calcular fermentos e coalho",
+  3: "Aquecer o leite",
+  4: "Adicionar fermentos LR e DX",
+  5: "Adicionar fermento KL e coalho",
+  6: "Anotar horário de floculação",
+  7: "Anotar horário do ponto de corte",
+  8: "Corte da massa com a Lira",
+  9: "Corte complementar com espátula",
+  10: "Mexedura progressiva da massa",
+  11: "Enformagem com peneira e paninho",
+  12: "Dessoragem em mesa",
+  13: "Medir e anotar pH inicial",
+  14: "Colocar na prensa",
+  15: "Virar queijos e medir pH",
+  16: "Transferir para câmara de secagem",
+  17: "Salga em tanque",
+  18: "Secagem em prateleiras",
+  19: "Transferir para Câmara 2",
+  20: "Virar queijos diariamente na Câmara 2",
+};
+
 export default function BatchDetail() {
   const [, params] = useRoute("/batch/:id");
   const id = parseInt(params?.id || "0");
@@ -29,18 +52,15 @@ export default function BatchDetail() {
     );
   }
 
-  // --- Derived State ---
-  // In a real app, these mappings would come from the API (recipe definition)
-  // For this demo, we'll infer UI state from the simple stage ID
   const isTimerStage = batch.activeTimers && batch.activeTimers.length > 0;
-  const isInputStage = [1, 6, 7, 13, 19].includes(batch.currentStageId);
+  const isInputStage = [1, 6, 7, 13, 14].includes(batch.currentStageId);
   const inputType = batch.currentStageId === 13 ? "ph" : "time"; 
-  const inputLabel = inputType === "ph" ? "pH Value" : "Time (HH:MM)";
+  const inputLabel = inputType === "ph" ? "Valor do pH" : "Horário (HH:MM)";
 
   const handleAdvance = () => {
     advance({ id, data: { stageId: batch.currentStageId } }, {
-      onSuccess: () => toast({ title: "Stage Complete", description: "Moving to next step." }),
-      onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" })
+      onSuccess: () => toast({ title: "Etapa Concluída", description: "Avançando para a próxima etapa." }),
+      onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
     });
   };
 
@@ -56,9 +76,8 @@ export default function BatchDetail() {
       } 
     }, {
       onSuccess: () => {
-        toast({ title: "Logged", description: "Measurement saved." });
+        toast({ title: "Registrado", description: "Medição salva com sucesso." });
         setInputVal("");
-        // Auto advance after logging if it's a simple input stage
         handleAdvance(); 
       }
     });
@@ -69,37 +88,34 @@ export default function BatchDetail() {
       <Navbar />
       
       <main className="container mx-auto px-4 py-8">
-        {/* Header Summary */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div>
             <div className="flex items-center gap-3 mb-2">
               <span className="text-sm font-mono text-primary bg-primary/10 px-2 py-1 rounded">
-                BATCH #{batch.id.toString().padStart(4, '0')}
+                LOTE #{batch.id.toString().padStart(4, '0')}
               </span>
               <span className="text-sm text-muted-foreground">
-                Started {new Date(batch.startedAt).toLocaleDateString()}
+                Iniciado em {new Date(batch.startedAt).toLocaleDateString('pt-BR')}
               </span>
             </div>
-            <h1 className="text-3xl font-display font-bold">Queijo Nete Production</h1>
+            <h1 className="text-3xl font-display font-bold">Produção Queijo Nete</h1>
           </div>
           <div className="bg-card px-6 py-3 rounded-xl border border-border shadow-lg flex items-center gap-4">
              <div className="text-right">
-               <div className="text-xs text-muted-foreground uppercase tracking-wider">Total Volume</div>
+               <div className="text-xs text-muted-foreground uppercase tracking-wider">Volume Total</div>
                <div className="text-xl font-bold">{batch.milkVolumeL}L</div>
              </div>
              <div className="h-8 w-px bg-border" />
              <div className="text-right">
-               <div className="text-xs text-muted-foreground uppercase tracking-wider">Stage</div>
+               <div className="text-xs text-muted-foreground uppercase tracking-wider">Etapa</div>
                <div className="text-xl font-bold text-primary">{batch.currentStageId} <span className="text-muted-foreground text-sm font-normal">/ 20</span></div>
              </div>
           </div>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* LEFT: Main Action Area */}
           <div className="lg:col-span-2 space-y-6">
             
-            {/* Current Stage Card */}
             <motion.div 
               layoutId="stage-card"
               className="glass-card p-8 rounded-3xl border-l-4 border-l-primary relative overflow-hidden"
@@ -109,34 +125,25 @@ export default function BatchDetail() {
               </div>
 
               <div className="relative z-10">
-                <h2 className="text-sm font-medium text-primary uppercase tracking-widest mb-2">Current Step</h2>
+                <h2 className="text-sm font-medium text-primary uppercase tracking-widest mb-2">Etapa Atual</h2>
                 <h3 className="text-3xl font-bold mb-6 leading-tight">
-                  {/* Mock stage names based on ID - in real app comes from API */}
-                  {batch.currentStageId === 1 ? "Verify Milk Volume" :
-                   batch.currentStageId === 2 ? "Calculate Ingredients" :
-                   batch.currentStageId === 3 ? "Heat Milk" :
-                   batch.currentStageId === 4 ? "Add Ferments (LR & DX)" :
-                   batch.currentStageId === 13 ? "Measure Initial pH" :
-                   `Production Stage ${batch.currentStageId}`}
+                  {STAGE_NAMES[batch.currentStageId] || `Etapa ${batch.currentStageId}`}
                 </h3>
 
-                {/* Dynamic Content Based on Stage Type */}
                 <div className="bg-background/50 backdrop-blur rounded-xl p-6 border border-white/5 mb-8">
                   
                   {isTimerStage ? (
-                    // Timer View
                     <div className="space-y-4">
                       {batch.activeTimers.map((timer: any, i: number) => (
                         <TimerWidget 
                           key={i} 
                           durationMinutes={timer.duration} 
                           startTime={timer.startTime} 
-                          label="Fermentation Phase" 
+                          label="Fase de Fermentação" 
                         />
                       ))}
                     </div>
                   ) : isInputStage ? (
-                    // Input Form View
                     <form onSubmit={handleInputLog} className="max-w-md">
                        <label className="block text-sm font-medium mb-2">{inputLabel}</label>
                        <div className="flex gap-4">
@@ -146,97 +153,92 @@ export default function BatchDetail() {
                            type={inputType === 'ph' ? 'number' : 'time'}
                            step={inputType === 'ph' ? '0.1' : undefined}
                            className="text-lg h-12"
-                           placeholder="Enter value..."
+                           placeholder="Insira o valor..."
                            autoFocus
+                           data-testid="input-measurement"
                          />
-                         <Button type="submit" size="lg" disabled={isLogging}>
-                           Log & Next
+                         <Button type="submit" size="lg" disabled={isLogging} data-testid="button-log-next">
+                           Registrar e Avançar
                          </Button>
                        </div>
                     </form>
                   ) : (
-                    // Generic Instruction View
                     <div className="space-y-4 text-lg">
-                      <p>Follow the standard operating procedure for this step.</p>
+                      <p>Siga o procedimento padrão para esta etapa.</p>
                       {batch.calculatedInputs && <IngredientList inputs={batch.calculatedInputs as any} />}
                       
                       <div className="flex items-center gap-3 text-amber-400 bg-amber-400/10 p-4 rounded-lg mt-4 text-base border border-amber-400/20">
                         <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                        <p>Ensure all tools are sanitized before proceeding.</p>
+                        <p>Certifique-se de que todos os utensílios estão higienizados antes de prosseguir.</p>
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Primary Action Button */}
                 {!isInputStage && (
                   <Button 
                     size="lg" 
                     className="w-full h-16 text-lg font-bold premium-gradient shadow-lg"
                     onClick={handleAdvance}
-                    disabled={isAdvancing || (isTimerStage && !/* check timer done logic */ true)}
+                    disabled={isAdvancing || (isTimerStage && true)}
+                    data-testid="button-complete-step"
                   >
-                    {isAdvancing ? "Processing..." : "Mark Step Complete"} 
+                    {isAdvancing ? "Processando..." : "Marcar Etapa como Concluída"} 
                     <ArrowRight className="ml-2 w-5 h-5" />
                   </Button>
                 )}
               </div>
             </motion.div>
 
-            {/* Ingredients Summary (if applicable) */}
             {batch.currentStageId >= 2 && batch.calculatedInputs && (
                <div className="glass-card p-6 rounded-2xl">
                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                    <Scale className="w-5 h-5 text-primary" />
-                   Batch Recipe
+                   Receita do Lote
                  </h3>
                  <IngredientList inputs={batch.calculatedInputs as any} />
                </div>
             )}
           </div>
 
-          {/* RIGHT: Sidebar Info */}
           <div className="space-y-6">
             
-            {/* Measurements Log */}
             <div className="bg-card border border-border rounded-2xl p-6">
               <h3 className="font-bold mb-4 flex items-center gap-2">
                 <Thermometer className="w-5 h-5 text-primary" />
-                Measurement Log
+                Registro de Medições
               </h3>
               
               <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-                {/* Mock log data - in real app use batchLogs */}
                 <div className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
-                  <span className="text-muted-foreground">Started</span>
-                  <span className="font-mono">{new Date(batch.startedAt).toLocaleTimeString()}</span>
+                  <span className="text-muted-foreground">Iniciado</span>
+                  <span className="font-mono">{new Date(batch.startedAt).toLocaleTimeString('pt-BR')}</span>
                 </div>
                 {Object.entries(batch.measurements as Record<string, any> || {}).map(([key, val]) => (
                   <div key={key} className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
-                    <span className="capitalize text-muted-foreground">{key}</span>
-                    <span className="font-mono font-bold">{val}</span>
+                    <span className="capitalize text-muted-foreground">{key.replace(/_/g, ' ')}</span>
+                    <span className="font-mono font-bold">{typeof val === 'object' ? JSON.stringify(val) : val}</span>
                   </div>
                 ))}
                 {(!batch.measurements || Object.keys(batch.measurements as object).length === 0) && (
                    <div className="text-center text-muted-foreground py-4 text-sm italic">
-                     No measurements yet.
+                     Nenhuma medição registrada ainda.
                    </div>
                 )}
               </div>
             </div>
 
-            {/* Help Card */}
             <div className="bg-primary/5 border border-primary/20 rounded-2xl p-6">
-              <h3 className="font-bold mb-2 text-primary">Need Help?</h3>
+              <h3 className="font-bold mb-2 text-primary">Precisa de Ajuda?</h3>
               <p className="text-sm text-muted-foreground mb-4">
-                The Nete Assistant is active. Use the chat bubble for questions about recipe adjustments or timing.
+                O Assistente Nete está ativo. Use o botão de chat para perguntas sobre ajustes da receita ou tempos.
               </p>
             </div>
           </div>
         </div>
       </main>
 
-      <ChatAssistant context={`Batch #${batch.id}, Stage ${batch.currentStageId}`} />
+      <ChatAssistant context={`Lote #${batch.id}, Etapa ${batch.currentStageId}`} />
     </div>
   );
 }

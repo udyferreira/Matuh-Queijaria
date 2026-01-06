@@ -1,14 +1,14 @@
 import { Link, useLocation } from "wouter";
-import { ChefHat, Activity, History, Settings } from "lucide-react";
+import { ChefHat, Activity, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function Navbar() {
   const [location] = useLocation();
 
   const navItems = [
-    { href: "/", label: "Dashboard", icon: Activity },
-    { href: "/new", label: "New Batch", icon: ChefHat },
-    { href: "/alexa", label: "Integrations", icon: Settings },
+    { href: "/", label: "Painel", icon: Activity },
+    { href: "/new", label: "Novo Lote", icon: ChefHat },
+    { href: "/alexa", label: "Integrações", icon: Settings },
   ];
 
   return (

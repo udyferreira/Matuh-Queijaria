@@ -15,9 +15,9 @@ export default function AlexaIntegration() {
           <div className="w-20 h-20 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-400">
             <Mic className="w-10 h-10" />
           </div>
-          <h1 className="text-4xl font-display font-bold mb-4">Voice Control</h1>
+          <h1 className="text-4xl font-display font-bold mb-4">Controle por Voz</h1>
           <p className="text-xl text-muted-foreground">
-            Connect Alexa to control production hands-free.
+            Conecte a Alexa para controlar a produção com as mãos livres.
           </p>
         </div>
 
@@ -25,44 +25,44 @@ export default function AlexaIntegration() {
           <div className="glass-card p-8 rounded-2xl border border-white/10">
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
               <Wifi className="w-5 h-5 text-primary" />
-              Connection Details
+              Detalhes de Conexão
             </h2>
             
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium mb-2 text-muted-foreground">Webhook URL</label>
+                <label className="block text-sm font-medium mb-2 text-muted-foreground">URL do Webhook</label>
                 <div className="flex gap-2">
-                  <Input readOnly value={webhookUrl} className="font-mono bg-secondary/50" />
-                  <Button variant="outline" onClick={() => navigator.clipboard.writeText(webhookUrl)}>
-                    Copy
+                  <Input readOnly value={webhookUrl} className="font-mono bg-secondary/50" data-testid="input-webhook-url" />
+                  <Button variant="outline" onClick={() => navigator.clipboard.writeText(webhookUrl)} data-testid="button-copy-url">
+                    Copiar
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
-                  Paste this URL into your Alexa Skill configuration console.
+                  Cole esta URL no console de configuração da sua Alexa Skill.
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2 text-muted-foreground">Access Token</label>
+                <label className="block text-sm font-medium mb-2 text-muted-foreground">Token de Acesso</label>
                 <div className="flex gap-2">
                    <div className="relative flex-1">
                       <Input readOnly value="sk_production_88291..." type="password" className="font-mono bg-secondary/50 pr-10" />
                       <Key className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                    </div>
-                   <Button variant="outline">Regenerate</Button>
+                   <Button variant="outline">Regenerar</Button>
                 </div>
               </div>
             </div>
           </div>
 
           <div className="space-y-4">
-            <h3 className="font-bold text-lg">Supported Commands</h3>
+            <h3 className="font-bold text-lg">Comandos Suportados</h3>
             <div className="grid md:grid-cols-2 gap-4">
               {[
-                'Alexa, ask Nete status',
-                'Alexa, tell Nete I added the rennet',
-                'Alexa, ask Nete for the next step',
-                'Alexa, set a timer for 30 minutes'
+                'Alexa, pergunte ao Nete o status',
+                'Alexa, diga ao Nete que adicionei o coalho',
+                'Alexa, pergunte ao Nete qual é a próxima etapa',
+                'Alexa, defina um timer de 30 minutos'
               ].map((cmd, i) => (
                 <div key={i} className="bg-secondary/30 p-4 rounded-xl border border-white/5 flex items-center gap-3">
                   <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0">

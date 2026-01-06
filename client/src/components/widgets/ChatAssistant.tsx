@@ -19,8 +19,7 @@ export function ChatAssistant({ context }: { context?: string }) {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
     
-    // Prepend context if it's the first message or if context changed
-    const content = input; // In a real app, we'd inject system context here
+    const content = input;
     sendMessage(content);
     setInput("");
   };
@@ -35,15 +34,14 @@ export function ChatAssistant({ context }: { context?: string }) {
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             className="fixed bottom-24 right-6 w-96 h-[500px] bg-card border border-primary/20 rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden"
           >
-            {/* Header */}
             <div className="bg-primary/10 p-4 border-b border-primary/10 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 bg-primary rounded-md">
                   <Bot className="w-4 h-4 text-primary-foreground" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm">Nete Assistant</h3>
-                  <p className="text-xs text-muted-foreground">Cognitive Support</p>
+                  <h3 className="font-bold text-sm">Assistente Nete</h3>
+                  <p className="text-xs text-muted-foreground">Suporte Cognitivo</p>
                 </div>
               </div>
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsOpen(false)}>
@@ -51,12 +49,11 @@ export function ChatAssistant({ context }: { context?: string }) {
               </Button>
             </div>
 
-            {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {messages.length === 0 && (
                 <div className="text-center text-muted-foreground text-sm py-8 px-4">
-                  <p>Hello! I'm monitoring the production process.</p>
-                  <p className="mt-2">Ask me about calculations, timing, or recipe steps.</p>
+                  <p>Olá! Estou monitorando o processo de produção.</p>
+                  <p className="mt-2">Pergunte sobre cálculos, tempos ou etapas da receita.</p>
                 </div>
               )}
               {messages.map((msg, i) => (
@@ -78,17 +75,17 @@ export function ChatAssistant({ context }: { context?: string }) {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
             <form onSubmit={handleSubmit} className="p-4 border-t border-border bg-card">
               <div className="flex gap-2">
                 <Input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask a question..."
+                  placeholder="Faça uma pergunta..."
                   className="bg-secondary/50 border-transparent focus:border-primary/50"
                   disabled={isStreaming}
+                  data-testid="input-chat-message"
                 />
-                <Button type="submit" size="icon" disabled={!input.trim() || isStreaming} className={isStreaming ? "animate-pulse" : ""}>
+                <Button type="submit" size="icon" disabled={!input.trim() || isStreaming} className={isStreaming ? "animate-pulse" : ""} data-testid="button-send-message">
                   <Send className="w-4 h-4" />
                 </Button>
               </div>
@@ -104,6 +101,7 @@ export function ChatAssistant({ context }: { context?: string }) {
         className={`fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-xl flex items-center justify-center transition-colors z-50 ${
           isOpen ? "bg-secondary text-foreground" : "bg-primary text-primary-foreground"
         }`}
+        data-testid="button-toggle-chat"
       >
         {isOpen ? <X className="w-6 h-6" /> : <MessageCircle className="w-6 h-6" />}
       </motion.button>
