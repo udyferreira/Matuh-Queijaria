@@ -1,15 +1,17 @@
 import { useState } from "react";
-import { useRoute } from "wouter";
-import { ArrowRight, CheckCircle, AlertCircle, Thermometer, Clock, Scale } from "lucide-react";
+import { useRoute, useLocation } from "wouter";
+import { ArrowRight, CheckCircle, AlertCircle, Thermometer, Scale, Pause, Play, XCircle, Flag } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useBatch, useAdvanceStage, useLogMeasurement } from "@/hooks/use-batches";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useBatch, useAdvanceStage, useLogMeasurement, usePauseBatch, useResumeBatch, useCompleteBatch, useCancelBatch } from "@/hooks/use-batches";
 import { TimerWidget } from "@/components/widgets/TimerWidget";
 import { IngredientList } from "@/components/widgets/IngredientList";
 import { ChatAssistant } from "@/components/widgets/ChatAssistant";
 import { useToast } from "@/hooks/use-toast";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 const STAGE_NAMES: Record<number, string> = {
   1: "Separar o leite",
@@ -48,15 +50,29 @@ const TIMER_LABELS: Record<number, string> = {
   19: "Secagem na Câmara 2",
 };
 
+const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  active: { label: "Em Produção", variant: "default" },
+  paused: { label: "Pausado", variant: "secondary" },
+  completed: { label: "Concluído", variant: "outline" },
+  cancelled: { label: "Cancelado", variant: "destructive" },
+};
+
 export default function BatchDetail() {
   const [, params] = useRoute("/batch/:id");
+  const [, navigate] = useLocation();
   const id = parseInt(params?.id || "0");
   const { data: batch, isLoading } = useBatch(id);
   const { mutate: advance, isPending: isAdvancing } = useAdvanceStage();
   const { mutate: logInput, isPending: isLogging } = useLogMeasurement();
+  const { mutate: pauseBatch, isPending: isPausing } = usePauseBatch();
+  const { mutate: resumeBatch, isPending: isResuming } = useResumeBatch();
+  const { mutate: completeBatch, isPending: isCompleting } = useCompleteBatch();
+  const { mutate: cancelBatch, isPending: isCancelling } = useCancelBatch();
   const { toast } = useToast();
 
   const [inputVal, setInputVal] = useState("");
+  const [cancelReason, setCancelReason] = useState("");
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   if (isLoading || !batch) {
     return (
@@ -102,6 +118,49 @@ export default function BatchDetail() {
     });
   };
 
+  const handlePause = () => {
+    pauseBatch({ id }, {
+      onSuccess: () => toast({ title: "Pausado", description: "Produção pausada. Retome quando estiver pronto." }),
+      onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
+    });
+  };
+
+  const handleResume = () => {
+    resumeBatch({ id }, {
+      onSuccess: () => toast({ title: "Retomado", description: "Produção retomada com sucesso." }),
+      onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
+    });
+  };
+
+  const handleComplete = () => {
+    completeBatch({ id }, {
+      onSuccess: () => {
+        toast({ title: "Concluído", description: "Lote marcado como concluído." });
+        navigate("/");
+      },
+      onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
+    });
+  };
+
+  const handleCancel = () => {
+    if (!cancelReason.trim()) {
+      toast({ title: "Erro", description: "Informe o motivo do cancelamento.", variant: "destructive" });
+      return;
+    }
+    cancelBatch({ id, reason: cancelReason }, {
+      onSuccess: () => {
+        toast({ title: "Cancelado", description: "Lote cancelado." });
+        setShowCancelDialog(false);
+        navigate("/");
+      },
+      onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
+    });
+  };
+
+  const isFinished = batch.status === 'completed' || batch.status === 'cancelled';
+  const isPaused = batch.status === 'paused';
+  const statusInfo = STATUS_LABELS[batch.status] || STATUS_LABELS.active;
+
   return (
     <div className="min-h-screen bg-background pb-24">
       <Navbar />
@@ -109,28 +168,104 @@ export default function BatchDetail() {
       <main className="container mx-auto px-4 py-8">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div>
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-3 mb-2 flex-wrap">
               <span className="text-sm font-mono text-primary bg-primary/10 px-2 py-1 rounded">
                 LOTE #{batch.id.toString().padStart(4, '0')}
               </span>
+              <Badge variant={statusInfo.variant} data-testid="badge-batch-status">
+                {statusInfo.label}
+              </Badge>
               <span className="text-sm text-muted-foreground">
                 Iniciado em {new Date(batch.startedAt).toLocaleDateString('pt-BR')}
               </span>
             </div>
             <h1 className="text-3xl font-display font-bold">Produção Matuh Queijaria</h1>
           </div>
-          <div className="bg-card px-6 py-3 rounded-xl border border-border shadow-lg flex items-center gap-4">
-             <div className="text-right">
-               <div className="text-xs text-muted-foreground uppercase tracking-wider">Volume Total</div>
-               <div className="text-xl font-bold">{batch.milkVolumeL}L</div>
-             </div>
-             <div className="h-8 w-px bg-border" />
-             <div className="text-right">
-               <div className="text-xs text-muted-foreground uppercase tracking-wider">Etapa</div>
-               <div className="text-xl font-bold text-primary">{batch.currentStageId} <span className="text-muted-foreground text-sm font-normal">/ 20</span></div>
-             </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="bg-card px-6 py-3 rounded-xl border border-border shadow-lg flex items-center gap-4">
+               <div className="text-right">
+                 <div className="text-xs text-muted-foreground uppercase tracking-wider">Volume Total</div>
+                 <div className="text-xl font-bold">{batch.milkVolumeL}L</div>
+               </div>
+               <div className="h-8 w-px bg-border" />
+               <div className="text-right">
+                 <div className="text-xs text-muted-foreground uppercase tracking-wider">Etapa</div>
+                 <div className="text-xl font-bold text-primary">{batch.currentStageId} <span className="text-muted-foreground text-sm font-normal">/ 20</span></div>
+               </div>
+            </div>
+            
+            {!isFinished && (
+              <div className="flex items-center gap-2">
+                {isPaused ? (
+                  <Button onClick={handleResume} disabled={isResuming} variant="outline" data-testid="button-resume">
+                    <Play className="w-4 h-4 mr-2" />
+                    {isResuming ? "Retomando..." : "Retomar"}
+                  </Button>
+                ) : (
+                  <Button onClick={handlePause} disabled={isPausing} variant="outline" data-testid="button-pause">
+                    <Pause className="w-4 h-4 mr-2" />
+                    {isPausing ? "Pausando..." : "Pausar"}
+                  </Button>
+                )}
+                
+                <Button onClick={handleComplete} disabled={isCompleting} variant="outline" data-testid="button-complete">
+                  <Flag className="w-4 h-4 mr-2" />
+                  {isCompleting ? "..." : "Concluir"}
+                </Button>
+                
+                <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+                  <DialogTrigger asChild>
+                    <Button variant="destructive" size="icon" data-testid="button-cancel-open">
+                      <XCircle className="w-4 h-4" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Cancelar Lote</DialogTitle>
+                      <DialogDescription>
+                        Esta ação não pode ser desfeita. Por favor, informe o motivo do cancelamento.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <Input 
+                      placeholder="Motivo do cancelamento..." 
+                      value={cancelReason}
+                      onChange={(e) => setCancelReason(e.target.value)}
+                      data-testid="input-cancel-reason"
+                    />
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowCancelDialog(false)}>
+                        Voltar
+                      </Button>
+                      <Button variant="destructive" onClick={handleCancel} disabled={isCancelling} data-testid="button-cancel-confirm">
+                        {isCancelling ? "Cancelando..." : "Confirmar Cancelamento"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            )}
           </div>
         </div>
+        
+        {isPaused && (
+          <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 p-4 rounded-xl mb-6 flex items-center gap-3">
+            <Pause className="w-5 h-5 flex-shrink-0" />
+            <div>
+              <p className="font-medium">Produção Pausada</p>
+              {batch.pauseReason && <p className="text-sm opacity-80">Motivo: {batch.pauseReason}</p>}
+            </div>
+          </div>
+        )}
+        
+        {isFinished && (
+          <div className={`p-4 rounded-xl mb-6 flex items-center gap-3 ${batch.status === 'completed' ? 'bg-green-500/10 border border-green-500/30 text-green-400' : 'bg-red-500/10 border border-red-500/30 text-red-400'}`}>
+            {batch.status === 'completed' ? <CheckCircle className="w-5 h-5 flex-shrink-0" /> : <XCircle className="w-5 h-5 flex-shrink-0" />}
+            <div>
+              <p className="font-medium">{batch.status === 'completed' ? 'Lote Concluído' : 'Lote Cancelado'}</p>
+              {batch.cancelReason && <p className="text-sm opacity-80">Motivo: {batch.cancelReason}</p>}
+            </div>
+          </div>
+        )}
 
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
@@ -201,7 +336,7 @@ export default function BatchDetail() {
                   ) : (
                     <div className="space-y-4 text-lg">
                       <p>Siga o procedimento padrão para esta etapa.</p>
-                      {batch.calculatedInputs && <IngredientList inputs={batch.calculatedInputs as any} />}
+                      {batch.calculatedInputs && <IngredientList inputs={batch.calculatedInputs as Record<string, number>} />}
                       
                       <div className="flex items-center gap-3 text-amber-400 bg-amber-400/10 p-4 rounded-lg mt-4 text-base border border-amber-400/20">
                         <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -232,7 +367,7 @@ export default function BatchDetail() {
                    <Scale className="w-5 h-5 text-primary" />
                    Receita do Lote
                  </h3>
-                 <IngredientList inputs={batch.calculatedInputs as any} />
+                 <IngredientList inputs={batch.calculatedInputs as Record<string, number>} />
                </div>
             )}
           </div>

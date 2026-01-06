@@ -55,22 +55,94 @@ export default function AlexaIntegration() {
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-6">
             <h3 className="font-bold text-lg">Comandos Suportados</h3>
-            <div className="grid md:grid-cols-2 gap-4">
-              {[
-                'Alexa, pergunte ao Nete o status',
-                'Alexa, diga ao Nete que adicionei o coalho',
-                'Alexa, pergunte ao Nete qual é a próxima etapa',
-                'Alexa, defina um timer de 30 minutos'
-              ].map((cmd, i) => (
-                <div key={i} className="bg-secondary/30 p-4 rounded-xl border border-white/5 flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0">
-                    <Check className="w-3 h-3 text-blue-400" />
-                  </div>
-                  <span className="font-medium italic text-muted-foreground">"{cmd}"</span>
+            
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-sm font-medium text-primary mb-3">Iniciar e Gerenciar Lote</h4>
+                <div className="grid md:grid-cols-2 gap-3">
+                  {[
+                    { cmd: 'Alexa, diga ao Nete para iniciar lote com 50 litros', desc: 'Inicia novo lote' },
+                    { cmd: 'Alexa, pergunte ao Nete o status', desc: 'Status do lote ativo' },
+                    { cmd: 'Alexa, diga ao Nete para pausar', desc: 'Pausa a produção' },
+                    { cmd: 'Alexa, diga ao Nete para retomar', desc: 'Retoma produção pausada' },
+                  ].map((item, i) => (
+                    <div key={i} className="bg-secondary/30 p-3 rounded-xl border border-white/5">
+                      <div className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="font-medium italic text-muted-foreground text-sm">"{item.cmd}"</p>
+                          <p className="text-xs text-muted-foreground/70 mt-1">{item.desc}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+              
+              <div>
+                <h4 className="text-sm font-medium text-primary mb-3">Navegação de Etapas</h4>
+                <div className="grid md:grid-cols-2 gap-3">
+                  {[
+                    { cmd: 'Alexa, pergunte ao Nete qual é a próxima etapa', desc: 'Ouvir instruções da etapa atual' },
+                    { cmd: 'Alexa, diga ao Nete para avançar', desc: 'Avança para próxima etapa' },
+                    { cmd: 'Alexa, pergunte ao Nete para repetir', desc: 'Repete instruções da etapa' },
+                    { cmd: 'Alexa, pergunte ao Nete quanto tempo falta', desc: 'Tempo restante do timer' },
+                  ].map((item, i) => (
+                    <div key={i} className="bg-secondary/30 p-3 rounded-xl border border-white/5">
+                      <div className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="font-medium italic text-muted-foreground text-sm">"{item.cmd}"</p>
+                          <p className="text-xs text-muted-foreground/70 mt-1">{item.desc}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <div>
+                <h4 className="text-sm font-medium text-primary mb-3">Registrar Medições</h4>
+                <div className="grid md:grid-cols-2 gap-3">
+                  {[
+                    { cmd: 'Alexa, diga ao Nete que o pH é 5.2', desc: 'Registra valor de pH' },
+                    { cmd: 'Alexa, diga ao Nete que floculou às 10:30', desc: 'Registra horário de floculação' },
+                    { cmd: 'Alexa, diga ao Nete que cortou às 11:15', desc: 'Registra horário de corte' },
+                    { cmd: 'Alexa, diga ao Nete que prensou às 14:00', desc: 'Registra início da prensa' },
+                  ].map((item, i) => (
+                    <div key={i} className="bg-secondary/30 p-3 rounded-xl border border-white/5">
+                      <div className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="font-medium italic text-muted-foreground text-sm">"{item.cmd}"</p>
+                          <p className="text-xs text-muted-foreground/70 mt-1">{item.desc}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <div>
+                <h4 className="text-sm font-medium text-primary mb-3">Ajuda</h4>
+                <div className="grid md:grid-cols-2 gap-3">
+                  {[
+                    { cmd: 'Alexa, pergunte ao Nete ajuda', desc: 'Lista comandos disponíveis' },
+                  ].map((item, i) => (
+                    <div key={i} className="bg-secondary/30 p-3 rounded-xl border border-white/5">
+                      <div className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="font-medium italic text-muted-foreground text-sm">"{item.cmd}"</p>
+                          <p className="text-xs text-muted-foreground/70 mt-1">{item.desc}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>

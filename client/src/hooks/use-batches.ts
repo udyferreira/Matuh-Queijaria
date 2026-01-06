@@ -125,3 +125,89 @@ export function useLogMeasurement() {
     },
   });
 }
+
+export function usePauseBatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, reason }: { id: number; reason?: string }) => {
+      const res = await fetch(`/api/batches/${id}/pause`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to pause batch");
+      }
+      return res.json();
+    },
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: [api.batches.get.path, id] });
+      queryClient.invalidateQueries({ queryKey: [api.batches.list.path] });
+    },
+  });
+}
+
+export function useResumeBatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      const res = await fetch(`/api/batches/${id}/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to resume batch");
+      }
+      return res.json();
+    },
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: [api.batches.get.path, id] });
+      queryClient.invalidateQueries({ queryKey: [api.batches.list.path] });
+    },
+  });
+}
+
+export function useCompleteBatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      const res = await fetch(`/api/batches/${id}/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to complete batch");
+      }
+      return res.json();
+    },
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: [api.batches.get.path, id] });
+      queryClient.invalidateQueries({ queryKey: [api.batches.list.path] });
+    },
+  });
+}
+
+export function useCancelBatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, reason }: { id: number; reason: string }) => {
+      const res = await fetch(`/api/batches/${id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to cancel batch");
+      }
+      return res.json();
+    },
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: [api.batches.get.path, id] });
+      queryClient.invalidateQueries({ queryKey: [api.batches.list.path] });
+    },
+  });
+}
