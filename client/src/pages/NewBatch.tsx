@@ -1,15 +1,19 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, Beaker, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Beaker, AlertTriangle, Lock } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useStartBatch } from "@/hooks/use-batches";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
+import { getAllCheeseTypes, type CheeseType } from "@shared/schema";
+
+const cheeseTypes = getAllCheeseTypes();
 
 export default function NewBatch() {
   const [milkVolume, setMilkVolume] = useState<string>("50");
+  const [selectedCheese, setSelectedCheese] = useState<string>("QUEIJO_NETE");
   const { mutate, isPending } = useStartBatch();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -27,7 +31,7 @@ export default function NewBatch() {
       return;
     }
 
-    mutate({ milkVolumeL: volume }, {
+    mutate({ milkVolumeL: volume, recipeId: selectedCheese }, {
       onSuccess: (batch) => {
         toast({ title: "Lote Criado", description: `Lote #${batch.id} iniciado com sucesso.` });
         setLocation(`/batch/${batch.id}`);
@@ -64,6 +68,40 @@ export default function NewBatch() {
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-8">
+              <div className="space-y-4">
+                <label className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                  Tipo de Queijo
+                </label>
+                <div className="grid grid-cols-3 gap-3">
+                  {cheeseTypes.map((cheese) => (
+                    <button
+                      key={cheese.id}
+                      type="button"
+                      disabled={!cheese.available}
+                      onClick={() => cheese.available && setSelectedCheese(cheese.id)}
+                      className={`relative p-4 rounded-xl border-2 transition-all text-left ${
+                        selectedCheese === cheese.id
+                          ? "border-primary bg-primary/10"
+                          : cheese.available
+                          ? "border-border hover:border-primary/50"
+                          : "border-border/50 opacity-50 cursor-not-allowed"
+                      }`}
+                      data-testid={`button-cheese-${cheese.id}`}
+                    >
+                      {!cheese.available && (
+                        <div className="absolute top-2 right-2">
+                          <Lock className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="font-bold text-lg">{cheese.name}</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {cheese.available ? cheese.description : "Em breve"}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="space-y-4">
                 <label className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
                   Volume de Leite (Litros)

@@ -12,6 +12,7 @@ import { IngredientList } from "@/components/widgets/IngredientList";
 import { ChatAssistant } from "@/components/widgets/ChatAssistant";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
+import { getCheeseTypeName } from "@shared/schema";
 
 const STAGE_NAMES: Record<number, string> = {
   1: "Separar o leite",
@@ -196,7 +197,7 @@ export default function BatchDetail() {
                 Iniciado em {new Date(batch.startedAt).toLocaleDateString('pt-BR')}
               </span>
             </div>
-            <h1 className="text-3xl font-display font-bold">Produção Matuh Queijaria</h1>
+            <h1 className="text-3xl font-display font-bold">Produção {getCheeseTypeName(batch.recipeId)}</h1>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             <div className="bg-card px-6 py-3 rounded-xl border border-border shadow-lg flex items-center gap-4">

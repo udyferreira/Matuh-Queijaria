@@ -46,6 +46,7 @@ export const api = {
       path: '/api/batches',
       input: z.object({
         milkVolumeL: z.number().min(10).max(200),
+        recipeId: z.string().optional().default("QUEIJO_NETE"),
       }),
       responses: {
         201: z.custom<typeof productionBatches.$inferSelect>(),

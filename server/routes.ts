@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
+import { CHEESE_TYPES, getCheeseTypeName } from "@shared/schema";
 import { recipeManager } from "./recipe";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
@@ -40,7 +41,16 @@ export async function registerRoutes(
 
   app.post(api.batches.start.path, async (req, res) => {
     try {
-      const { milkVolumeL } = api.batches.start.input.parse(req.body);
+      const { milkVolumeL, recipeId } = api.batches.start.input.parse(req.body);
+      
+      // Validate cheese type is available
+      const cheeseType = CHEESE_TYPES[recipeId as keyof typeof CHEESE_TYPES];
+      if (!cheeseType) {
+        return res.status(400).json({ message: `Tipo de queijo inválido: ${recipeId}` });
+      }
+      if (!cheeseType.available) {
+        return res.status(400).json({ message: `O queijo ${cheeseType.name} ainda não está disponível. Apenas Nete está disponível no momento.` });
+      }
       
       // Calculate inputs immediately
       const inputs = recipeManager.calculateInputs(milkVolumeL);
@@ -50,7 +60,7 @@ export async function registerRoutes(
       // 2 - Calcular proporções (feito automaticamente)
       // Inicia na etapa 3 - Aquecer o leite
       const batch = await storage.createBatch({
-        recipeId: "QUEIJO_NETE",
+        recipeId: recipeId,
         currentStageId: 3, // Start at stage 3 (heating milk)
         milkVolumeL: milkVolumeL.toString(),
         calculatedInputs: inputs,
@@ -560,9 +570,28 @@ export async function registerRoutes(
       switch (intent) {
         case "StartBatchIntent": {
           const milkVolume = slots?.milkVolumeL || 50;
+          
+          // Map spoken cheese name to recipe ID using CHEESE_TYPES
+          const spokenCheese = (slots?.cheeseName || "nete").toLowerCase().trim();
+          
+          // Find matching cheese type from CHEESE_TYPES
+          const matchedCheese = Object.values(CHEESE_TYPES).find(c => 
+            c.name.toLowerCase() === spokenCheese || 
+            c.id.toLowerCase().includes(spokenCheese)
+          );
+          
+          // Default to Nete if no match or unrecognized
+          const cheeseType = matchedCheese || CHEESE_TYPES.QUEIJO_NETE;
+          
+          // Check availability
+          if (!cheeseType.available) {
+            speech = `O queijo ${cheeseType.name} ainda não está disponível. Apenas o queijo Nete está disponível no momento. Diga 'iniciar lote de Nete com X litros'.`;
+            break;
+          }
+          
           const inputs = recipeManager.calculateInputs(milkVolume);
           const newBatch = await storage.createBatch({
-            recipeId: "QUEIJO_NETE",
+            recipeId: cheeseType.id,
             currentStageId: 3, // Inicia na etapa 3 (aquecer leite)
             milkVolumeL: milkVolume.toString(),
             calculatedInputs: inputs,
@@ -574,7 +603,7 @@ export async function registerRoutes(
             ]
           });
           // Responde com as proporções calculadas
-          speech = `Lote iniciado com ${milkVolume} litros de leite. Para esta produção você vai precisar de: ${inputs.FERMENT_LR} mililitros de fermento LR, ${inputs.FERMENT_DX} mililitros de fermento DX, ${inputs.FERMENT_KL} mililitros de fermento KL, e ${inputs.RENNET} mililitros de coalho. Aqueça o leite a 32 graus para começar.`;
+          speech = `Lote de ${cheeseType.name} iniciado com ${milkVolume} litros de leite. Para esta produção você vai precisar de: ${inputs.FERMENT_LR} mililitros de fermento LR, ${inputs.FERMENT_DX} mililitros de fermento DX, ${inputs.FERMENT_KL} mililitros de fermento KL, e ${inputs.RENNET} mililitros de coalho. Aqueça o leite a 32 graus para começar.`;
           break;
         }
 
