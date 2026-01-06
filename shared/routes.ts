@@ -99,6 +99,48 @@ export const api = {
             }),
             404: errorSchemas.notFound
         }
+    },
+    pause: {
+      method: 'POST' as const,
+      path: '/api/batches/:id/pause',
+      input: z.object({
+        reason: z.string().optional(),
+      }),
+      responses: {
+        200: z.custom<typeof productionBatches.$inferSelect>(),
+        400: errorSchemas.businessRule,
+        404: errorSchemas.notFound,
+      },
+    },
+    resume: {
+      method: 'POST' as const,
+      path: '/api/batches/:id/resume',
+      responses: {
+        200: z.custom<typeof productionBatches.$inferSelect>(),
+        400: errorSchemas.businessRule,
+        404: errorSchemas.notFound,
+      },
+    },
+    complete: {
+      method: 'POST' as const,
+      path: '/api/batches/:id/complete',
+      responses: {
+        200: z.custom<typeof productionBatches.$inferSelect>(),
+        400: errorSchemas.businessRule,
+        404: errorSchemas.notFound,
+      },
+    },
+    cancel: {
+      method: 'POST' as const,
+      path: '/api/batches/:id/cancel',
+      input: z.object({
+        reason: z.string(),
+      }),
+      responses: {
+        200: z.custom<typeof productionBatches.$inferSelect>(),
+        400: errorSchemas.businessRule,
+        404: errorSchemas.notFound,
+      },
     }
   },
   // Alexa Integration Webhook

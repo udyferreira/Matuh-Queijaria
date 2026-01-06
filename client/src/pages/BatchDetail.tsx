@@ -72,7 +72,9 @@ export default function BatchDetail() {
 
   const [inputVal, setInputVal] = useState("");
   const [cancelReason, setCancelReason] = useState("");
+  const [pauseReason, setPauseReason] = useState("");
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [showPauseDialog, setShowPauseDialog] = useState(false);
 
   if (isLoading || !batch) {
     return (
@@ -119,8 +121,12 @@ export default function BatchDetail() {
   };
 
   const handlePause = () => {
-    pauseBatch({ id }, {
-      onSuccess: () => toast({ title: "Pausado", description: "Produção pausada. Retome quando estiver pronto." }),
+    pauseBatch({ id, reason: pauseReason || undefined }, {
+      onSuccess: () => {
+        toast({ title: "Pausado", description: "Produção pausada. Retome quando estiver pronto." });
+        setShowPauseDialog(false);
+        setPauseReason("");
+      },
       onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
     });
   };
@@ -151,10 +157,21 @@ export default function BatchDetail() {
       onSuccess: () => {
         toast({ title: "Cancelado", description: "Lote cancelado." });
         setShowCancelDialog(false);
+        setCancelReason("");
         navigate("/");
       },
       onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
     });
+  };
+  
+  const handleCloseCancelDialog = () => {
+    setShowCancelDialog(false);
+    setCancelReason("");
+  };
+  
+  const handleClosePauseDialog = () => {
+    setShowPauseDialog(false);
+    setPauseReason("");
   };
 
   const isFinished = batch.status === 'completed' || batch.status === 'cancelled';
@@ -202,10 +219,36 @@ export default function BatchDetail() {
                     {isResuming ? "Retomando..." : "Retomar"}
                   </Button>
                 ) : (
-                  <Button onClick={handlePause} disabled={isPausing} variant="outline" data-testid="button-pause">
-                    <Pause className="w-4 h-4 mr-2" />
-                    {isPausing ? "Pausando..." : "Pausar"}
-                  </Button>
+                  <Dialog open={showPauseDialog} onOpenChange={(open) => !open && handleClosePauseDialog()}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" data-testid="button-pause">
+                        <Pause className="w-4 h-4 mr-2" />
+                        Pausar
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Pausar Produção</DialogTitle>
+                        <DialogDescription>
+                          Você pode informar um motivo para a pausa (opcional).
+                        </DialogDescription>
+                      </DialogHeader>
+                      <Input 
+                        placeholder="Motivo da pausa (opcional)..." 
+                        value={pauseReason}
+                        onChange={(e) => setPauseReason(e.target.value)}
+                        data-testid="input-pause-reason"
+                      />
+                      <DialogFooter>
+                        <Button variant="outline" onClick={handleClosePauseDialog}>
+                          Voltar
+                        </Button>
+                        <Button onClick={handlePause} disabled={isPausing} data-testid="button-pause-confirm">
+                          {isPausing ? "Pausando..." : "Confirmar Pausa"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 )}
                 
                 <Button onClick={handleComplete} disabled={isCompleting} variant="outline" data-testid="button-complete">
@@ -213,7 +256,7 @@ export default function BatchDetail() {
                   {isCompleting ? "..." : "Concluir"}
                 </Button>
                 
-                <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+                <Dialog open={showCancelDialog} onOpenChange={(open) => !open && handleCloseCancelDialog()}>
                   <DialogTrigger asChild>
                     <Button variant="destructive" size="icon" data-testid="button-cancel-open">
                       <XCircle className="w-4 h-4" />
@@ -233,7 +276,7 @@ export default function BatchDetail() {
                       data-testid="input-cancel-reason"
                     />
                     <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowCancelDialog(false)}>
+                      <Button variant="outline" onClick={handleCloseCancelDialog}>
                         Voltar
                       </Button>
                       <Button variant="destructive" onClick={handleCancel} disabled={isCancelling} data-testid="button-cancel-confirm">

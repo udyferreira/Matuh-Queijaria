@@ -130,7 +130,8 @@ export function usePauseBatch() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, reason }: { id: number; reason?: string }) => {
-      const res = await fetch(`/api/batches/${id}/pause`, {
+      const url = buildUrl(api.batches.pause.path, { id });
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason }),
@@ -139,7 +140,7 @@ export function usePauseBatch() {
         const error = await res.json();
         throw new Error(error.message || "Failed to pause batch");
       }
-      return res.json();
+      return api.batches.pause.responses[200].parse(await res.json());
     },
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: [api.batches.get.path, id] });
@@ -152,7 +153,8 @@ export function useResumeBatch() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id }: { id: number }) => {
-      const res = await fetch(`/api/batches/${id}/resume`, {
+      const url = buildUrl(api.batches.resume.path, { id });
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -160,7 +162,7 @@ export function useResumeBatch() {
         const error = await res.json();
         throw new Error(error.message || "Failed to resume batch");
       }
-      return res.json();
+      return api.batches.resume.responses[200].parse(await res.json());
     },
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: [api.batches.get.path, id] });
@@ -173,7 +175,8 @@ export function useCompleteBatch() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id }: { id: number }) => {
-      const res = await fetch(`/api/batches/${id}/complete`, {
+      const url = buildUrl(api.batches.complete.path, { id });
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -181,7 +184,7 @@ export function useCompleteBatch() {
         const error = await res.json();
         throw new Error(error.message || "Failed to complete batch");
       }
-      return res.json();
+      return api.batches.complete.responses[200].parse(await res.json());
     },
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: [api.batches.get.path, id] });
@@ -194,7 +197,8 @@ export function useCancelBatch() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, reason }: { id: number; reason: string }) => {
-      const res = await fetch(`/api/batches/${id}/cancel`, {
+      const url = buildUrl(api.batches.cancel.path, { id });
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason }),
@@ -203,7 +207,7 @@ export function useCancelBatch() {
         const error = await res.json();
         throw new Error(error.message || "Failed to cancel batch");
       }
-      return res.json();
+      return api.batches.cancel.responses[200].parse(await res.json());
     },
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: [api.batches.get.path, id] });
