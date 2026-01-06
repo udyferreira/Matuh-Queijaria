@@ -55,11 +55,7 @@ export const logRelations = relations(batchLogs, ({ one }) => ({
 export const insertBatchSchema = createInsertSchema(productionBatches).omit({ 
   id: true, 
   startedAt: true, 
-  updatedAt: true,
-  calculatedInputs: true,
-  measurements: true,
-  activeTimers: true,
-  history: true
+  updatedAt: true
 });
 
 export const insertLogSchema = createInsertSchema(batchLogs).omit({ 

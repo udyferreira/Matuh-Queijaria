@@ -25,14 +25,64 @@ servers:
     description: API Principal
 
 tags:
+  - name: Recipes
+    description: Metadados e detalhes das receitas disponíveis
   - name: Batches
     description: Operações de lotes de produção
+  - name: Timers
+    description: Gerenciamento de timers e reminders
   - name: Conversations
     description: Chat com assistente de IA
   - name: Integrations
     description: Integrações externas (Alexa, geração de imagens)
 
 paths:
+  /recipes:
+    get:
+      tags:
+        - Recipes
+      summary: Listar receitas disponíveis
+      description: Retorna lista de todas as receitas cadastradas no sistema
+      operationId: listRecipes
+      responses:
+        '200':
+          description: Lista de receitas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RecipeSummary'
+              example:
+                - recipeId: "QUEIJO_NETE"
+                  name: "Queijo Nete"
+                  schemaVersion: "1.0"
+                  stageCount: 20
+
+  /recipes/{recipeId}:
+    get:
+      tags:
+        - Recipes
+      summary: Detalhes da receita
+      description: Retorna informações detalhadas da receita incluindo todas as etapas e inputs
+      operationId: getRecipe
+      parameters:
+        - name: recipeId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "QUEIJO_NETE"
+      responses:
+        '200':
+          description: Detalhes completos da receita
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecipeDetail'
+        '404':
+          description: Receita não encontrada
+
   /batches:
     get:
       tags:
@@ -289,6 +339,262 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /batches/{id}/input/canonical:
+    post:
+      tags:
+        - Batches
+      summary: Registrar input canônico
+      description: |
+        Registra entrada usando keys canônicos alinhados com o YAML da receita.
+        Valida se o key é esperado para a etapa atual.
+        
+        **Keys canônicos por etapa:**
+        - Etapa 1: `milk_volume_l`
+        - Etapa 6: `flocculation_time`
+        - Etapa 7: `cut_point_time`
+        - Etapa 13, 15: `ph_value`
+        - Etapa 14: `press_start_time`
+      operationId: logCanonicalInput
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - key
+                - value
+              properties:
+                key:
+                  type: string
+                  description: Key canônico do input (ex: ph_value, flocculation_time)
+                value:
+                  oneOf:
+                    - type: number
+                    - type: string
+                  description: Valor do input
+                unit:
+                  type: string
+                  description: Unidade do valor
+                notes:
+                  type: string
+            example:
+              key: "ph_value"
+              value: 5.1
+              unit: "pH"
+              notes: "Medido após viragem"
+      responses:
+        '200':
+          description: Input registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Batch'
+        '400':
+          description: Key não esperado para esta etapa
+        '404':
+          description: Lote não encontrado
+
+  /batches/{id}/stage:
+    get:
+      tags:
+        - Batches
+      summary: Detalhes da etapa atual
+      description: Retorna informações detalhadas da etapa atual do lote
+      operationId: getBatchStage
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Detalhes da etapa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StageDetail'
+        '404':
+          description: Lote não encontrado
+
+  /batches/{id}/pause:
+    post:
+      tags:
+        - Batches
+      summary: Pausar lote
+      description: Pausa a produção do lote (para emergências ou intervalos)
+      operationId: pauseBatch
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Motivo da pausa
+            example:
+              reason: "Intervalo para almoço"
+      responses:
+        '200':
+          description: Lote pausado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Batch'
+        '400':
+          description: Lote não está ativo
+        '404':
+          description: Lote não encontrado
+
+  /batches/{id}/resume:
+    post:
+      tags:
+        - Batches
+      summary: Retomar lote
+      description: Retoma um lote que estava pausado
+      operationId: resumeBatch
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Lote retomado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Batch'
+        '400':
+          description: Lote não está pausado
+        '404':
+          description: Lote não encontrado
+
+  /batches/{id}/complete:
+    post:
+      tags:
+        - Batches
+      summary: Marcar como concluído
+      description: Marca o lote como concluído manualmente (bypass das etapas restantes)
+      operationId: completeBatch
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Lote concluído
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Batch'
+        '400':
+          description: Lote já está concluído ou cancelado
+        '404':
+          description: Lote não encontrado
+
+  /batches/{id}/cancel:
+    post:
+      tags:
+        - Batches
+      summary: Cancelar lote
+      description: Cancela o lote de produção (requer motivo)
+      operationId: cancelBatch
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  description: Motivo do cancelamento
+            example:
+              reason: "Contaminação detectada"
+      responses:
+        '200':
+          description: Lote cancelado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Batch'
+        '400':
+          description: Motivo não informado ou lote já finalizado
+        '404':
+          description: Lote não encontrado
+
+  /batches/{id}/timers:
+    get:
+      tags:
+        - Timers
+      summary: Listar timers ativos
+      description: Retorna todos os timers ativos do lote com tempo restante
+      operationId: getBatchTimers
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Lista de timers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Timer'
+        '404':
+          description: Lote não encontrado
+
+  /batches/{id}/reminders:
+    get:
+      tags:
+        - Timers
+      summary: Listar reminders ativos
+      description: Retorna lembretes recorrentes ativos (ex: verificar pH a cada 2h)
+      operationId: getBatchReminders
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Lista de reminders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Reminder'
+        '404':
+          description: Lote não encontrado
+
+  /batches/{id}/reminders/{reminderId}/ack:
+    post:
+      tags:
+        - Timers
+      summary: Confirmar reminder
+      description: |
+        Marca o reminder como confirmado/atendido.
+        Para reminders de intervalo (ex: verificar pH a cada 2h), 
+        recalcula o próximo trigger automaticamente.
+      operationId: ackReminder
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+        - name: reminderId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID do reminder
+      responses:
+        '200':
+          description: Reminder confirmado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reminder'
+        '404':
+          description: Lote ou reminder não encontrado
+
   /batches/{id}/logs:
     get:
       tags:
@@ -515,10 +821,16 @@ paths:
         Endpoint para receber comandos de voz da Amazon Alexa.
         
         **Intents suportados:**
+        - `StartBatchIntent`: Inicia novo lote (slot: milkVolumeL)
         - `StatusIntent`: Consulta status do lote ativo
+        - `NextStepIntent` / `RepeatStepIntent`: Ouvir instruções da etapa atual
         - `AdvanceIntent`: Avança para próxima etapa
         - `TimerIntent`: Consulta tempo restante do timer
-        - `HelpIntent`: Solicita ajuda sobre a etapa atual
+        - `LogPHIntent`: Registrar valor de pH (slot: phValue)
+        - `LogTimeIntent`: Registrar horário (slots: timeValue, timeType)
+        - `PauseIntent`: Pausar produção
+        - `ResumeIntent`: Retomar produção
+        - `HelpIntent`: Solicita ajuda sobre comandos disponíveis
       operationId: alexaWebhook
       requestBody:
         required: true
@@ -601,8 +913,31 @@ components:
           description: Volume de leite em litros
         status:
           type: string
-          enum: [active, completed, paused]
+          enum: [active, completed, paused, cancelled]
           description: Status do lote
+        activeReminders:
+          type: array
+          description: Reminders recorrentes ativos
+          items:
+            $ref: '#/components/schemas/Reminder'
+        pausedAt:
+          type: string
+          format: date-time
+          description: Data/hora da pausa (se pausado)
+        pauseReason:
+          type: string
+          description: Motivo da pausa
+        cancelledAt:
+          type: string
+          format: date-time
+          description: Data/hora do cancelamento (se cancelado)
+        cancelReason:
+          type: string
+          description: Motivo do cancelamento
+        completedAt:
+          type: string
+          format: date-time
+          description: Data/hora da conclusão
         calculatedInputs:
           type: object
           description: Ingredientes calculados automaticamente
@@ -732,11 +1067,133 @@ components:
           type: string
           format: date-time
 
+    RecipeSummary:
+      type: object
+      properties:
+        recipeId:
+          type: string
+          description: ID único da receita
+        name:
+          type: string
+          description: Nome da receita
+        schemaVersion:
+          type: string
+          description: Versão do schema
+        stageCount:
+          type: integer
+          description: Número de etapas
+
+    RecipeDetail:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/RecipeSummary'
+      properties:
+        description:
+          type: string
+        stages:
+          type: array
+          items:
+            $ref: '#/components/schemas/StageDetail'
+        inputs:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              unit:
+                type: string
+              dosing:
+                type: object
+
+    StageDetail:
+      type: object
+      properties:
+        stageId:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [action, timer, input, loop, reminder]
+        instructions:
+          type: array
+          items:
+            type: string
+        requiredInputs:
+          type: array
+          items:
+            type: string
+          description: Keys de input esperados para esta etapa
+        storedValues:
+          type: array
+          items:
+            type: string
+        timer:
+          type: object
+          properties:
+            durationMin:
+              type: integer
+            durationHours:
+              type: number
+            blocking:
+              type: boolean
+            intervalHours:
+              type: number
+        reminder:
+          type: object
+          properties:
+            frequency:
+              type: string
+        loopCondition:
+          type: object
+          properties:
+            until:
+              type: string
+              description: Condição para sair do loop (ex: ph_value <= 5.2)
+        llmGuidance:
+          type: string
+          description: Orientação para o assistente de IA
+
+    Reminder:
+      type: object
+      properties:
+        id:
+          type: string
+        stageId:
+          type: integer
+        type:
+          type: string
+          enum: [interval, daily]
+        intervalHours:
+          type: number
+          description: Intervalo em horas (para tipo interval)
+        nextTrigger:
+          type: string
+          format: date-time
+          description: Próximo momento de disparo
+        acknowledged:
+          type: boolean
+          description: Se foi confirmado/atendido
+        lastAcknowledged:
+          type: string
+          format: date-time
+        description:
+          type: string
+
     Error:
       type: object
       properties:
         message:
           type: string
           description: Mensagem de erro
+        code:
+          type: string
+          description: Código do erro (ex: VALIDATION_FAILED, LOOP_CONDITION_NOT_MET)
+        details:
+          type: string
+          description: Detalhes adicionais
       example:
         message: "Batch not found"

@@ -6,10 +6,10 @@ import { recipeManager } from "./recipe";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import { z } from "zod";
-import { v4 as uuidv4 } from "crypto";
+import { randomBytes } from "crypto";
 
 // Helper to generate unique IDs
-const generateId = () => Math.random().toString(36).substring(2, 15);
+const generateId = () => randomBytes(8).toString('hex');
 
 export async function registerRoutes(
   httpServer: Server,
