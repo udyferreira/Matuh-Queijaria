@@ -1,0 +1,242 @@
+schema_version: "1.3"
+recipe_id: "QUEIJO_NETE"
+name: "Queijo Nete"
+family: "fresco"
+authorial: true
+
+description: >
+  Queijo autoral com processo sensível a proporções, tempo,
+  observações manuais (floculação, ponto de corte) e controle de pH.
+
+llm_policy:
+  allowed_actions:
+    - explain_step
+    - clarify_doubts
+    - rephrase_instruction
+    - warn_risk
+    - remind_action
+  forbidden_actions:
+    - calculate_proportions
+    - advance_stage
+    - skip_stage
+    - override_measurements
+    - change_timers
+
+units:
+  volume: "L"
+  liquid: "ml"
+  temperature: "C"
+  time: "min"
+  ph: "pH"
+
+batch:
+  milk_volume_l:
+    required: true
+    min: 10
+    max: 200
+
+inputs:
+  - id: "MILK"
+    name: "Leite"
+    unit: "L"
+    required: true
+
+  - id: "FERMENT_LR"
+    name: "Fermento LR"
+    unit: "ml"
+    dosing:
+      mode: "per_2_liters"
+      value: 1
+    required: true
+    storage: "freezer"
+
+  - id: "FERMENT_DX"
+    name: "Fermento DX"
+    unit: "ml"
+    dosing:
+      mode: "per_2_liters"
+      value: 1
+    required: true
+    storage: "freezer"
+
+  - id: "FERMENT_KL"
+    name: "Fermento KL"
+    unit: "ml"
+    dosing:
+      mode: "per_20_liters"
+      value: 8
+    required: true
+    storage: "freezer"
+
+  - id: "RENNET"
+    name: "Coalho"
+    unit: "ml"
+    dosing:
+      mode: "per_20_liters"
+      value: 1
+    required: true
+
+process:
+  target_temperature_c: 32
+  temperature_tolerance_c: 1
+  target_final_ph: 5.2
+
+stages:
+
+  - id: 1
+    name: "Separar o leite"
+    type: "input"
+    operator_input_required:
+      - milk_volume_l
+    stored_values:
+      - milk_volume_l
+    llm_guidance: >
+      Confirme o volume informado, pois todas as proporções dependem dele.
+
+  - id: 2
+    name: "Calcular fermentos e coalho"
+    type: "system"
+    system_actions:
+      - calculate_proportions
+      - remind_remove_from_freezer
+
+  - id: 3
+    name: "Aquecer o leite"
+    type: "heat"
+    parameters:
+      target_temp_c: 32
+    validations:
+      - rule: "temperature_between(31,33)"
+
+  - id: 4
+    name: "Adicionar fermentos LR e DX"
+    type: "add"
+    instructions:
+      - "Adicionar fermento LR"
+      - "Adicionar fermento DX"
+      - "Mexer bem"
+    timer:
+      duration_min: 30
+      blocking: true
+
+  - id: 5
+    name: "Adicionar fermento KL e coalho"
+    type: "add"
+    instructions:
+      - "Adicionar fermento KL"
+      - "Adicionar coalho"
+      - "Mexer bem"
+      - "Colocar a Lira"
+    llm_guidance: >
+      Explique a importância de aguardar floculação antes do corte.
+
+  - id: 6
+    name: "Anotar horário de floculação"
+    type: "observe"
+    operator_input_required:
+      - flocculation_time
+    stored_values:
+      - flocculation_time
+
+  - id: 7
+    name: "Anotar horário do ponto de corte"
+    type: "observe"
+    operator_input_required:
+      - cut_point_time
+    stored_values:
+      - cut_point_time
+
+  - id: 8
+    name: "Corte da massa com a Lira"
+    type: "cut"
+
+  - id: 9
+    name: "Corte complementar com espátula"
+    type: "cut"
+
+  - id: 10
+    name: "Mexedura progressiva da massa"
+    type: "stir"
+    parameters:
+      style: "progressive"
+    timer:
+      duration_min: 30
+      blocking: true
+    llm_guidance: >
+      Reforce o conceito de começar devagar e aumentar o vigor aos poucos.
+
+  - id: 11
+    name: "Enformagem com peneira e paninho"
+    type: "mold"
+
+  - id: 12
+    name: "Dessoragem em mesa"
+    type: "drain"
+    parameters:
+      duration_note: "alguns minutos"
+
+  - id: 13
+    name: "Medir e anotar pH inicial"
+    type: "measure"
+    operator_input_required:
+      - ph_value
+    stored_values:
+      - ph_value
+
+  - id: 14
+    name: "Colocar na prensa"
+    type: "press"
+    operator_input_required:
+      - press_start_time
+    stored_values:
+      - press_start_time
+
+  - id: 15
+    name: "Virar queijos e medir pH"
+    type: "loop"
+    loop_condition:
+      until: "ph_value <= 5.2"
+    loop_actions:
+      - "virar_queijos"
+      - "medir_ph"
+      - "registrar_ph"
+    timer:
+      interval_hours: 2
+    stored_values:
+      - ph_measurements[]
+
+  - id: 16
+    name: "Transferir para câmara de secagem"
+    type: "transfer"
+    timing:
+      when: "apos_prensagem"
+    llm_guidance: >
+      Reforce que os queijos permanecem nas formas até o dia seguinte.
+
+  - id: 17
+    name: "Salga em tanque"
+    type: "brine"
+    timer:
+      duration_hours: 8
+      blocking: true
+
+  - id: 18
+    name: "Secagem em prateleiras"
+    type: "dry"
+
+  - id: 19
+    name: "Transferir para Câmara 2"
+    type: "transfer"
+    timer:
+      duration_hours: 36
+    instructions:
+      - "Colocar plaquinha com data de produção na tábua"
+
+  - id: 20
+    name: "Virar queijos diariamente na Câmara 2"
+    type: "maintenance"
+    reminder:
+      frequency: "daily"
+    instructions:
+      - "Virar os queijos"
+      - "Trocar tábua se estiver molhada"
