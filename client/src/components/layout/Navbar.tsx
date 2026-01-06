@@ -1,6 +1,7 @@
 import { Link, useLocation } from "wouter";
-import { ChefHat, Activity, Settings } from "lucide-react";
+import { Activity, Settings, ChefHat } from "lucide-react";
 import { cn } from "@/lib/utils";
+import logoMatuh from "@assets/logoMatuh_1767667488292.jpg";
 
 export function Navbar() {
   const [location] = useLocation();
@@ -14,14 +15,16 @@ export function Navbar() {
   return (
     <nav className="border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-amber-600 flex items-center justify-center shadow-lg shadow-primary/20">
-            <ChefHat className="w-5 h-5 text-primary-foreground" />
-          </div>
+        <Link href="/" className="flex items-center gap-3">
+          <img 
+            src={logoMatuh} 
+            alt="Matuh Queijaria" 
+            className="w-10 h-10 rounded-lg object-cover shadow-lg"
+          />
           <span className="font-display font-bold text-xl tracking-tight">
-            Queijo<span className="text-primary">Nete</span>
+            Matuh <span className="text-primary">Queijaria</span>
           </span>
-        </div>
+        </Link>
 
         <div className="flex items-center gap-1">
           {navItems.map((item) => (

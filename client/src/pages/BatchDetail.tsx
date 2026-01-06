@@ -117,7 +117,7 @@ export default function BatchDetail() {
                 Iniciado em {new Date(batch.startedAt).toLocaleDateString('pt-BR')}
               </span>
             </div>
-            <h1 className="text-3xl font-display font-bold">Produção Queijo Nete</h1>
+            <h1 className="text-3xl font-display font-bold">Produção Matuh Queijaria</h1>
           </div>
           <div className="bg-card px-6 py-3 rounded-xl border border-border shadow-lg flex items-center gap-4">
              <div className="text-right">

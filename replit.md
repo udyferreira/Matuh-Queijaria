@@ -1,8 +1,8 @@
-# Queijo Nete - Artisan Cheese Production Agent
+# Matuh Queijaria - Artisan Cheese Production Agent
 
 ## Overview
 
-Queijo Nete is a backend-driven production management system for artisan cheese making, featuring voice control via Alexa integration. The application tracks cheese production batches through a canonical 20-stage recipe, managing timers, measurements (pH, temperature), and calculated ingredient proportions. The system follows a deterministic architecture where the backend maintains strict control over the production process, with LLM integration serving only as a cognitive assistant for natural language interpretation and guidance—never as a process executor.
+Matuh Queijaria is a backend-driven production management system for artisan cheese making, featuring voice control via Alexa integration. The application tracks cheese production batches through a canonical 20-stage recipe, managing timers, measurements (pH, temperature), and calculated ingredient proportions. The system follows a deterministic architecture where the backend maintains strict control over the production process, with LLM integration serving only as a cognitive assistant for natural language interpretation and guidance—never as a process executor.
 
 ## User Preferences
 

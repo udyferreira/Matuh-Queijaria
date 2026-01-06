@@ -59,7 +59,7 @@ export default function NewBatch() {
 
             <h1 className="text-3xl font-display font-bold mb-2">Novo Lote de Produção</h1>
             <p className="text-muted-foreground mb-8">
-              Inicie uma nova produção de "Queijo Nete". O sistema calculará automaticamente as 
+              Inicie uma nova produção da "Matuh Queijaria". O sistema calculará automaticamente as 
               proporções de fermentos e coalho com base no volume de leite.
             </p>
 

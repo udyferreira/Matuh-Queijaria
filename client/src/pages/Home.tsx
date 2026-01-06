@@ -67,7 +67,7 @@ export default function Home() {
                       </span>
                     </div>
 
-                    <h3 className="text-2xl font-bold mb-1">Queijo Nete</h3>
+                    <h3 className="text-2xl font-bold mb-1">Matuh Queijaria</h3>
                     <div className="text-sm text-muted-foreground mb-6">
                       Vol: <span className="text-foreground font-medium">{batch.milkVolumeL}L</span> • Iniciado em {new Date(batch.startedAt).toLocaleDateString('pt-BR')}
                     </div>
