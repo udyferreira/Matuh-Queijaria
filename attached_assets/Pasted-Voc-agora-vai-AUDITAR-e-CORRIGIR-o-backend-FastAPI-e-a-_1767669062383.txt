@@ -1,0 +1,76 @@
+Você agora vai AUDITAR e CORRIGIR o backend FastAPI e a documentação OpenAPI (Swagger) do projeto “Matuh Queijaria API”, garantindo aderência TOTAL ao modelo canônico YAML da receita QUEIJO_NETE v1.0 (arquivo nete1.0.yml) e ao requisito de orquestração determinística (LLM nunca executa o processo, apenas explica).
+
+OBJETIVO
+- Garantir que todas as capacidades previstas no YAML (stages 1..20) estejam cobertas por contratos de API.
+- Garantir que timers, loops e reminders do YAML estejam refletidos na API e no comportamento do backend.
+- Atualizar a documentação OpenAPI (swagger) com exemplos completos.
+
+REGRAS
+1) NÃO ALTERAR o YAML canônico nem a semântica dos stages. O YAML é fonte de verdade.
+2) Processo determinístico: validações e transições de etapa não dependem de LLM.
+3) Implementação real, sem TODOs críticos. Código deve rodar.
+4) Atualizar api-documentation.yaml com paths/schemas novos e exemplos.
+
+ANÁLISE DE GAP (faça e aplique correções)
+A OpenAPI atual tem: /batches, /batches/{id}, /batches/{id}/status, /advance, /input, /logs, /conversations, /generate-image, /alexa/webhook.
+Ela NÃO cobre corretamente: stage 15 loop (intervalo 2h até pH<=5.2), stage 19 timer 36h, stage 20 reminder diário, e não expõe metadados de receita/stage, nem ações operacionais (pause/resume/complete/cancel).
+
+IMPLEMENTAR / AJUSTAR ENDPOINTS (mínimo necessário)
+1) RECEITAS / STAGES
+- GET /recipes
+  -> lista receitas disponíveis (no MVP pode ser só QUEIJO_NETE) com recipe_id, name, schema_version.
+- GET /recipes/{recipeId}
+  -> retorna metadados + lista de stages (id, name, type, instructions, inputs requeridos, validações, timers/reminders/loop_condition).
+- GET /batches/{id}/stage
+  -> retorna detalhes da etapa atual do lote (stageId, name, instructions, requiredInputs, validations, timer/reminder/loop metadata).
+
+2) ESTADO OPERACIONAL DO LOTE
+- POST /batches/{id}/pause  (body opcional: reason)
+- POST /batches/{id}/resume
+- POST /batches/{id}/complete
+- POST /batches/{id}/cancel (body: reason obrigatório)
+Atualizar schema Batch.status para refletir isso e garantir logs.
+
+3) TIMERS E REMINDERS (ADERENTE AO YAML)
+- GET /batches/{id}/timers
+  -> lista timers ativos (inclui blocking e não-blocking) + remainingSeconds.
+- GET /batches/{id}/reminders
+  -> lista reminders ativos (ex.: stage 20 daily) + próximo disparo.
+- POST /batches/{id}/reminders/{reminderId}/ack
+  -> registra que o operador confirmou o lembrete (log).
+
+4) INPUTS COM SEMÂNTICA DETERMINÍSTICA
+Ajustar /batches/{id}/input para suportar:
+- key (string) obrigatório representando o campo canônico do YAML (ex.: milk_volume_l, flocculation_time, cut_point_time, ph_value, press_start_time etc.)
+- value (number|string)
+- unit opcional
+Manter compatibilidade se possível, mas priorizar o novo contrato.
+Garantir validação por etapa: só aceitar keys esperadas na etapa atual.
+
+5) ALEXA (INTENTS)
+Manter /alexa/webhook, mas EXPANDIR intents suportados e documentar:
+- StartBatchIntent (slots: milkVolumeL)
+- StatusIntent
+- NextStepIntent (sem slots)
+- RepeatStepIntent (sem slots)
+- AdvanceIntent (sem slots ou slot confirmacao)
+- TimerIntent (slots opcionais: stageId)
+- LogPHIntent (slot: phValue)
+- LogTimeIntent (slots: timeValue + timeType [flocculation|cut|press_start])
+- PauseIntent / ResumeIntent
+- HelpIntent
+Além disso, a resposta deve sempre retornar {speech, shouldEndSession, reprompt?}.
+
+COMPORTAMENTO DO LOOP (stage 15)
+- Ao entrar na stage 15, criar um “timer recorrente” (interval_hours=2) que dispara lembrete/ação de verificação.
+- Só permitir sair do loop quando houver input ph_value <= 5.2 (conforme loop_condition do YAML).
+- Isso deve refletir em /status, /timers e /reminders.
+
+ATUALIZAR OPENAPI
+- Atualize api-documentation.yaml com todos os endpoints acima, schemas (Recipe, Stage, Reminder, TimerRemaining, etc.) e exemplos.
+- Corrija a lista de etapas com timer bloqueante no texto do swagger para ficar coerente com o YAML (incluindo stage 19 e o loop da 15, e stage 20 reminder).
+- Garanta operationIds únicos e exemplos realistas.
+
+ENTREGA
+- Código atualizado (FastAPI) + OpenAPI atualizada.
+- Sem quebrar o funcionamento atual dos endpoints existentes; Se precisar, apague os dados.

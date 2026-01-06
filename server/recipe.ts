@@ -9,16 +9,23 @@ interface RecipeStage {
   name: string;
   type: string;
   operator_input_required?: string[];
+  stored_values?: string[];
   system_actions?: string[];
+  instructions?: string[];
   timer?: {
     duration_min?: number;
     duration_hours?: number;
     blocking?: boolean;
     interval_hours?: number;
   };
+  reminder?: {
+    frequency: string;
+  };
   validations?: Array<{ rule: string }>;
   loop_condition?: { until: string };
+  loop_actions?: string[];
   llm_guidance?: string;
+  parameters?: Record<string, any>;
 }
 
 interface RecipeInput {
@@ -32,8 +39,10 @@ interface RecipeInput {
 }
 
 interface Recipe {
+  schema_version: string;
   recipe_id: string;
   name: string;
+  description?: string;
   stages: RecipeStage[];
   inputs: RecipeInput[];
 }
@@ -59,6 +68,118 @@ export class RecipeManager {
 
   getNextStage(currentStageId: number): RecipeStage | undefined {
     return this.recipe.stages.find(s => s.id === currentStageId + 1);
+  }
+
+  // New methods for expanded API
+
+  getRecipeSummary() {
+    return {
+      recipeId: this.recipe.recipe_id,
+      name: this.recipe.name,
+      schemaVersion: this.recipe.schema_version || "1.0",
+      stageCount: this.recipe.stages.length
+    };
+  }
+
+  getRecipeDetail() {
+    return {
+      ...this.getRecipeSummary(),
+      description: this.recipe.description,
+      stages: this.recipe.stages.map(s => this.formatStageDetail(s)),
+      inputs: this.recipe.inputs.map(i => ({
+        id: i.id,
+        name: i.name,
+        unit: i.unit,
+        dosing: i.dosing
+      }))
+    };
+  }
+
+  formatStageDetail(stage: RecipeStage) {
+    return {
+      stageId: stage.id,
+      name: stage.name,
+      type: stage.type,
+      instructions: stage.instructions,
+      requiredInputs: stage.operator_input_required,
+      storedValues: stage.stored_values,
+      validations: stage.validations,
+      timer: stage.timer ? {
+        durationMin: stage.timer.duration_min,
+        durationHours: stage.timer.duration_hours,
+        blocking: stage.timer.blocking,
+        intervalHours: stage.timer.interval_hours
+      } : undefined,
+      reminder: stage.reminder,
+      loopCondition: stage.loop_condition ? {
+        until: stage.loop_condition.until
+      } : undefined,
+      loopActions: stage.loop_actions,
+      llmGuidance: stage.llm_guidance,
+      parameters: stage.parameters
+    };
+  }
+
+  getAllRecipes() {
+    // For MVP, we only have one recipe
+    return [this.getRecipeSummary()];
+  }
+
+  getExpectedInputsForStage(stageId: number): string[] {
+    const stage = this.getStage(stageId);
+    return stage?.operator_input_required || [];
+  }
+
+  isValidInputForStage(stageId: number, key: string): boolean {
+    const expectedInputs = this.getExpectedInputsForStage(stageId);
+    return expectedInputs.includes(key);
+  }
+
+  // Check if stage has a loop condition
+  isLoopStage(stageId: number): boolean {
+    const stage = this.getStage(stageId);
+    return stage?.type === 'loop' && !!stage.loop_condition;
+  }
+
+  // Check if loop exit condition is met
+  checkLoopExitCondition(stageId: number, measurements: Record<string, any>): boolean {
+    const stage = this.getStage(stageId);
+    if (!stage?.loop_condition) return true;
+    
+    // Parse the condition (e.g., "ph_value <= 5.2")
+    const condition = stage.loop_condition.until;
+    if (condition.includes('ph_value')) {
+      const match = condition.match(/ph_value\s*(<=|<|>=|>|==)\s*([\d.]+)/);
+      if (match) {
+        const operator = match[1];
+        const targetValue = parseFloat(match[2]);
+        const currentPh = measurements.ph_value;
+        
+        if (currentPh === undefined) return false;
+        
+        switch (operator) {
+          case '<=': return currentPh <= targetValue;
+          case '<': return currentPh < targetValue;
+          case '>=': return currentPh >= targetValue;
+          case '>': return currentPh > targetValue;
+          case '==': return currentPh === targetValue;
+          default: return false;
+        }
+      }
+    }
+    return false;
+  }
+
+  // Check if stage has an interval timer (for loops)
+  hasIntervalTimer(stageId: number): boolean {
+    const stage = this.getStage(stageId);
+    return !!(stage?.timer?.interval_hours);
+  }
+
+  // Check if stage has a reminder
+  hasReminder(stageId: number): boolean {
+    const stage = this.getStage(stageId);
+    return !!stage?.reminder;
   }
 
   calculateInputs(milkVolumeL: number): Record<string, number> {

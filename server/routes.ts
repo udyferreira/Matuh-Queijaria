@@ -6,6 +6,10 @@ import { recipeManager } from "./recipe";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import { z } from "zod";
+import { v4 as uuidv4 } from "crypto";
+
+// Helper to generate unique IDs
+const generateId = () => Math.random().toString(36).substring(2, 15);
 
 export async function registerRoutes(
   httpServer: Server,
@@ -15,6 +19,22 @@ export async function registerRoutes(
   // Register AI Integrations
   registerChatRoutes(app);
   registerImageRoutes(app);
+
+  // --- Recipe Routes ---
+
+  app.get("/api/recipes", async (req, res) => {
+    const recipes = recipeManager.getAllRecipes();
+    res.json(recipes);
+  });
+
+  app.get("/api/recipes/:recipeId", async (req, res) => {
+    const { recipeId } = req.params;
+    if (recipeId !== "QUEIJO_NETE") {
+      return res.status(404).json({ message: "Recipe not found" });
+    }
+    const recipe = recipeManager.getRecipeDetail();
+    res.json(recipe);
+  });
 
   // --- Batch Routes ---
 
@@ -100,6 +120,196 @@ export async function registerRoutes(
     });
   });
 
+  // Get current stage details
+  app.get("/api/batches/:id/stage", async (req, res) => {
+    const batch = await storage.getBatch(Number(req.params.id));
+    if (!batch) return res.status(404).json({ message: "Batch not found" });
+
+    const stage = recipeManager.getStage(batch.currentStageId);
+    if (!stage) return res.status(500).json({ message: "Invalid stage" });
+
+    res.json(recipeManager.formatStageDetail(stage));
+  });
+
+  // --- Operational State Endpoints ---
+
+  app.post("/api/batches/:id/pause", async (req, res) => {
+    const batchId = Number(req.params.id);
+    const { reason } = req.body || {};
+    
+    const batch = await storage.getBatch(batchId);
+    if (!batch) return res.status(404).json({ message: "Batch not found" });
+    
+    if (batch.status !== "active") {
+      return res.status(400).json({ message: `Cannot pause batch with status: ${batch.status}` });
+    }
+
+    const updatedBatch = await storage.updateBatch(batchId, {
+      status: "paused",
+      pausedAt: new Date(),
+      pauseReason: reason || null
+    });
+
+    await storage.logBatchAction({
+      batchId,
+      stageId: batch.currentStageId,
+      action: "pause",
+      details: { reason }
+    });
+
+    res.json(updatedBatch);
+  });
+
+  app.post("/api/batches/:id/resume", async (req, res) => {
+    const batchId = Number(req.params.id);
+    
+    const batch = await storage.getBatch(batchId);
+    if (!batch) return res.status(404).json({ message: "Batch not found" });
+    
+    if (batch.status !== "paused") {
+      return res.status(400).json({ message: `Cannot resume batch with status: ${batch.status}` });
+    }
+
+    const updatedBatch = await storage.updateBatch(batchId, {
+      status: "active",
+      pausedAt: null,
+      pauseReason: null
+    });
+
+    await storage.logBatchAction({
+      batchId,
+      stageId: batch.currentStageId,
+      action: "resume",
+      details: {}
+    });
+
+    res.json(updatedBatch);
+  });
+
+  app.post("/api/batches/:id/complete", async (req, res) => {
+    const batchId = Number(req.params.id);
+    
+    const batch = await storage.getBatch(batchId);
+    if (!batch) return res.status(404).json({ message: "Batch not found" });
+    
+    if (batch.status === "completed" || batch.status === "cancelled") {
+      return res.status(400).json({ message: `Batch already ${batch.status}` });
+    }
+
+    const updatedBatch = await storage.updateBatch(batchId, {
+      status: "completed",
+      completedAt: new Date()
+    });
+
+    await storage.logBatchAction({
+      batchId,
+      stageId: batch.currentStageId,
+      action: "complete",
+      details: { completedAt: new Date().toISOString() }
+    });
+
+    res.json(updatedBatch);
+  });
+
+  app.post("/api/batches/:id/cancel", async (req, res) => {
+    const batchId = Number(req.params.id);
+    const { reason } = req.body || {};
+    
+    if (!reason) {
+      return res.status(400).json({ message: "Reason is required to cancel a batch" });
+    }
+
+    const batch = await storage.getBatch(batchId);
+    if (!batch) return res.status(404).json({ message: "Batch not found" });
+    
+    if (batch.status === "completed" || batch.status === "cancelled") {
+      return res.status(400).json({ message: `Cannot cancel batch with status: ${batch.status}` });
+    }
+
+    const updatedBatch = await storage.updateBatch(batchId, {
+      status: "cancelled",
+      cancelledAt: new Date(),
+      cancelReason: reason
+    });
+
+    await storage.logBatchAction({
+      batchId,
+      stageId: batch.currentStageId,
+      action: "cancel",
+      details: { reason }
+    });
+
+    res.json(updatedBatch);
+  });
+
+  // --- Timer and Reminder Endpoints ---
+
+  app.get("/api/batches/:id/timers", async (req, res) => {
+    const batch = await storage.getBatch(Number(req.params.id));
+    if (!batch) return res.status(404).json({ message: "Batch not found" });
+
+    const now = new Date();
+    const activeTimers = ((batch.activeTimers as any[]) || []).map(t => {
+      const endTime = new Date(t.endTime);
+      const remainingMs = Math.max(0, endTime.getTime() - now.getTime());
+      return {
+        ...t,
+        isComplete: endTime <= now,
+        remainingSeconds: Math.ceil(remainingMs / 1000)
+      };
+    });
+
+    res.json(activeTimers);
+  });
+
+  app.get("/api/batches/:id/reminders", async (req, res) => {
+    const batch = await storage.getBatch(Number(req.params.id));
+    if (!batch) return res.status(404).json({ message: "Batch not found" });
+
+    const activeReminders = (batch.activeReminders as any[]) || [];
+    res.json(activeReminders);
+  });
+
+  app.post("/api/batches/:id/reminders/:reminderId/ack", async (req, res) => {
+    const batchId = Number(req.params.id);
+    const { reminderId } = req.params;
+    
+    const batch = await storage.getBatch(batchId);
+    if (!batch) return res.status(404).json({ message: "Batch not found" });
+
+    const activeReminders = (batch.activeReminders as any[]) || [];
+    const reminderIndex = activeReminders.findIndex((r: any) => r.id === reminderId);
+    
+    if (reminderIndex === -1) {
+      return res.status(404).json({ message: "Reminder not found" });
+    }
+
+    // Mark as acknowledged and calculate next trigger
+    const reminder = activeReminders[reminderIndex];
+    reminder.acknowledged = true;
+    reminder.lastAcknowledged = new Date().toISOString();
+    
+    // For interval reminders, calculate next trigger
+    if (reminder.intervalHours) {
+      reminder.nextTrigger = new Date(Date.now() + reminder.intervalHours * 3600000).toISOString();
+      reminder.acknowledged = false; // Reset for next cycle
+    }
+
+    activeReminders[reminderIndex] = reminder;
+    
+    await storage.updateBatch(batchId, { activeReminders });
+    
+    await storage.logBatchAction({
+      batchId,
+      stageId: batch.currentStageId,
+      action: "reminder_ack",
+      details: { reminderId, reminderType: reminder.type }
+    });
+
+    res.json(reminder);
+  });
+
+  // Legacy input endpoint (maintains backwards compatibility)
   app.post(api.batches.input.path, async (req, res) => {
     const batchId = Number(req.params.id);
     const { type, value, notes } = api.batches.input.input.parse(req.body);
@@ -143,6 +353,56 @@ export async function registerRoutes(
     res.json(await storage.getBatch(batchId));
   });
 
+  // New canonical input endpoint (aligned with YAML schema)
+  app.post("/api/batches/:id/input/canonical", async (req, res) => {
+    const batchId = Number(req.params.id);
+    const { key, value, unit, notes } = req.body;
+    
+    if (!key || value === undefined) {
+      return res.status(400).json({ message: "Key and value are required" });
+    }
+
+    const batch = await storage.getBatch(batchId);
+    if (!batch) return res.status(404).json({ message: "Batch not found" });
+
+    // Validate that the key is expected for current stage
+    const expectedInputs = recipeManager.getExpectedInputsForStage(batch.currentStageId);
+    if (expectedInputs.length > 0 && !expectedInputs.includes(key)) {
+      return res.status(400).json({ 
+        message: `Input '${key}' is not expected for current stage. Expected: ${expectedInputs.join(', ')}` 
+      });
+    }
+
+    const measurements = (batch.measurements as any) || {};
+    const timestamp = new Date().toISOString();
+
+    // Store the canonical value
+    measurements[key] = value;
+    
+    // Also store in history array for tracking
+    const inputHistory = measurements._history || [];
+    inputHistory.push({ key, value, unit, notes, timestamp, stageId: batch.currentStageId });
+    measurements._history = inputHistory;
+
+    // Special handling for pH measurements array
+    if (key === 'ph_value') {
+      const phMeasurements = measurements.ph_measurements || [];
+      phMeasurements.push({ value, timestamp, stageId: batch.currentStageId });
+      measurements.ph_measurements = phMeasurements;
+    }
+
+    await storage.updateBatch(batchId, { measurements });
+    
+    await storage.logBatchAction({
+      batchId,
+      stageId: batch.currentStageId,
+      action: "canonical_input",
+      details: { key, value, unit, notes }
+    });
+
+    res.json(await storage.getBatch(batchId));
+  });
+
   app.post(api.batches.advance.path, async (req, res) => {
     const batchId = Number(req.params.id);
     const batch = await storage.getBatch(batchId);
@@ -150,6 +410,20 @@ export async function registerRoutes(
 
     const currentStage = recipeManager.getStage(batch.currentStageId);
     if (!currentStage) return res.status(500).json({ message: "Invalid stage" });
+
+    // Check if this is a loop stage (e.g., stage 15)
+    if (recipeManager.isLoopStage(batch.currentStageId)) {
+      const measurements = (batch.measurements as Record<string, any>) || {};
+      const canExitLoop = recipeManager.checkLoopExitCondition(batch.currentStageId, measurements);
+      
+      if (!canExitLoop) {
+        return res.status(400).json({
+          message: "Cannot advance: loop condition not met",
+          code: "LOOP_CONDITION_NOT_MET",
+          details: `pH value must be <= 5.2 to exit this stage. Current pH: ${measurements.ph_value || 'not measured'}`
+        });
+      }
+    }
 
     // Validate transition
     const validation = recipeManager.validateAdvance(batch, currentStage);
@@ -164,7 +438,10 @@ export async function registerRoutes(
     const nextStage = recipeManager.getNextStage(batch.currentStageId);
     if (!nextStage) {
         // Recipe complete
-        const completed = await storage.updateBatch(batchId, { status: "completed" });
+        const completed = await storage.updateBatch(batchId, { 
+          status: "completed",
+          completedAt: new Date()
+        });
         return res.json(completed);
     }
 
@@ -172,15 +449,38 @@ export async function registerRoutes(
     let activeTimers = (batch.activeTimers as any[]) || [];
     activeTimers = activeTimers.filter(t => t.stageId !== currentStage.id);
 
+    // Clean up reminders from current stage
+    let activeReminders = (batch.activeReminders as any[]) || [];
+    activeReminders = activeReminders.filter((r: any) => r.stageId !== currentStage.id);
+
     // Handle new stage side-effects (e.g. start timers)
     const updates: any = {
         currentStageId: nextStage.id,
-        activeTimers
+        activeTimers,
+        activeReminders
     };
 
+    // Handle regular timers (duration-based)
     if (nextStage.timer) {
         const durationMin = nextStage.timer.duration_min || 0;
         const durationHours = nextStage.timer.duration_hours || 0;
+        const intervalHours = nextStage.timer.interval_hours;
+        
+        // For interval timers (loop stages like stage 15)
+        if (intervalHours) {
+            activeReminders.push({
+                id: generateId(),
+                stageId: nextStage.id,
+                type: "interval",
+                intervalHours: intervalHours,
+                nextTrigger: new Date(Date.now() + intervalHours * 3600000).toISOString(),
+                acknowledged: false,
+                description: `Verificar pH a cada ${intervalHours} horas`
+            });
+            updates.activeReminders = activeReminders;
+        }
+        
+        // For duration-based timers
         const durationMs = durationMin * 60000 + durationHours * 3600000;
         if (durationMs > 0) {
             activeTimers.push({
@@ -194,6 +494,32 @@ export async function registerRoutes(
         }
     }
 
+    // Handle reminders (e.g., stage 20 daily reminder)
+    if (nextStage.reminder) {
+        const frequency = nextStage.reminder.frequency;
+        let nextTrigger: Date;
+        
+        if (frequency === 'daily') {
+            // Next trigger is tomorrow at 9am
+            nextTrigger = new Date();
+            nextTrigger.setDate(nextTrigger.getDate() + 1);
+            nextTrigger.setHours(9, 0, 0, 0);
+        } else {
+            // Default: 24 hours from now
+            nextTrigger = new Date(Date.now() + 24 * 3600000);
+        }
+        
+        activeReminders.push({
+            id: generateId(),
+            stageId: nextStage.id,
+            type: "daily",
+            nextTrigger: nextTrigger.toISOString(),
+            acknowledged: false,
+            description: `Lembrete diário: ${nextStage.name}`
+        });
+        updates.activeReminders = activeReminders;
+    }
+
     const updatedBatch = await storage.updateBatch(batchId, updates);
     
     await storage.logBatchAction({
@@ -204,6 +530,211 @@ export async function registerRoutes(
     });
 
     res.json(updatedBatch);
+  });
+  
+  // --- Alexa Webhook (Expanded Intents) ---
+
+  app.post("/api/alexa/webhook", async (req, res) => {
+    const { intent, slots, userId } = req.body;
+    
+    if (!intent) {
+      return res.status(400).json({ 
+        speech: "Intent não reconhecido.",
+        shouldEndSession: false 
+      });
+    }
+
+    try {
+      // Get the most recent active batch for the user
+      const batches = await storage.getActiveBatches();
+      const activeBatch = batches[0]; // For MVP, use the first active batch
+
+      let speech = "";
+      let shouldEndSession = false;
+      let reprompt = "O que mais posso ajudar?";
+
+      switch (intent) {
+        case "StartBatchIntent": {
+          const milkVolume = slots?.milkVolumeL || 50;
+          const inputs = recipeManager.calculateInputs(milkVolume);
+          const newBatch = await storage.createBatch({
+            recipeId: "QUEIJO_NETE",
+            currentStageId: 1,
+            milkVolumeL: milkVolume.toString(),
+            calculatedInputs: inputs,
+            status: "active",
+            history: [{ stageId: 1, action: "start", timestamp: new Date().toISOString() }]
+          });
+          speech = `Lote iniciado com ${milkVolume} litros de leite. Você precisará de ${inputs.FERMENT_LR} ml de fermento LR, ${inputs.FERMENT_DX} ml de fermento DX, ${inputs.FERMENT_KL} ml de fermento KL, e ${inputs.RENNET} ml de coalho.`;
+          break;
+        }
+
+        case "StatusIntent": {
+          if (!activeBatch) {
+            speech = "Não há lote ativo no momento. Diga 'iniciar lote' para começar um novo.";
+          } else {
+            const stage = recipeManager.getStage(activeBatch.currentStageId);
+            const timers = (activeBatch.activeTimers as any[]) || [];
+            const activeTimer = timers.find(t => new Date(t.endTime) > new Date());
+            
+            speech = `Seu lote está na etapa ${activeBatch.currentStageId}, ${stage?.name || 'em andamento'}.`;
+            
+            if (activeTimer) {
+              const remaining = Math.ceil((new Date(activeTimer.endTime).getTime() - Date.now()) / 60000);
+              speech += ` Faltam ${remaining} minutos no timer.`;
+            }
+          }
+          break;
+        }
+
+        case "NextStepIntent":
+        case "RepeatStepIntent": {
+          if (!activeBatch) {
+            speech = "Não há lote ativo.";
+          } else {
+            const stage = recipeManager.getStage(activeBatch.currentStageId);
+            if (stage?.instructions && stage.instructions.length > 0) {
+              speech = stage.instructions.join('. ');
+            } else {
+              speech = stage?.name || "Prossiga com a próxima etapa.";
+            }
+            if (stage?.llm_guidance) {
+              speech += ` Dica: ${stage.llm_guidance}`;
+            }
+          }
+          break;
+        }
+
+        case "AdvanceIntent": {
+          if (!activeBatch) {
+            speech = "Não há lote ativo para avançar.";
+          } else {
+            const currentStage = recipeManager.getStage(activeBatch.currentStageId);
+            if (!currentStage) {
+              speech = "Etapa inválida.";
+            } else {
+              const validation = recipeManager.validateAdvance(activeBatch, currentStage);
+              if (!validation.allowed) {
+                speech = validation.reason || "Não é possível avançar agora.";
+              } else {
+                // Advance the batch
+                const nextStage = recipeManager.getNextStage(activeBatch.currentStageId);
+                if (!nextStage) {
+                  await storage.updateBatch(activeBatch.id, { status: "completed" });
+                  speech = "Parabéns! Receita concluída.";
+                } else {
+                  await storage.updateBatch(activeBatch.id, { currentStageId: nextStage.id });
+                  speech = `Avançando para etapa ${nextStage.id}: ${nextStage.name}.`;
+                }
+              }
+            }
+          }
+          break;
+        }
+
+        case "TimerIntent": {
+          if (!activeBatch) {
+            speech = "Não há lote ativo.";
+          } else {
+            const timers = (activeBatch.activeTimers as any[]) || [];
+            const now = new Date();
+            const activeTimer = timers.find(t => new Date(t.endTime) > now);
+            
+            if (!activeTimer) {
+              speech = "Não há timer ativo no momento.";
+            } else {
+              const remaining = Math.ceil((new Date(activeTimer.endTime).getTime() - now.getTime()) / 60000);
+              if (remaining > 60) {
+                const hours = Math.floor(remaining / 60);
+                const mins = remaining % 60;
+                speech = `Faltam ${hours} horas e ${mins} minutos no timer.`;
+              } else {
+                speech = `Faltam ${remaining} minutos no timer.`;
+              }
+            }
+          }
+          break;
+        }
+
+        case "LogPHIntent": {
+          const phValue = slots?.phValue;
+          if (!activeBatch) {
+            speech = "Não há lote ativo.";
+          } else if (!phValue) {
+            speech = "Qual é o valor do pH?";
+            reprompt = "Diga o valor do pH medido.";
+          } else {
+            const measurements = (activeBatch.measurements as any) || {};
+            measurements.ph_value = parseFloat(phValue);
+            const phHistory = measurements.ph_measurements || [];
+            phHistory.push({ value: parseFloat(phValue), timestamp: new Date().toISOString() });
+            measurements.ph_measurements = phHistory;
+            await storage.updateBatch(activeBatch.id, { measurements });
+            speech = `pH ${phValue} registrado com sucesso.`;
+          }
+          break;
+        }
+
+        case "LogTimeIntent": {
+          const timeValue = slots?.timeValue;
+          const timeType = slots?.timeType; // flocculation, cut, press_start
+          if (!activeBatch) {
+            speech = "Não há lote ativo.";
+          } else if (!timeValue) {
+            speech = "Qual é o horário?";
+          } else {
+            const measurements = (activeBatch.measurements as any) || {};
+            const key = timeType === 'flocculation' ? 'flocculation_time' :
+                        timeType === 'cut' ? 'cut_point_time' :
+                        timeType === 'press_start' ? 'press_start_time' : 'recorded_time';
+            measurements[key] = timeValue;
+            await storage.updateBatch(activeBatch.id, { measurements });
+            speech = `Horário ${timeValue} registrado para ${timeType || 'a etapa atual'}.`;
+          }
+          break;
+        }
+
+        case "PauseIntent": {
+          if (!activeBatch) {
+            speech = "Não há lote ativo para pausar.";
+          } else if (activeBatch.status !== "active") {
+            speech = `O lote já está ${activeBatch.status}.`;
+          } else {
+            await storage.updateBatch(activeBatch.id, { status: "paused", pausedAt: new Date() });
+            speech = "Lote pausado. Diga 'retomar' quando quiser continuar.";
+          }
+          break;
+        }
+
+        case "ResumeIntent": {
+          if (!activeBatch) {
+            speech = "Não há lote para retomar.";
+          } else if (activeBatch.status !== "paused") {
+            speech = "O lote não está pausado.";
+          } else {
+            await storage.updateBatch(activeBatch.id, { status: "active", pausedAt: null });
+            speech = "Lote retomado. Continuando de onde paramos.";
+          }
+          break;
+        }
+
+        case "HelpIntent": {
+          speech = "Você pode dizer: status do lote, próxima etapa, avançar, registrar pH, pausar, ou retomar. O que deseja fazer?";
+          break;
+        }
+
+        default:
+          speech = "Comando não reconhecido. Diga 'ajuda' para ver os comandos disponíveis.";
+      }
+
+      res.json({ speech, shouldEndSession, reprompt });
+    } catch (error) {
+      console.error("Alexa webhook error:", error);
+      res.json({ 
+        speech: "Ocorreu um erro ao processar seu comando. Tente novamente.",
+        shouldEndSession: false
+      });
+    }
   });
   
   // Basic Seed
