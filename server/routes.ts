@@ -563,13 +563,18 @@ export async function registerRoutes(
           const inputs = recipeManager.calculateInputs(milkVolume);
           const newBatch = await storage.createBatch({
             recipeId: "QUEIJO_NETE",
-            currentStageId: 1,
+            currentStageId: 3, // Inicia na etapa 3 (aquecer leite)
             milkVolumeL: milkVolume.toString(),
             calculatedInputs: inputs,
             status: "active",
-            history: [{ stageId: 1, action: "start", timestamp: new Date().toISOString() }]
+            history: [
+              { stageId: 1, action: "complete", timestamp: new Date().toISOString(), auto: true },
+              { stageId: 2, action: "complete", timestamp: new Date().toISOString(), auto: true },
+              { stageId: 3, action: "start", timestamp: new Date().toISOString() }
+            ]
           });
-          speech = `Lote iniciado com ${milkVolume} litros de leite. Você precisará de ${inputs.FERMENT_LR} ml de fermento LR, ${inputs.FERMENT_DX} ml de fermento DX, ${inputs.FERMENT_KL} ml de fermento KL, e ${inputs.RENNET} ml de coalho.`;
+          // Responde com as proporções calculadas
+          speech = `Lote iniciado com ${milkVolume} litros de leite. Para esta produção você vai precisar de: ${inputs.FERMENT_LR} mililitros de fermento LR, ${inputs.FERMENT_DX} mililitros de fermento DX, ${inputs.FERMENT_KL} mililitros de fermento KL, e ${inputs.RENNET} mililitros de coalho. Aqueça o leite a 32 graus para começar.`;
           break;
         }
 
