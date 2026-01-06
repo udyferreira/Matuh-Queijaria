@@ -62,7 +62,7 @@ export async function registerRoutes(
       const batch = await storage.createBatch({
         recipeId: recipeId,
         currentStageId: 3, // Start at stage 3 (heating milk)
-        milkVolumeL: milkVolumeL.toString(),
+        milkVolumeL: String(milkVolumeL), // DB stores as numeric string
         calculatedInputs: inputs,
         status: "active",
         history: [
@@ -124,11 +124,15 @@ export async function registerRoutes(
       isComplete: new Date(t.endTime) <= now
     }));
 
+    // Include active reminders in status for consistency
+    const activeReminders = (batch.activeReminders as any[]) || [];
+
     res.json({
         batchId: batch.id,
         currentStageId: batch.currentStageId,
         status: batch.status,
         activeTimers: timersWithStatus,
+        activeReminders: activeReminders,
         nextAction: stage?.instructions?.[0] || stage?.name || "Proceed",
         guidance: stage?.llm_guidance
     });
@@ -382,17 +386,38 @@ export async function registerRoutes(
     const { key, value, unit, notes } = req.body;
     
     if (!key || value === undefined) {
-      return res.status(400).json({ message: "Key and value are required" });
+      return res.status(400).json({ 
+        message: "Key and value are required",
+        code: "VALIDATION_FAILED",
+        details: "Both 'key' and 'value' fields are required"
+      });
     }
 
     const batch = await storage.getBatch(batchId);
-    if (!batch) return res.status(404).json({ message: "Batch not found" });
+    if (!batch) {
+      return res.status(404).json({ 
+        message: "Batch not found",
+        code: "BATCH_NOT_FOUND",
+        details: `No batch exists with id=${batchId}`
+      });
+    }
+
+    // Check if batch is active
+    if (batch.status !== "active") {
+      return res.status(400).json({
+        message: "Batch is not active",
+        code: "BATCH_NOT_ACTIVE",
+        details: `Batch status is '${batch.status}'. Only active batches can receive inputs.`
+      });
+    }
 
     // Validate that the key is expected for current stage
     const expectedInputs = recipeManager.getExpectedInputsForStage(batch.currentStageId);
     if (expectedInputs.length > 0 && !expectedInputs.includes(key)) {
       return res.status(400).json({ 
-        message: `Input '${key}' is not expected for current stage. Expected: ${expectedInputs.join(', ')}` 
+        message: "Key não esperado para esta etapa",
+        code: "INVALID_INPUT_KEY_FOR_STAGE",
+        details: `stageId=${batch.currentStageId}, allowedKeys=[${expectedInputs.join(', ')}], receivedKey=${key}`
       });
     }
 
@@ -602,7 +627,7 @@ export async function registerRoutes(
           const newBatch = await storage.createBatch({
             recipeId: cheeseType.id,
             currentStageId: 3, // Inicia na etapa 3 (aquecer leite)
-            milkVolumeL: milkVolume.toString(),
+            milkVolumeL: String(milkVolume), // DB stores as numeric string
             calculatedInputs: inputs,
             status: "active",
             history: [

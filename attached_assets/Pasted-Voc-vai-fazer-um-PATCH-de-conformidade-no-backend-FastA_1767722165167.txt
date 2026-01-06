@@ -1,0 +1,70 @@
+Você vai fazer um PATCH de conformidade no backend FastAPI e na documentação OpenAPI (api-documentation.yaml) para corrigir inconsistências e garantir validações determinísticas por etapa, sem alterar o YAML canônico da receita.
+
+CONTEXTO
+- OpenAPI atual: Matuh Queijaria API v1.1.0.
+- Já existem endpoints: /recipes, /recipes/{recipeId}, /batches (GET/POST), /batches/{id}/status, /batches/{id}/advance, /batches/{id}/timers, /batches/{id}/reminders, /batches/{id}/input, /batches/{id}/input/canonical, /alexa/webhook, etc.
+- O sistema é determinístico: regras de etapa, requiredInputs e loopCondition vêm do recipe.yml (fonte de verdade), não do LLM.
+
+OBJETIVO
+Corrigir 5 pontos de contrato/implementação e reforçar validação de input canônico.
+
+AÇÕES OBRIGATÓRIAS (faça no código e no swagger)
+
+(1) PADRONIZAR milkVolumeL COMO NUMBER
+- Ajuste o schema components/schemas/Batch.milkVolumeL de string -> number.
+- Ajuste exemplos em:
+  - GET /batches example: milkVolumeL deve ser 50 (sem aspas)
+  - Qualquer outro example/response que use milkVolumeL.
+- Garanta que o backend persiste milkVolumeL como número (float/int), não string.
+
+(2) /batches/{id}/advance: DOCUMENTAÇÃO E REGRAS DE ETAPAS
+- Atualize a descrição de /batches/{id}/advance para refletir corretamente:
+  - Etapas com timer bloqueante incluem: etapa 4 (30 min), etapa 10 (30 min), etapa 17 (8h) e etapa 19 (36h).
+  - Etapa 15 é um LOOP: não deve permitir avanço/sair do loop até loopCondition ser satisfeita (ex: ph_value <= 5.2). Deixe isso explícito.
+- Não invente etapas; derive as regras reais do recipe.yml no backend.
+
+(3) GET /batches/{id}/timers DEVE RETORNAR TEMPO RESTANTE
+- O swagger diz “com tempo restante”, mas o schema Timer não tem remainingSeconds.
+- Faça uma das opções:
+  A) Adicione remainingSeconds (integer) ao schema Timer; OU
+  B) Crie schema TimerWithRemaining e faça /timers retornar esse schema.
+- No backend, compute remainingSeconds = max(0, endTime - now) para timers ativos.
+- Atualize exemplos no swagger com remainingSeconds preenchido.
+
+(4) GET /batches/{id}/status DEVE INCLUIR ACTIVE REMINDERS
+- Atualize components/schemas/BatchStatus para incluir:
+  - activeReminders: array[Reminder]
+- Atualize o exemplo de /batches/{id}/status para incluir activeReminders quando houver:
+  - reminder interval (loop do pH a cada 2h) e/ou daily (se existir no recipe.yml).
+- No backend, garanta que /status retorna activeReminders consistentes com /reminders.
+
+(5) /alexa/webhook RESPONSE DEVE TER reprompt (OPCIONAL)
+- Atualize o schema de response de /alexa/webhook para incluir:
+  - reprompt: string (opcional)
+- No backend: quando shouldEndSession=false, sempre retorne reprompt (ex: “Você quer que eu repita a etapa ou avance?”).
+- Atualize exemplo do swagger com reprompt.
+
+(6) VALIDAÇÃO FORTE NO /batches/{id}/input/canonical (KEYS FORA DA ETAPA)
+- Garanta que o backend derive requiredInputs da etapa atual a partir do recipe.yml.
+- Ao receber POST /batches/{id}/input/canonical:
+  - Se batch não existir -> 404 com Error {message, code, details}
+  - Se batch status não for 'active' (paused/cancelled/completed) -> 400 com code (ex: BATCH_NOT_ACTIVE)
+  - Se key NÃO estiver em requiredInputs da etapa atual -> 400 com:
+      {
+        "message": "Key não esperado para esta etapa",
+        "code": "INVALID_INPUT_KEY_FOR_STAGE",
+        "details": "stageId=<id>, allowedKeys=[...], receivedKey=<key>"
+      }
+  - Se key estiver correta, registre no histórico com stageId e avance/atualize estado conforme regras.
+- ATENÇÃO: atualize o swagger de /batches/{id}/input/canonical:
+  - Em responses/400, referencie components/schemas/Error (hoje está sem schema).
+  - Inclua example com code/details conforme acima.
+
+PADRÃO DE ERRO
+- Todos os 400/404 devem retornar components/schemas/Error com (message, code, details).
+- Não deixe respostas 400 “sem schema” em nenhum endpoint alterado.
+
+ENTREGA
+- Código atualizado (FastAPI) + api-documentation.yaml atualizado.
+- Não quebre compatibilidade: mantenha /batches/{id}/input legado funcionando.
+- Garanta operationId únicos e exemplos coerentes.

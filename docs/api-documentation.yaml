@@ -24,7 +24,7 @@ info:
     Todas as medições são armazenadas com `stageId` para rastreabilidade:
     - Array `measurements.ph[]` contém histórico completo de pH
     - Array `measurements._history[]` contém todas as medições com metadados
-  version: 1.1.0
+  version: 1.2.0
   contact:
     name: Matuh Queijaria
     url: https://www.matuh.com.br
@@ -112,7 +112,7 @@ paths:
                 - id: 1
                   recipeId: "QUEIJO_NETE"
                   currentStageId: 4
-                  milkVolumeL: "50"
+                  milkVolumeL: 50
                   status: "active"
                   calculatedInputs:
                     FERMENT_LR: 25
@@ -206,19 +206,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BatchStatus'
-              example:
-                batchId: 1
-                currentStageId: 4
-                status: "active"
-                activeTimers:
-                  - stageId: 4
-                    startTime: "2026-01-06T02:17:57.026Z"
-                    endTime: "2026-01-06T02:47:57.026Z"
-                    durationMinutes: 30
-                    blocking: true
-                    isComplete: false
-                nextAction: "wait_timer"
-                guidance: "Aguarde o timer de 30 minutos para ação dos fermentos LR e DX"
+              examples:
+                with_timer:
+                  summary: Status com timer ativo
+                  value:
+                    batchId: 1
+                    currentStageId: 4
+                    status: "active"
+                    activeTimers:
+                      - stageId: 4
+                        startTime: "2026-01-06T02:17:57.026Z"
+                        endTime: "2026-01-06T02:47:57.026Z"
+                        durationMinutes: 30
+                        blocking: true
+                        isComplete: false
+                        remainingSeconds: 900
+                    activeReminders: []
+                    nextAction: "wait_timer"
+                    guidance: "Aguarde o timer de 30 minutos para ação dos fermentos LR e DX"
+                with_reminder:
+                  summary: Status com reminder de pH (etapa 15)
+                  value:
+                    batchId: 2
+                    currentStageId: 15
+                    status: "active"
+                    activeTimers: []
+                    activeReminders:
+                      - id: "abc123"
+                        stageId: 15
+                        type: "interval"
+                        intervalHours: 2
+                        nextTrigger: "2026-01-06T04:17:57.026Z"
+                        acknowledged: false
+                        description: "Verificar pH a cada 2 horas"
+                    nextAction: "Medir pH"
+                    guidance: "Continue verificando o pH até atingir 5.2 ou menos"
         '404':
           description: Lote não encontrado
           content:
@@ -243,6 +265,12 @@ paths:
         - Etapa 4: 30 minutos (fermentos LR/DX)
         - Etapa 10: 30 minutos (mexedura)
         - Etapa 17: 8 horas (salga)
+        - Etapa 19: 36 horas (maturação inicial)
+        
+        **Etapa 15 - Loop de pH:**
+        A etapa 15 é um LOOP que não permite avanço até que a condição de saída
+        seja satisfeita (ph_value <= 5.2). Enquanto o pH não atingir o valor mínimo,
+        o operador deve continuar medindo e registrando o pH periodicamente.
       operationId: advanceBatch
       parameters:
         - $ref: '#/components/parameters/BatchId'
@@ -409,9 +437,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/Batch'
         '400':
-          description: Key não esperado para esta etapa
+          description: Erro de validação ou batch não ativo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_key:
+                  summary: Key não esperado para a etapa
+                  value:
+                    message: "Key não esperado para esta etapa"
+                    code: "INVALID_INPUT_KEY_FOR_STAGE"
+                    details: "stageId=13, allowedKeys=[ph_value], receivedKey=flocculation_time"
+                batch_not_active:
+                  summary: Batch não está ativo
+                  value:
+                    message: "Batch is not active"
+                    code: "BATCH_NOT_ACTIVE"
+                    details: "Batch status is 'paused'. Only active batches can receive inputs."
         '404':
           description: Lote não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: "Batch not found"
+                code: "BATCH_NOT_FOUND"
+                details: "No batch exists with id=999"
 
   /batches/{id}/stage:
     get:
@@ -884,9 +937,21 @@ paths:
                   shouldEndSession:
                     type: boolean
                     description: Se a sessão deve ser encerrada
+                  reprompt:
+                    type: string
+                    description: |
+                      Texto de reprompt (opcional). Usado quando shouldEndSession=false
+                      para manter a sessão aberta e aguardar nova resposta do usuário.
               example:
                 speech: "Seu lote está na etapa 4, adição de fermentos. Faltam 15 minutos para completar o timer."
                 shouldEndSession: false
+                reprompt: "O que mais posso ajudar?"
+        '400':
+          description: Intent não reconhecido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
 components:
   parameters:
@@ -925,8 +990,8 @@ components:
           maximum: 20
           description: Etapa atual da produção (1-20)
         milkVolumeL:
-          type: string
-          description: Volume de leite em litros
+          type: number
+          description: Volume de leite em litros (armazenado como numeric no banco)
         status:
           type: string
           enum: [active, completed, paused, cancelled]
@@ -1082,6 +1147,9 @@ components:
         isComplete:
           type: boolean
           description: Se o timer já foi concluído
+        remainingSeconds:
+          type: integer
+          description: Tempo restante em segundos (0 se completo)
 
     BatchStatus:
       type: object
@@ -1096,6 +1164,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Timer'
+        activeReminders:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reminder'
+          description: Lembretes recorrentes ativos (ex: verificar pH a cada 2h)
         nextAction:
           type: string
           description: Próxima ação recomendada
