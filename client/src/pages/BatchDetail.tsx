@@ -214,7 +214,7 @@ export default function BatchDetail() {
                 {!isInputStage && (
                   <Button 
                     size="lg" 
-                    className="w-full h-16 text-lg font-bold premium-gradient shadow-lg"
+                    className="w-full h-16 text-lg font-bold premium-gradient shadow-lg text-amber-400"
                     onClick={handleAdvance}
                     disabled={isAdvancing || (isTimerStage && !isTimerComplete)}
                     data-testid="button-complete-step"

@@ -93,7 +93,7 @@ export default function NewBatch() {
                 <Button 
                   type="submit" 
                   size="lg" 
-                  className="w-full h-16 text-lg font-bold premium-gradient"
+                  className="w-full h-16 text-lg font-bold premium-gradient text-amber-400"
                   disabled={isPending}
                   data-testid="button-start-production"
                 >

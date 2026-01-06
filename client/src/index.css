@@ -19,7 +19,7 @@
   --popover-foreground: 215 20.2% 65.1%;
 
   --primary: 47 95% 57%; /* Cheese Gold/Yellow */
-  --primary-foreground: 26 83% 14%;
+  --primary-foreground: 26 83% 14%; /* Dark text for yellow background */
 
   --secondary: 222 47% 11%;
   --secondary-foreground: 210 40% 98%;

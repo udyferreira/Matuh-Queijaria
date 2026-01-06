@@ -24,7 +24,7 @@ export default function Home() {
           </div>
           
           <Link href="/new">
-            <Button size="lg" className="premium-gradient border border-white/10 shadow-xl group">
+            <Button size="lg" className="premium-gradient border border-white/10 shadow-xl group text-amber-400">
               <Plus className="mr-2 w-5 h-5 group-hover:rotate-90 transition-transform" />
               Novo Lote
             </Button>
