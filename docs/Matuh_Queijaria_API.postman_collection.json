@@ -1,0 +1,731 @@
+{
+	"info": {
+		"_postman_id": "matuh-queijaria-api-v1.2.0",
+		"name": "Matuh Queijaria API v1.2.0",
+		"description": "API completa para o sistema de rastreamento de produção de queijo artesanal Matuh Queijaria.\n\n## Funcionalidades\n- Gestão de Lotes de Produção\n- Cálculos Automáticos de Ingredientes\n- Timers Bloqueantes\n- Medições (pH, temperatura, horários)\n- Assistente IA\n- Integração Alexa",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5000/api",
+			"type": "string"
+		},
+		{
+			"key": "batchId",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "conversationId",
+			"value": "1",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Recipes",
+			"description": "Metadados e detalhes das receitas disponíveis",
+			"item": [
+				{
+					"name": "Listar receitas disponíveis",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/recipes",
+							"host": ["{{baseUrl}}"],
+							"path": ["recipes"]
+						},
+						"description": "Retorna lista de todas as receitas cadastradas no sistema"
+					},
+					"response": []
+				},
+				{
+					"name": "Detalhes da receita",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/recipes/QUEIJO_NETE",
+							"host": ["{{baseUrl}}"],
+							"path": ["recipes", "QUEIJO_NETE"]
+						},
+						"description": "Retorna informações detalhadas da receita incluindo todas as etapas e inputs"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Batches",
+			"description": "Operações de lotes de produção",
+			"item": [
+				{
+					"name": "Listar lotes ativos",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/batches",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches"]
+						},
+						"description": "Retorna todos os lotes de produção ativos no sistema"
+					},
+					"response": []
+				},
+				{
+					"name": "Iniciar novo lote",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"milkVolumeL\": 50\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/batches",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches"]
+						},
+						"description": "Cria um novo lote de produção. O sistema calcula automaticamente as proporções de fermentos e coalho baseado no volume de leite.\n\nFórmulas:\n- Fermento LR: 1ml por 2L de leite\n- Fermento DX: 1ml por 2L de leite\n- Fermento KL: 8ml por 20L de leite\n- Coalho: 1ml por 20L de leite"
+					},
+					"response": []
+				},
+				{
+					"name": "Obter detalhes do lote",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}"]
+						},
+						"description": "Retorna informações detalhadas de um lote específico"
+					},
+					"response": []
+				},
+				{
+					"name": "Obter status do lote",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/status",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "status"]
+						},
+						"description": "Retorna o status atual do lote incluindo timers ativos, activeReminders, próxima ação recomendada e orientações"
+					},
+					"response": []
+				},
+				{
+					"name": "Avançar etapa",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/advance",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "advance"]
+						},
+						"description": "Move o lote para a próxima etapa de produção.\n\nValidações:\n- Verifica se inputs obrigatórios foram registrados\n- Verifica se timers bloqueantes foram concluídos\n- Valida condições de loop (ex: pH mínimo)\n\nEtapas com timer bloqueante:\n- Etapa 4: 30 minutos (fermentos LR/DX)\n- Etapa 10: 30 minutos (mexedura)\n- Etapa 17: 8 horas (salga)\n- Etapa 19: 36 horas (maturação inicial)\n\nEtapa 15 - Loop de pH:\nNão permite avanço até pH <= 5.2"
+					},
+					"response": []
+				},
+				{
+					"name": "Detalhes da etapa atual",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/stage",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "stage"]
+						},
+						"description": "Retorna informações detalhadas da etapa atual do lote"
+					},
+					"response": []
+				},
+				{
+					"name": "Registrar medição (tipo)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"type\": \"ph\",\n  \"value\": 5.2,\n  \"notes\": \"pH medido após dessora\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/input",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "input"]
+						},
+						"description": "Registra uma entrada/medição do operador.\n\nTipos de input:\n- ph: Valor de pH (número)\n- temperature: Temperatura em °C (número)\n- time: Horário (string no formato HH:MM)"
+					},
+					"response": []
+				},
+				{
+					"name": "Registrar medição (horário)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"type\": \"time\",\n  \"value\": \"14:30\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/input",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "input"]
+						},
+						"description": "Registra um horário (ex: floculação, ponto de corte)"
+					},
+					"response": []
+				},
+				{
+					"name": "Registrar input canônico",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"key\": \"ph_value\",\n  \"value\": 5.1,\n  \"unit\": \"pH\",\n  \"notes\": \"Medido após viragem\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/input/canonical",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "input", "canonical"]
+						},
+						"description": "Registra entrada usando keys canônicos alinhados com o YAML da receita.\n\nKeys canônicos por etapa:\n- Etapa 1: milk_volume_l\n- Etapa 6: flocculation_time\n- Etapa 7: cut_point_time\n- Etapa 13, 15: ph_value\n- Etapa 14: press_start_time"
+					},
+					"response": []
+				},
+				{
+					"name": "Pausar lote",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Intervalo para almoço\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/pause",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "pause"]
+						},
+						"description": "Pausa a produção do lote (para emergências ou intervalos)"
+					},
+					"response": []
+				},
+				{
+					"name": "Retomar lote",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/resume",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "resume"]
+						},
+						"description": "Retoma um lote que estava pausado"
+					},
+					"response": []
+				},
+				{
+					"name": "Marcar como concluído",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/complete",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "complete"]
+						},
+						"description": "Marca o lote como concluído manualmente (bypass das etapas restantes)"
+					},
+					"response": []
+				},
+				{
+					"name": "Cancelar lote",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Contaminação detectada\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/cancel",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "cancel"]
+						},
+						"description": "Cancela o lote de produção (requer motivo)"
+					},
+					"response": []
+				},
+				{
+					"name": "Histórico do lote",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/logs",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "logs"]
+						},
+						"description": "Retorna o log de todas as ações realizadas no lote"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Timers",
+			"description": "Gerenciamento de timers e reminders",
+			"item": [
+				{
+					"name": "Listar timers ativos",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/timers",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "timers"]
+						},
+						"description": "Retorna todos os timers ativos do lote com tempo restante (remainingSeconds)"
+					},
+					"response": []
+				},
+				{
+					"name": "Listar reminders ativos",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/reminders",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "reminders"]
+						},
+						"description": "Retorna lembretes recorrentes ativos (ex: verificar pH a cada 2h)"
+					},
+					"response": []
+				},
+				{
+					"name": "Confirmar reminder",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}/reminders/abc123/ack",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}", "reminders", "abc123", "ack"]
+						},
+						"description": "Marca o reminder como confirmado/atendido. Para reminders de intervalo, recalcula o próximo trigger automaticamente."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Conversations",
+			"description": "Chat com assistente de IA",
+			"item": [
+				{
+					"name": "Listar conversas",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/conversations",
+							"host": ["{{baseUrl}}"],
+							"path": ["conversations"]
+						},
+						"description": "Retorna todas as conversas salvas com o assistente"
+					},
+					"response": []
+				},
+				{
+					"name": "Criar conversa",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Dúvida sobre fermentação\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/conversations",
+							"host": ["{{baseUrl}}"],
+							"path": ["conversations"]
+						},
+						"description": "Inicia uma nova conversa com o assistente de IA"
+					},
+					"response": []
+				},
+				{
+					"name": "Obter conversa",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/conversations/{{conversationId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["conversations", "{{conversationId}}"]
+						},
+						"description": "Busca uma conversa específica com todas as mensagens"
+					},
+					"response": []
+				},
+				{
+					"name": "Excluir conversa",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/conversations/{{conversationId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["conversations", "{{conversationId}}"]
+						},
+						"description": "Remove uma conversa e todas as suas mensagens"
+					},
+					"response": []
+				},
+				{
+					"name": "Enviar mensagem (SSE)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "text/event-stream"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"content\": \"Qual a temperatura ideal para adicionar o coalho?\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/conversations/{{conversationId}}/messages",
+							"host": ["{{baseUrl}}"],
+							"path": ["conversations", "{{conversationId}}", "messages"]
+						},
+						"description": "Envia uma mensagem para o assistente e recebe a resposta via streaming (SSE)."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Integrations",
+			"description": "Integrações externas (Alexa, geração de imagens)",
+			"item": [
+				{
+					"name": "Gerar imagem",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"prompt\": \"Queijo artesanal maturando em prateleira de madeira\",\n  \"size\": \"1024x1024\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/generate-image",
+							"host": ["{{baseUrl}}"],
+							"path": ["generate-image"]
+						},
+						"description": "Cria uma imagem baseada em um prompt de texto usando IA"
+					},
+					"response": []
+				},
+				{
+					"name": "Alexa - StatusIntent",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"intent\": \"StatusIntent\",\n  \"userId\": \"amzn1.ask.account.ABC123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/alexa/webhook",
+							"host": ["{{baseUrl}}"],
+							"path": ["alexa", "webhook"]
+						},
+						"description": "Consulta status do lote ativo via Alexa"
+					},
+					"response": []
+				},
+				{
+					"name": "Alexa - StartBatchIntent",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"intent\": \"StartBatchIntent\",\n  \"slots\": {\n    \"milkVolumeL\": \"50\"\n  },\n  \"userId\": \"amzn1.ask.account.ABC123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/alexa/webhook",
+							"host": ["{{baseUrl}}"],
+							"path": ["alexa", "webhook"]
+						},
+						"description": "Inicia novo lote via Alexa (slot: milkVolumeL)"
+					},
+					"response": []
+				},
+				{
+					"name": "Alexa - AdvanceIntent",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"intent\": \"AdvanceIntent\",\n  \"userId\": \"amzn1.ask.account.ABC123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/alexa/webhook",
+							"host": ["{{baseUrl}}"],
+							"path": ["alexa", "webhook"]
+						},
+						"description": "Avança para próxima etapa via Alexa"
+					},
+					"response": []
+				},
+				{
+					"name": "Alexa - TimerIntent",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"intent\": \"TimerIntent\",\n  \"userId\": \"amzn1.ask.account.ABC123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/alexa/webhook",
+							"host": ["{{baseUrl}}"],
+							"path": ["alexa", "webhook"]
+						},
+						"description": "Consulta tempo restante do timer via Alexa"
+					},
+					"response": []
+				},
+				{
+					"name": "Alexa - LogPHIntent",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"intent\": \"LogPHIntent\",\n  \"slots\": {\n    \"phValue\": \"5.2\"\n  },\n  \"userId\": \"amzn1.ask.account.ABC123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/alexa/webhook",
+							"host": ["{{baseUrl}}"],
+							"path": ["alexa", "webhook"]
+						},
+						"description": "Registrar valor de pH via Alexa (slot: phValue)"
+					},
+					"response": []
+				},
+				{
+					"name": "Alexa - LogTimeIntent",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"intent\": \"LogTimeIntent\",\n  \"slots\": {\n    \"timeValue\": \"14:30\",\n    \"timeType\": \"floculacao\"\n  },\n  \"userId\": \"amzn1.ask.account.ABC123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/alexa/webhook",
+							"host": ["{{baseUrl}}"],
+							"path": ["alexa", "webhook"]
+						},
+						"description": "Registrar horário via Alexa (slots: timeValue, timeType)"
+					},
+					"response": []
+				},
+				{
+					"name": "Alexa - NextStepIntent",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"intent\": \"NextStepIntent\",\n  \"userId\": \"amzn1.ask.account.ABC123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/alexa/webhook",
+							"host": ["{{baseUrl}}"],
+							"path": ["alexa", "webhook"]
+						},
+						"description": "Ouvir instruções da etapa atual via Alexa"
+					},
+					"response": []
+				},
+				{
+					"name": "Alexa - PauseIntent",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"intent\": \"PauseIntent\",\n  \"userId\": \"amzn1.ask.account.ABC123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/alexa/webhook",
+							"host": ["{{baseUrl}}"],
+							"path": ["alexa", "webhook"]
+						},
+						"description": "Pausar produção via Alexa"
+					},
+					"response": []
+				},
+				{
+					"name": "Alexa - ResumeIntent",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"intent\": \"ResumeIntent\",\n  \"userId\": \"amzn1.ask.account.ABC123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/alexa/webhook",
+							"host": ["{{baseUrl}}"],
+							"path": ["alexa", "webhook"]
+						},
+						"description": "Retomar produção via Alexa"
+					},
+					"response": []
+				},
+				{
+					"name": "Alexa - HelpIntent",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"intent\": \"HelpIntent\",\n  \"userId\": \"amzn1.ask.account.ABC123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/alexa/webhook",
+							"host": ["{{baseUrl}}"],
+							"path": ["alexa", "webhook"]
+						},
+						"description": "Solicita ajuda sobre comandos disponíveis via Alexa"
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
