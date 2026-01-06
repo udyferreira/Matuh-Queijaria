@@ -88,7 +88,7 @@ export default function BatchDetail() {
   const currentStageTimer = activeTimers.find((t: any) => t.stageId === batch.currentStageId);
   const isTimerStage = !!currentStageTimer;
   const isTimerComplete = currentStageTimer?.isComplete || (currentStageTimer ? new Date(currentStageTimer.endTime) <= new Date() : false);
-  const isInputStage = [1, 6, 7, 13, 14].includes(batch.currentStageId);
+  const isInputStage = [6, 7, 13, 14].includes(batch.currentStageId);
   const inputType = batch.currentStageId === 13 ? "ph" : "time"; 
   const inputLabel = inputType === "ph" ? "Valor do pH" : "Horário (HH:MM)";
   const stageInstructions = STAGE_INSTRUCTIONS[batch.currentStageId] || [];
