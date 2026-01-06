@@ -380,7 +380,10 @@ export default function BatchDetail() {
                   ) : (
                     <div className="space-y-4 text-lg">
                       <p>Siga o procedimento padrão para esta etapa.</p>
-                      {batch.calculatedInputs && <IngredientList inputs={batch.calculatedInputs as Record<string, number>} />}
+                      {/* Mostrar ingredientes apenas nas etapas 4 e 5 (adicionar fermentos) */}
+                      {[4, 5].includes(batch.currentStageId) && batch.calculatedInputs && (
+                        <IngredientList inputs={batch.calculatedInputs as Record<string, number>} />
+                      )}
                       
                       <div className="flex items-center gap-3 text-amber-400 bg-amber-400/10 p-4 rounded-lg mt-4 text-base border border-amber-400/20">
                         <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -429,12 +432,60 @@ export default function BatchDetail() {
                   <span className="text-muted-foreground">Iniciado</span>
                   <span className="font-mono">{new Date(batch.startedAt).toLocaleTimeString('pt-BR')}</span>
                 </div>
-                {Object.entries(batch.measurements as Record<string, any> || {}).map(([key, val]) => (
-                  <div key={key} className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
-                    <span className="capitalize text-muted-foreground">{key.replace(/_/g, ' ')}</span>
-                    <span className="font-mono font-bold">{typeof val === 'object' ? JSON.stringify(val) : val}</span>
-                  </div>
-                ))}
+                {Object.entries(batch.measurements as Record<string, any> || {}).map(([key, val]) => {
+                  // Traduzir labels para português (normaliza camelCase e snake_case)
+                  const normalizedKey = key.toLowerCase().replace(/([A-Z])/g, '_$1').replace(/_+/g, '_').replace(/^_/, '');
+                  const labelMap: Record<string, string> = {
+                    'ph_value': 'Valor do pH',
+                    'ph value': 'Valor do pH',
+                    'ph': 'pH',
+                    'ph_history': 'Histórico de pH',
+                    'phhistory': 'Histórico de pH',
+                    'temperature': 'Temperatura',
+                    'temp': 'Temperatura',
+                    'time': 'Horário',
+                    'start_time': 'Hora de Início',
+                    'starttime': 'Hora de Início',
+                    'end_time': 'Hora de Término',
+                    'endtime': 'Hora de Término',
+                    'milk_volume': 'Volume de Leite',
+                    'milkvolume': 'Volume de Leite',
+                    'stage': 'Etapa',
+                    'duration': 'Duração',
+                  };
+                  const translatedLabel = labelMap[normalizedKey] || labelMap[key.toLowerCase()] || key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+                  
+                  // Formatar valor - extrair valor mais recente de arrays ou objetos
+                  let displayValue: string;
+                  if (Array.isArray(val)) {
+                    if (val.length === 0) {
+                      displayValue = '-';
+                    } else {
+                      // Pegar o último valor (mais recente)
+                      const lastEntry = val[val.length - 1];
+                      if (typeof lastEntry === 'object' && lastEntry !== null && 'value' in lastEntry) {
+                        displayValue = String(lastEntry.value);
+                      } else {
+                        displayValue = String(lastEntry);
+                      }
+                    }
+                  } else if (typeof val === 'object' && val !== null) {
+                    if ('value' in val) {
+                      displayValue = String(val.value);
+                    } else {
+                      displayValue = '-';
+                    }
+                  } else {
+                    displayValue = String(val);
+                  }
+                  
+                  return (
+                    <div key={key} className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
+                      <span className="capitalize text-muted-foreground">{translatedLabel}</span>
+                      <span className="font-mono font-bold">{displayValue}</span>
+                    </div>
+                  );
+                })}
                 {(!batch.measurements || Object.keys(batch.measurements as object).length === 0) && (
                    <div className="text-center text-muted-foreground py-4 text-sm italic">
                      Nenhuma medição registrada ainda.

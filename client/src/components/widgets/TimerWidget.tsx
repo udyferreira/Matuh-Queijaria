@@ -30,10 +30,20 @@ export function TimerWidget({ durationMinutes, startTime, label }: TimerWidgetPr
     return () => clearInterval(interval);
   }, [startTime, durationMinutes]);
 
-  const minutes = Math.floor(timeLeft / 60000);
+  const totalMinutes = Math.floor(timeLeft / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
   const seconds = Math.floor((timeLeft % 60000) / 1000);
 
   const isComplete = timeLeft === 0;
+  const showHours = durationMinutes >= 60;
+
+  const formatTime = () => {
+    if (showHours) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    return `${String(totalMinutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
 
   return (
     <div className="relative overflow-hidden rounded-2xl bg-card border border-border p-6 shadow-xl shadow-black/20">
@@ -42,7 +52,7 @@ export function TimerWidget({ durationMinutes, startTime, label }: TimerWidgetPr
           <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">{label}</h3>
           <div className="flex items-baseline gap-1 mt-1">
             <span className="text-4xl font-display font-bold tabular-nums">
-              {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
+              {formatTime()}
             </span>
             <span className="text-sm text-muted-foreground">restantes</span>
           </div>
