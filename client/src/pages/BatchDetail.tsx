@@ -14,8 +14,8 @@ import { motion, AnimatePresence } from "framer-motion";
 const STAGE_NAMES: Record<number, string> = {
   1: "Separar o leite",
   2: "Calcular fermentos e coalho",
-  3: "Aquecer o leite",
-  4: "Adicionar fermentos LR e DX",
+  3: "Aquecer o leite a 32°C",
+  4: "Adicionar fermentos LR e DX e mexer",
   5: "Adicionar fermento KL e coalho",
   6: "Anotar horário de floculação",
   7: "Anotar horário do ponto de corte",
@@ -32,6 +32,20 @@ const STAGE_NAMES: Record<number, string> = {
   18: "Secagem em prateleiras",
   19: "Transferir para Câmara 2",
   20: "Virar queijos diariamente na Câmara 2",
+};
+
+const STAGE_INSTRUCTIONS: Record<number, string[]> = {
+  4: ["Adicione o fermento LR", "Adicione o fermento DX", "Mexa bem o leite", "Aguarde 30 minutos mexendo ocasionalmente"],
+  5: ["Adicione o fermento KL", "Adicione o coalho", "Mexa bem", "Coloque a Lira e aguarde floculação"],
+  10: ["Comece devagar e aumente o vigor progressivamente", "Aguarde 30 minutos de mexedura"],
+  17: ["Mergulhe os queijos no tanque de salmoura", "Tempo de salga: 8 horas"],
+};
+
+const TIMER_LABELS: Record<number, string> = {
+  4: "Maturação dos fermentos LR/DX",
+  10: "Mexedura progressiva",
+  17: "Salga em salmoura",
+  19: "Secagem na Câmara 2",
 };
 
 export default function BatchDetail() {
@@ -52,10 +66,15 @@ export default function BatchDetail() {
     );
   }
 
-  const isTimerStage = batch.activeTimers && batch.activeTimers.length > 0;
+  const activeTimers = (batch.activeTimers as any[]) || [];
+  const currentStageTimer = activeTimers.find((t: any) => t.stageId === batch.currentStageId);
+  const isTimerStage = !!currentStageTimer;
+  const isTimerComplete = currentStageTimer?.isComplete || (currentStageTimer ? new Date(currentStageTimer.endTime) <= new Date() : false);
   const isInputStage = [1, 6, 7, 13, 14].includes(batch.currentStageId);
   const inputType = batch.currentStageId === 13 ? "ph" : "time"; 
   const inputLabel = inputType === "ph" ? "Valor do pH" : "Horário (HH:MM)";
+  const stageInstructions = STAGE_INSTRUCTIONS[batch.currentStageId] || [];
+  const timerLabel = TIMER_LABELS[batch.currentStageId] || "Timer da Etapa";
 
   const handleAdvance = () => {
     advance({ id, data: { stageId: batch.currentStageId } }, {
@@ -132,16 +151,33 @@ export default function BatchDetail() {
 
                 <div className="bg-background/50 backdrop-blur rounded-xl p-6 border border-white/5 mb-8">
                   
-                  {isTimerStage ? (
+                  {/* Instruções da etapa */}
+                  {stageInstructions.length > 0 && (
+                    <div className="mb-6">
+                      <h4 className="text-sm font-medium text-muted-foreground mb-3">Instruções:</h4>
+                      <ul className="space-y-2">
+                        {stageInstructions.map((instruction, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm">
+                            <span className="bg-primary/20 text-primary rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0 mt-0.5">{i + 1}</span>
+                            <span>{instruction}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {isTimerStage && currentStageTimer ? (
                     <div className="space-y-4">
-                      {batch.activeTimers.map((timer: any, i: number) => (
-                        <TimerWidget 
-                          key={i} 
-                          durationMinutes={timer.duration} 
-                          startTime={timer.startTime} 
-                          label="Fase de Fermentação" 
-                        />
-                      ))}
+                      <TimerWidget 
+                        durationMinutes={currentStageTimer.durationMinutes || Math.round((new Date(currentStageTimer.endTime).getTime() - new Date(currentStageTimer.startTime).getTime()) / 60000)} 
+                        startTime={currentStageTimer.startTime} 
+                        label={timerLabel} 
+                      />
+                      {isTimerComplete && (
+                        <div className="text-center text-green-400 font-medium">
+                          Timer concluído! Você pode avançar para a próxima etapa.
+                        </div>
+                      )}
                     </div>
                   ) : isInputStage ? (
                     <form onSubmit={handleInputLog} className="max-w-md">
@@ -180,10 +216,10 @@ export default function BatchDetail() {
                     size="lg" 
                     className="w-full h-16 text-lg font-bold premium-gradient shadow-lg"
                     onClick={handleAdvance}
-                    disabled={isAdvancing || (isTimerStage && true)}
+                    disabled={isAdvancing || (isTimerStage && !isTimerComplete)}
                     data-testid="button-complete-step"
                   >
-                    {isAdvancing ? "Processando..." : "Marcar Etapa como Concluída"} 
+                    {isAdvancing ? "Processando..." : isTimerStage && !isTimerComplete ? "Aguarde o Timer..." : "Marcar Etapa como Concluída"} 
                     <ArrowRight className="ml-2 w-5 h-5" />
                   </Button>
                 )}

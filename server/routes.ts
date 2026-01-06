@@ -62,7 +62,18 @@ export async function registerRoutes(
   app.get(api.batches.get.path, async (req, res) => {
     const batch = await storage.getBatch(Number(req.params.id));
     if (!batch) return res.status(404).json({ message: "Batch not found" });
-    res.json(batch);
+    
+    // Enrich timer data with isComplete flag for consistency with /status
+    const now = new Date();
+    const activeTimers = ((batch.activeTimers as any[]) || []).map(t => ({
+      ...t,
+      isComplete: new Date(t.endTime) <= now
+    }));
+    
+    res.json({
+      ...batch,
+      activeTimers
+    });
   });
 
   app.get(api.batches.status.path, async (req, res) => {
@@ -70,23 +81,20 @@ export async function registerRoutes(
     if (!batch) return res.status(404).json({ message: "Batch not found" });
 
     const stage = recipeManager.getStage(batch.currentStageId);
+    const activeTimers = (batch.activeTimers as any[]) || [];
     
-    // Check if timers are done and remove them from active list if so (lazy cleanup)
-    // In a real system, we'd use a background job, but this works for MVP polling
-    let activeTimers = (batch.activeTimers as any[]) || [];
+    // Mark timers as complete but don't remove them (removal happens on advance)
     const now = new Date();
-    activeTimers = activeTimers.filter(t => new Date(t.endTime) > now);
-    
-    // Update batch if timers changed
-    if (activeTimers.length !== ((batch.activeTimers as any[]) || []).length) {
-       await storage.updateBatch(batch.id, { activeTimers });
-    }
+    const timersWithStatus = activeTimers.map(t => ({
+      ...t,
+      isComplete: new Date(t.endTime) <= now
+    }));
 
     res.json({
         batchId: batch.id,
         currentStageId: batch.currentStageId,
         status: batch.status,
-        activeTimers,
+        activeTimers: timersWithStatus,
         nextAction: stage?.instructions?.[0] || stage?.name || "Proceed",
         guidance: stage?.llm_guidance
     });
@@ -160,19 +168,26 @@ export async function registerRoutes(
         return res.json(completed);
     }
 
+    // Clean up expired timers from current stage
+    let activeTimers = (batch.activeTimers as any[]) || [];
+    activeTimers = activeTimers.filter(t => t.stageId !== currentStage.id);
+
     // Handle new stage side-effects (e.g. start timers)
     const updates: any = {
-        currentStageId: nextStage.id
+        currentStageId: nextStage.id,
+        activeTimers
     };
 
     if (nextStage.timer) {
-        const durationMs = (nextStage.timer.duration_min || 0) * 60000 + (nextStage.timer.duration_hours || 0) * 3600000;
+        const durationMin = nextStage.timer.duration_min || 0;
+        const durationHours = nextStage.timer.duration_hours || 0;
+        const durationMs = durationMin * 60000 + durationHours * 3600000;
         if (durationMs > 0) {
-            const activeTimers = (batch.activeTimers as any[]) || [];
             activeTimers.push({
                 stageId: nextStage.id,
                 startTime: new Date().toISOString(),
                 endTime: new Date(Date.now() + durationMs).toISOString(),
+                durationMinutes: durationMin + (durationHours * 60),
                 blocking: nextStage.timer.blocking
             });
             updates.activeTimers = activeTimers;

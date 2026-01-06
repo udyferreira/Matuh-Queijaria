@@ -97,25 +97,26 @@ export class RecipeManager {
       }
     }
 
-    // 2. Check timers
+    // 2. Check blocking timers
     if (currentStage.timer && currentStage.timer.blocking) {
       const activeTimers = (batch.activeTimers as any[]) || [];
       const stageTimer = activeTimers.find(t => t.stageId === currentStage.id);
       
+      // Timer blocking DEVE existir para esta etapa
       if (!stageTimer) {
-         // Timer hasn't even started (this shouldn't happen if logic is correct, but safe fallback)
-         // Actually, if it's blocking, we check if it's COMPLETED.
-         // We'll rely on client/server logic to remove timers when done or mark them done.
-         // For MVP, let's assume if it's in activeTimers, it's running.
-         return { allowed: false, reason: "Blocking timer is still active" };
+        // Isso pode acontecer se o timer não foi iniciado corretamente
+        // Não deveria ocorrer em fluxo normal, mas protege contra manipulação
+        return { allowed: false, reason: `Esta etapa requer aguardar o timer. Reinicie a etapa.` };
       }
       
       const now = new Date();
       const endTime = new Date(stageTimer.endTime);
       
       if (now < endTime) {
-        return { allowed: false, reason: `Timer active. Wait ${Math.ceil((endTime.getTime() - now.getTime()) / 60000)} min` };
+        const remainingMin = Math.ceil((endTime.getTime() - now.getTime()) / 60000);
+        return { allowed: false, reason: `Aguarde o timer. Faltam ${remainingMin} minutos.` };
       }
+      // Timer expirou - permite avançar
     }
 
     // 3. Loop conditions (e.g. pH check)
