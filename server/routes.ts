@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { CHEESE_TYPES, getCheeseTypeName } from "@shared/schema";
-import { recipeManager } from "./recipe";
+import { recipeManager, getTimerDurationMinutes, getIntervalDurationMinutes, TEST_MODE } from "./recipe";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import { z } from "zod";
@@ -582,32 +582,33 @@ export async function registerRoutes(
 
     // Handle regular timers (duration-based)
     if (nextStage.timer) {
-        const durationMin = nextStage.timer.duration_min || 0;
-        const durationHours = nextStage.timer.duration_hours || 0;
-        const intervalHours = nextStage.timer.interval_hours;
+        // Use helper functions that respect TEST_MODE
+        const durationMinutes = getTimerDurationMinutes(nextStage);
+        const intervalMinutes = getIntervalDurationMinutes(nextStage);
         
         // For interval timers (loop stages like stage 15)
-        if (intervalHours) {
+        if (intervalMinutes > 0) {
+            const intervalDesc = TEST_MODE ? "1 minuto (TESTE)" : `${nextStage.timer.interval_hours} horas`;
             activeReminders.push({
                 id: generateId(),
                 stageId: nextStage.id,
                 type: "interval",
-                intervalHours: intervalHours,
-                nextTrigger: new Date(Date.now() + intervalHours * 3600000).toISOString(),
+                intervalHours: intervalMinutes / 60, // Store as hours for compatibility
+                nextTrigger: new Date(Date.now() + intervalMinutes * 60000).toISOString(),
                 acknowledged: false,
-                description: `Verificar pH a cada ${intervalHours} horas`
+                description: `Verificar pH a cada ${intervalDesc}`
             });
             updates.activeReminders = activeReminders;
         }
         
         // For duration-based timers
-        const durationMs = durationMin * 60000 + durationHours * 3600000;
-        if (durationMs > 0) {
+        if (durationMinutes > 0) {
+            const durationMs = durationMinutes * 60000;
             activeTimers.push({
                 stageId: nextStage.id,
                 startTime: new Date().toISOString(),
                 endTime: new Date(Date.now() + durationMs).toISOString(),
-                durationMinutes: durationMin + (durationHours * 60),
+                durationMinutes: durationMinutes,
                 blocking: nextStage.timer.blocking
             });
             updates.activeTimers = activeTimers;
@@ -619,7 +620,10 @@ export async function registerRoutes(
         const frequency = nextStage.reminder.frequency;
         let nextTrigger: Date;
         
-        if (frequency === 'daily') {
+        if (TEST_MODE) {
+            // In TEST_MODE, reminders trigger in 1 minute
+            nextTrigger = new Date(Date.now() + 60000);
+        } else if (frequency === 'daily') {
             // Next trigger is tomorrow at 9am
             nextTrigger = new Date();
             nextTrigger.setDate(nextTrigger.getDate() + 1);
@@ -629,13 +633,14 @@ export async function registerRoutes(
             nextTrigger = new Date(Date.now() + 24 * 3600000);
         }
         
+        const reminderDesc = TEST_MODE ? `Lembrete (TESTE): ${nextStage.name}` : `Lembrete diário: ${nextStage.name}`;
         activeReminders.push({
             id: generateId(),
             stageId: nextStage.id,
             type: "daily",
             nextTrigger: nextTrigger.toISOString(),
             acknowledged: false,
-            description: `Lembrete diário: ${nextStage.name}`
+            description: reminderDesc
         });
         updates.activeReminders = activeReminders;
     }

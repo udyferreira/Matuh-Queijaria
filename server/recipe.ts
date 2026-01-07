@@ -3,6 +3,13 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { ProductionBatch } from '@shared/schema';
 
+// TEST_MODE: When enabled, all timers are reduced to 1 minute for faster testing
+const TEST_MODE = process.env.TEST_MODE === 'true';
+
+if (TEST_MODE) {
+  console.log('[TEST_MODE] All timers reduced to 1 minute for testing');
+}
+
 // Types matching the YAML structure
 interface RecipeStage {
   id: number;
@@ -251,3 +258,30 @@ export class RecipeManager {
 }
 
 export const recipeManager = new RecipeManager();
+
+// Export TEST_MODE for use in routes
+export { TEST_MODE };
+
+// Helper function to get timer duration in minutes, respecting TEST_MODE
+export function getTimerDurationMinutes(stage: RecipeStage | undefined): number {
+  if (!stage?.timer) return 0;
+  
+  // In TEST_MODE, all timers are 1 minute
+  if (TEST_MODE) return 1;
+  
+  // Normal mode: calculate from stage definition (sum both if present)
+  const durationMin = stage.timer.duration_min || 0;
+  const durationHours = stage.timer.duration_hours || 0;
+  
+  return durationMin + (durationHours * 60);
+}
+
+// Helper function to get interval duration in minutes, respecting TEST_MODE
+export function getIntervalDurationMinutes(stage: RecipeStage | undefined): number {
+  if (!stage?.timer?.interval_hours) return 0;
+  
+  // In TEST_MODE, all intervals are 1 minute
+  if (TEST_MODE) return 1;
+  
+  return stage.timer.interval_hours * 60;
+}
