@@ -693,10 +693,13 @@ export async function registerRoutes(
   });
   
   // --- Alexa Webhook (ASK-Compliant) ---
+  // This webhook accepts ONLY:
+  // - LaunchRequest: skill opening
+  // - SessionEndedRequest: skill closing
+  // - IntentRequest with ProcessCommandIntent: free-form voice command
+  // The backend interprets the utterance and executes actions - Alexa is just a voice adapter.
   
   // Utility function to build Alexa-compliant responses
-  // All responses MUST follow this format - never return raw JSON
-  // Note: reprompt is ONLY included when shouldEndSession is false
   function buildAlexaResponse(
     speechText: string, 
     shouldEndSession: boolean = false, 
@@ -725,6 +728,259 @@ export async function registerRoutes(
     
     return response;
   }
+  
+  // Voice command interpreter - analyzes free-form text and executes actions
+  // The backend is SOVEREIGN - all decisions happen here, not in Alexa
+  async function interpretVoiceCommand(utterance: string): Promise<{ speech: string; shouldEndSession: boolean }> {
+    const text = utterance.toLowerCase().trim();
+    
+    // Get active batch for context
+    const batches = await storage.getActiveBatches();
+    const activeBatch = batches[0];
+    
+    // --- COMMAND: Start batch ---
+    // Patterns: "iniciar lote", "começar produção", "novo lote", "iniciar com X litros"
+    if (text.includes("iniciar") || text.includes("começar") || text.includes("novo lote")) {
+      // Extract volume if mentioned
+      const volumeMatch = text.match(/(\d+)\s*(litros?|l\b)/i);
+      const milkVolume = volumeMatch ? parseInt(volumeMatch[1], 10) : 50;
+      
+      const inputs = recipeManager.calculateInputs(milkVolume);
+      await storage.createBatch({
+        recipeId: "queijo_nete",
+        currentStageId: 3,
+        milkVolumeL: String(milkVolume),
+        calculatedInputs: inputs,
+        status: "active",
+        history: [
+          { stageId: 1, action: "complete", timestamp: new Date().toISOString(), auto: true },
+          { stageId: 2, action: "complete", timestamp: new Date().toISOString(), auto: true },
+          { stageId: 3, action: "start", timestamp: new Date().toISOString() }
+        ]
+      });
+      
+      return {
+        speech: `Lote iniciado com ${milkVolume} litros de leite. Você vai precisar de: ${inputs.FERMENT_LR} mililitros de fermento LR, ${inputs.FERMENT_DX} de DX, ${inputs.FERMENT_KL} de KL, e ${inputs.RENNET} de coalho. Aqueça o leite a 32 graus para começar.`,
+        shouldEndSession: false
+      };
+    }
+    
+    // --- COMMAND: Status ---
+    // Patterns: "status", "como está", "qual etapa", "situação"
+    if (text.includes("status") || text.includes("como está") || text.includes("qual etapa") || text.includes("situação")) {
+      if (!activeBatch) {
+        return { speech: "Não há lote ativo no momento. Diga 'iniciar lote' para começar.", shouldEndSession: false };
+      }
+      
+      const stage = recipeManager.getStage(activeBatch.currentStageId);
+      const timers = (activeBatch.activeTimers as any[]) || [];
+      const activeTimer = timers.find(t => new Date(t.endTime) > new Date());
+      
+      let speech = `Etapa ${activeBatch.currentStageId}: ${stage?.name || 'em andamento'}.`;
+      
+      if (activeTimer) {
+        const remaining = Math.ceil((new Date(activeTimer.endTime).getTime() - Date.now()) / 60000);
+        speech += ` Faltam ${remaining} minutos no timer.`;
+      }
+      
+      return { speech, shouldEndSession: false };
+    }
+    
+    // --- COMMAND: Timer check ---
+    // Patterns: "timer", "tempo", "quanto falta", "falta quanto"
+    if (text.includes("timer") || text.includes("quanto falta") || text.includes("falta quanto") || text.match(/\btempo\b/)) {
+      if (!activeBatch) {
+        return { speech: "Não há lote ativo.", shouldEndSession: false };
+      }
+      
+      const timers = (activeBatch.activeTimers as any[]) || [];
+      const now = new Date();
+      const activeTimer = timers.find(t => new Date(t.endTime) > now);
+      
+      if (!activeTimer) {
+        return { speech: "Não há timer ativo no momento.", shouldEndSession: false };
+      }
+      
+      const remaining = Math.ceil((new Date(activeTimer.endTime).getTime() - now.getTime()) / 60000);
+      if (remaining > 60) {
+        const hours = Math.floor(remaining / 60);
+        const mins = remaining % 60;
+        return { speech: `Faltam ${hours} horas e ${mins} minutos no timer.`, shouldEndSession: false };
+      }
+      return { speech: `Faltam ${remaining} minutos no timer.`, shouldEndSession: false };
+    }
+    
+    // --- COMMAND: Advance stage ---
+    // Patterns: "avançar", "próxima etapa", "próximo passo", "continuar", "pronto"
+    if (text.includes("avançar") || text.includes("próxima") || text.includes("próximo") || text.includes("continuar") || text.includes("pronto")) {
+      if (!activeBatch) {
+        return { speech: "Não há lote ativo para avançar.", shouldEndSession: false };
+      }
+      
+      const currentStage = recipeManager.getStage(activeBatch.currentStageId);
+      if (!currentStage) {
+        return { speech: "Etapa inválida.", shouldEndSession: false };
+      }
+      
+      const validation = recipeManager.validateAdvance(activeBatch, currentStage);
+      if (!validation.allowed) {
+        return { speech: validation.reason || "Não é possível avançar agora.", shouldEndSession: false };
+      }
+      
+      const nextStage = recipeManager.getNextStage(activeBatch.currentStageId);
+      if (!nextStage) {
+        await storage.updateBatch(activeBatch.id, { status: "completed" });
+        return { speech: "Parabéns! Receita concluída com sucesso!", shouldEndSession: false };
+      }
+      
+      await storage.updateBatch(activeBatch.id, { currentStageId: nextStage.id });
+      return { speech: `Avançando para etapa ${nextStage.id}: ${nextStage.name}.`, shouldEndSession: false };
+    }
+    
+    // --- COMMAND: Log pH ---
+    // Patterns: "registra pH X", "pH X", "acidez X", "pH cinco ponto dois"
+    // Helper to convert spoken numbers to digits
+    const parseSpokenNumber = (spoken: string): number | null => {
+      const numWords: Record<string, number> = {
+        'zero': 0, 'um': 1, 'uma': 1, 'dois': 2, 'duas': 2, 'tres': 3, 'três': 3,
+        'quatro': 4, 'cinco': 5, 'seis': 6, 'sete': 7, 'oito': 8, 'nove': 9,
+        'dez': 10, 'onze': 11, 'doze': 12, 'treze': 13, 'catorze': 14, 'quatorze': 14,
+        'quinze': 15, 'dezesseis': 16, 'dezessete': 17, 'dezoito': 18, 'dezenove': 19, 'vinte': 20
+      };
+      
+      // Try direct number first (e.g., "5.2", "5,2", "52")
+      const directMatch = spoken.match(/(\d+[.,]?\d*)/);
+      if (directMatch) return parseFloat(directMatch[1].replace(",", "."));
+      
+      // Try spoken format: "cinco ponto dois" or "cinco vírgula dois"
+      const spokenMatch = spoken.match(/(\w+)\s*(?:ponto|vírgula|virgula|e)\s*(\w+)/i);
+      if (spokenMatch) {
+        const intPart = numWords[spokenMatch[1].toLowerCase()];
+        const decPart = numWords[spokenMatch[2].toLowerCase()];
+        if (intPart !== undefined && decPart !== undefined) {
+          return parseFloat(`${intPart}.${decPart}`);
+        }
+      }
+      
+      // Try single spoken number
+      const singleMatch = spoken.match(/\b(\w+)\b/);
+      if (singleMatch && numWords[singleMatch[1].toLowerCase()] !== undefined) {
+        return numWords[singleMatch[1].toLowerCase()];
+      }
+      
+      return null;
+    };
+    
+    const phMatch = text.match(/(?:ph|acidez|registra\s*ph)\s*[:\s]?\s*(.+)/i);
+    if (phMatch) {
+      const phValue = parseSpokenNumber(phMatch[1]);
+      if (phValue === null) {
+        return { speech: "Não entendi o valor do pH. Diga algo como 'pH cinco ponto dois'.", shouldEndSession: false };
+      }
+      if (!activeBatch) {
+        return { speech: "Não há lote ativo para registrar pH.", shouldEndSession: false };
+      }
+      
+      const measurements = (activeBatch.measurements as any) || {};
+      measurements.ph_value = phValue;
+      const phHistory = measurements.ph_measurements || [];
+      phHistory.push({ value: phValue, timestamp: new Date().toISOString() });
+      measurements.ph_measurements = phHistory;
+      await storage.updateBatch(activeBatch.id, { measurements });
+      
+      return { speech: `pH ${phValue} registrado com sucesso.`, shouldEndSession: false };
+    }
+    
+    // --- COMMAND: Log time ---
+    // Patterns: "hora da floculação X:XX", "hora do corte X:XX", "registra horário X:XX"
+    const timeMatch = text.match(/(?:hora|horário|registra\s*hora)\s*(?:da\s*)?(floculação|corte|prensa)?\s*[:\s]?\s*(\d{1,2})[:\s](\d{2})/i);
+    if (timeMatch) {
+      if (!activeBatch) {
+        return { speech: "Não há lote ativo para registrar horário.", shouldEndSession: false };
+      }
+      
+      const timeType = timeMatch[1]?.toLowerCase();
+      const timeValue = `${timeMatch[2]}:${timeMatch[3]}`;
+      
+      const measurements = (activeBatch.measurements as any) || {};
+      const key = timeType === 'floculação' ? 'flocculation_time' :
+                  timeType === 'corte' ? 'cut_point_time' :
+                  timeType === 'prensa' ? 'press_start_time' : 'recorded_time';
+      measurements[key] = timeValue;
+      await storage.updateBatch(activeBatch.id, { measurements });
+      
+      const typeLabel = timeType ? ` de ${timeType}` : '';
+      return { speech: `Horário${typeLabel} ${timeValue} registrado.`, shouldEndSession: false };
+    }
+    
+    // --- COMMAND: Pause ---
+    // Patterns: "pausar", "pausa", "parar"
+    if (text.includes("pausar") || text.includes("pausa") || text.match(/\bparar\b/)) {
+      if (!activeBatch) {
+        return { speech: "Não há lote ativo para pausar.", shouldEndSession: false };
+      }
+      if (activeBatch.status !== "active") {
+        return { speech: `O lote já está ${activeBatch.status}.`, shouldEndSession: false };
+      }
+      
+      await storage.updateBatch(activeBatch.id, { status: "paused", pausedAt: new Date() });
+      return { speech: "Lote pausado. Diga 'retomar' quando quiser continuar.", shouldEndSession: false };
+    }
+    
+    // --- COMMAND: Resume ---
+    // Patterns: "retomar", "continuar", "despausar"
+    if (text.includes("retomar") || text.includes("despausar") || (text.includes("continuar") && activeBatch?.status === "paused")) {
+      if (!activeBatch) {
+        return { speech: "Não há lote para retomar.", shouldEndSession: false };
+      }
+      if (activeBatch.status !== "paused") {
+        return { speech: "O lote não está pausado.", shouldEndSession: false };
+      }
+      
+      await storage.updateBatch(activeBatch.id, { status: "active", pausedAt: null });
+      return { speech: "Lote retomado. Continuando de onde paramos.", shouldEndSession: false };
+    }
+    
+    // --- COMMAND: Instructions for current stage ---
+    // Patterns: "instruções", "o que fazer", "como fazer", "repetir"
+    if (text.includes("instrução") || text.includes("instruções") || text.includes("o que fazer") || text.includes("como fazer") || text.includes("repetir")) {
+      if (!activeBatch) {
+        return { speech: "Não há lote ativo.", shouldEndSession: false };
+      }
+      
+      const stage = recipeManager.getStage(activeBatch.currentStageId);
+      if (stage?.instructions && stage.instructions.length > 0) {
+        let speech = stage.instructions.join('. ');
+        if (stage.llm_guidance) {
+          speech += ` Dica: ${stage.llm_guidance}`;
+        }
+        return { speech, shouldEndSession: false };
+      }
+      
+      return { speech: stage?.name || "Prossiga com a produção.", shouldEndSession: false };
+    }
+    
+    // --- COMMAND: Help ---
+    // Patterns: "ajuda", "help", "comandos", "o que posso"
+    if (text.includes("ajuda") || text.includes("help") || text.includes("comandos") || text.includes("o que posso")) {
+      return {
+        speech: "Você pode dizer: status, avançar, registra pH cinco ponto dois, hora da floculação dez e trinta, pausar, retomar, ou instruções. O que deseja?",
+        shouldEndSession: false
+      };
+    }
+    
+    // --- COMMAND: Goodbye ---
+    // Patterns: "tchau", "adeus", "encerrar", "sair", "fechar"
+    if (text.includes("tchau") || text.includes("adeus") || text.includes("encerrar") || text.includes("sair") || text.includes("fechar")) {
+      return { speech: "Até logo! Bom trabalho na queijaria.", shouldEndSession: true };
+    }
+    
+    // --- FALLBACK: Unknown command ---
+    return {
+      speech: "Não entendi o comando. Diga 'ajuda' para ver as opções disponíveis.",
+      shouldEndSession: false
+    };
+  }
 
   app.post("/api/alexa/webhook", async (req, res) => {
     // Always return HTTP 200 - errors are communicated via speech
@@ -732,275 +988,89 @@ export async function registerRoutes(
       const alexaRequest = req.body;
       const requestType = alexaRequest?.request?.type;
       
-      // Handle LaunchRequest (skill opening)
+      // --- LaunchRequest: Skill opening ---
       if (requestType === "LaunchRequest") {
         return res.status(200).json(buildAlexaResponse(
-          "Bem-vindo à Matuh Queijaria! Você pode iniciar um lote, verificar o status, ou pedir ajuda. O que deseja fazer?",
+          "Bem-vindo à Matuh Queijaria! Diga um comando como 'status' ou 'iniciar lote com 50 litros'.",
           false,
-          "Diga 'iniciar lote', 'status', ou 'ajuda'."
+          "Diga 'ajuda' para ver os comandos."
         ));
       }
       
-      // Handle SessionEndedRequest
+      // --- SessionEndedRequest: Skill closing ---
       if (requestType === "SessionEndedRequest") {
-        return res.status(200).json(buildAlexaResponse("Até logo!", true));
+        return res.status(200).json(buildAlexaResponse("", true));
       }
       
-      // Handle IntentRequest
+      // --- IntentRequest: Process voice command ---
       if (requestType === "IntentRequest") {
         const intent = alexaRequest?.request?.intent;
         const intentName = intent?.name;
         const slots = intent?.slots || {};
         
-        // Extract slot values helper
-        const getSlotValue = (slotName: string): string | undefined => {
-          return slots[slotName]?.value;
-        };
-        
-        // Get active batch for most intents
-        const batches = await storage.getActiveBatches();
-        const activeBatch = batches[0];
-        
-        let speech = "";
-        let shouldEndSession = false;
-        let reprompt = "O que mais posso ajudar?";
-
-        switch (intentName) {
-          case "StartBatchIntent": {
-            const milkVolumeStr = getSlotValue("milkVolumeL");
-            const milkVolume = milkVolumeStr ? parseInt(milkVolumeStr, 10) : 50;
-            
-            const spokenCheese = (getSlotValue("cheeseName") || "nete").toLowerCase().trim();
-            
-            const matchedCheese = Object.values(CHEESE_TYPES).find(c => 
-              c.name.toLowerCase() === spokenCheese || 
-              c.id.toLowerCase().includes(spokenCheese)
-            );
-            
-            const cheeseType = matchedCheese || CHEESE_TYPES.QUEIJO_NETE;
-            
-            if (!cheeseType.available) {
-              speech = `O queijo ${cheeseType.name} ainda não está disponível. Apenas o queijo Nete está disponível no momento. Diga 'iniciar lote de Nete com X litros'.`;
-              break;
-            }
-            
-            const inputs = recipeManager.calculateInputs(milkVolume);
-            await storage.createBatch({
-              recipeId: cheeseType.id,
-              currentStageId: 3,
-              milkVolumeL: String(milkVolume),
-              calculatedInputs: inputs,
-              status: "active",
-              history: [
-                { stageId: 1, action: "complete", timestamp: new Date().toISOString(), auto: true },
-                { stageId: 2, action: "complete", timestamp: new Date().toISOString(), auto: true },
-                { stageId: 3, action: "start", timestamp: new Date().toISOString() }
-              ]
-            });
-            speech = `Lote de ${cheeseType.name} iniciado com ${milkVolume} litros de leite. Para esta produção você vai precisar de: ${inputs.FERMENT_LR} mililitros de fermento LR, ${inputs.FERMENT_DX} mililitros de fermento DX, ${inputs.FERMENT_KL} mililitros de fermento KL, e ${inputs.RENNET} mililitros de coalho. Aqueça o leite a 32 graus para começar.`;
-            break;
-          }
-
-          case "StatusIntent": {
-            if (!activeBatch) {
-              speech = "Não há lote ativo no momento. Diga 'iniciar lote' para começar um novo.";
-            } else {
-              const stage = recipeManager.getStage(activeBatch.currentStageId);
-              const timers = (activeBatch.activeTimers as any[]) || [];
-              const activeTimer = timers.find(t => new Date(t.endTime) > new Date());
-              
-              speech = `Seu lote está na etapa ${activeBatch.currentStageId}, ${stage?.name || 'em andamento'}.`;
-              
-              if (activeTimer) {
-                const remaining = Math.ceil((new Date(activeTimer.endTime).getTime() - Date.now()) / 60000);
-                speech += ` Faltam ${remaining} minutos no timer.`;
-              }
-            }
-            break;
-          }
-
-          case "NextStepIntent":
-          case "RepeatStepIntent": {
-            if (!activeBatch) {
-              speech = "Não há lote ativo.";
-            } else {
-              const stage = recipeManager.getStage(activeBatch.currentStageId);
-              if (stage?.instructions && stage.instructions.length > 0) {
-                speech = stage.instructions.join('. ');
-              } else {
-                speech = stage?.name || "Prossiga com a próxima etapa.";
-              }
-              if (stage?.llm_guidance) {
-                speech += ` Dica: ${stage.llm_guidance}`;
-              }
-            }
-            break;
-          }
-
-          case "AdvanceIntent": {
-            if (!activeBatch) {
-              speech = "Não há lote ativo para avançar.";
-            } else {
-              const currentStage = recipeManager.getStage(activeBatch.currentStageId);
-              if (!currentStage) {
-                speech = "Etapa inválida.";
-              } else {
-                const validation = recipeManager.validateAdvance(activeBatch, currentStage);
-                if (!validation.allowed) {
-                  speech = validation.reason || "Não é possível avançar agora.";
-                } else {
-                  const nextStage = recipeManager.getNextStage(activeBatch.currentStageId);
-                  if (!nextStage) {
-                    await storage.updateBatch(activeBatch.id, { status: "completed" });
-                    speech = "Parabéns! Receita concluída.";
-                  } else {
-                    await storage.updateBatch(activeBatch.id, { currentStageId: nextStage.id });
-                    speech = `Avançando para etapa ${nextStage.id}: ${nextStage.name}.`;
-                  }
-                }
-              }
-            }
-            break;
-          }
-
-          case "TimerIntent": {
-            if (!activeBatch) {
-              speech = "Não há lote ativo.";
-            } else {
-              const timers = (activeBatch.activeTimers as any[]) || [];
-              const now = new Date();
-              const activeTimer = timers.find(t => new Date(t.endTime) > now);
-              
-              if (!activeTimer) {
-                speech = "Não há timer ativo no momento.";
-              } else {
-                const remaining = Math.ceil((new Date(activeTimer.endTime).getTime() - now.getTime()) / 60000);
-                if (remaining > 60) {
-                  const hours = Math.floor(remaining / 60);
-                  const mins = remaining % 60;
-                  speech = `Faltam ${hours} horas e ${mins} minutos no timer.`;
-                } else {
-                  speech = `Faltam ${remaining} minutos no timer.`;
-                }
-              }
-            }
-            break;
-          }
-
-          case "LogPHIntent": {
-            const phValueStr = getSlotValue("phValue");
-            if (!activeBatch) {
-              speech = "Não há lote ativo.";
-            } else if (!phValueStr) {
-              speech = "Qual é o valor do pH?";
-              reprompt = "Diga o valor do pH medido.";
-            } else {
-              const phValue = parseFloat(phValueStr);
-              const measurements = (activeBatch.measurements as any) || {};
-              measurements.ph_value = phValue;
-              const phHistory = measurements.ph_measurements || [];
-              phHistory.push({ value: phValue, timestamp: new Date().toISOString() });
-              measurements.ph_measurements = phHistory;
-              await storage.updateBatch(activeBatch.id, { measurements });
-              speech = `pH ${phValueStr} registrado com sucesso.`;
-            }
-            break;
-          }
-
-          case "LogTimeIntent": {
-            const timeValue = getSlotValue("timeValue");
-            const timeType = getSlotValue("timeType");
-            if (!activeBatch) {
-              speech = "Não há lote ativo.";
-            } else if (!timeValue) {
-              speech = "Qual é o horário?";
-              reprompt = "Diga o horário no formato horas e minutos.";
-            } else {
-              const measurements = (activeBatch.measurements as any) || {};
-              const key = timeType === 'flocculation' ? 'flocculation_time' :
-                          timeType === 'cut' ? 'cut_point_time' :
-                          timeType === 'press_start' ? 'press_start_time' : 'recorded_time';
-              measurements[key] = timeValue;
-              await storage.updateBatch(activeBatch.id, { measurements });
-              speech = `Horário ${timeValue} registrado para ${timeType || 'a etapa atual'}.`;
-            }
-            break;
-          }
-
-          case "PauseIntent": {
-            if (!activeBatch) {
-              speech = "Não há lote ativo para pausar.";
-            } else if (activeBatch.status !== "active") {
-              speech = `O lote já está ${activeBatch.status}.`;
-            } else {
-              await storage.updateBatch(activeBatch.id, { status: "paused", pausedAt: new Date() });
-              speech = "Lote pausado. Diga 'retomar' quando quiser continuar.";
-            }
-            break;
-          }
-
-          case "ResumeIntent": {
-            if (!activeBatch) {
-              speech = "Não há lote para retomar.";
-            } else if (activeBatch.status !== "paused") {
-              speech = "O lote não está pausado.";
-            } else {
-              await storage.updateBatch(activeBatch.id, { status: "active", pausedAt: null });
-              speech = "Lote retomado. Continuando de onde paramos.";
-            }
-            break;
-          }
-
-          case "AMAZON.HelpIntent":
-          case "HelpIntent": {
-            speech = "Você pode dizer: status do lote, próxima etapa, avançar, registrar pH, pausar, ou retomar. O que deseja fazer?";
-            break;
-          }
-          
-          case "AMAZON.CancelIntent":
-          case "AMAZON.StopIntent": {
-            speech = "Até logo! Bom trabalho na queijaria.";
-            shouldEndSession = true;
-            break;
-          }
-          
-          case "AMAZON.FallbackIntent": {
-            speech = "Desculpe, não entendi. Diga 'ajuda' para ver os comandos disponíveis.";
-            reprompt = "Diga 'ajuda' para ver os comandos.";
-            break;
-          }
-          
-          // Handle free-form query intent (AMAZON.SearchQuery)
-          case "FreeQueryIntent": {
-            const query = getSlotValue("query");
-            if (!query) {
-              speech = "Não entendi seu comando. Diga 'ajuda' para ver as opções.";
-            } else {
-              // For MVP, provide helpful response without LLM
-              speech = `Você disse: ${query}. Para comandos específicos, diga 'ajuda'.`;
-            }
-            break;
-          }
-
-          default:
-            speech = "Comando não reconhecido. Diga 'ajuda' para ver os comandos disponíveis.";
+        // Handle Amazon built-in intents
+        if (intentName === "AMAZON.CancelIntent" || intentName === "AMAZON.StopIntent") {
+          return res.status(200).json(buildAlexaResponse("Até logo! Bom trabalho na queijaria.", true));
         }
-
-        return res.status(200).json(buildAlexaResponse(speech, shouldEndSession, reprompt));
+        
+        if (intentName === "AMAZON.HelpIntent") {
+          return res.status(200).json(buildAlexaResponse(
+            "Você pode dizer: status, avançar, registra pH, hora da floculação, pausar, retomar, ou instruções. O que deseja?",
+            false,
+            "Diga um comando."
+          ));
+        }
+        
+        if (intentName === "AMAZON.FallbackIntent") {
+          return res.status(200).json(buildAlexaResponse(
+            "Não entendi. Diga 'ajuda' para ver os comandos.",
+            false,
+            "Diga 'ajuda' para ver os comandos."
+          ));
+        }
+        
+        // --- ProcessCommandIntent: Main voice command processing ---
+        // This is the ONLY custom intent - all voice commands come through here
+        if (intentName === "ProcessCommandIntent") {
+          const utterance = slots.utterance?.value || "";
+          
+          if (!utterance.trim()) {
+            return res.status(200).json(buildAlexaResponse(
+              "Não ouvi o comando. Tente novamente.",
+              false,
+              "Diga um comando como 'status' ou 'avançar'."
+            ));
+          }
+          
+          // Backend interprets and executes the command
+          const result = await interpretVoiceCommand(utterance);
+          return res.status(200).json(buildAlexaResponse(
+            result.speech,
+            result.shouldEndSession,
+            result.shouldEndSession ? undefined : "O que mais posso ajudar?"
+          ));
+        }
+        
+        // Unknown intent - treat as fallback
+        return res.status(200).json(buildAlexaResponse(
+          "Comando não reconhecido. Diga 'ajuda' para ver as opções.",
+          false,
+          "Diga 'ajuda' para ver os comandos."
+        ));
       }
       
       // Fallback for unknown request types
       return res.status(200).json(buildAlexaResponse(
-        "Desculpe, não consegui processar sua solicitação. Tente novamente.",
+        "Desculpe, não consegui processar sua solicitação.",
         false,
-        "Diga 'ajuda' para ver os comandos disponíveis."
+        "Diga 'ajuda' para ver os comandos."
       ));
       
     } catch (error) {
       console.error("Alexa webhook error:", error);
       // Always return 200 with error message via speech
       return res.status(200).json(buildAlexaResponse(
-        "Ocorreu um erro ao processar seu comando. Tente novamente.",
+        "Ocorreu um erro. Tente novamente.",
         false,
         "Diga 'ajuda' para ver os comandos."
       ));

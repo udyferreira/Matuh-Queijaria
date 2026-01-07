@@ -1,0 +1,77 @@
+🔧 PROMPT PARA CORREÇÃO DEFINITIVA DO WEBHOOK ALEXA
+Contexto obrigatório (leia com atenção)
+A Alexa Skill NÃO utiliza múltiplos intents estruturados.
+Ela utiliza APENAS UM intent genérico (ProcessCommandIntent) com UM slot livre (AMAZON.SearchQuery), conforme já configurado no Alexa Developer Console.
+A Alexa é somente interface de voz.
+TODA decisão de processo é feita no backend canônico.
+1. Corrigir o modelo de intents assumido pelo backend
+Faça os seguintes ajustes obrigatórios:
+❌ Remover qualquer dependência de:
+StartBatchIntent
+StatusIntent
+AdvanceIntent
+LogPHIntent
+Qualquer outro intent específico
+✅ O backend deve aceitar somente:
+LaunchRequest
+IntentRequest com:
+intent.name = "ProcessCommandIntent"
+slots.utterance.value = "<texto livre>"
+2. Novo contrato correto do /api/alexa/webhook
+Documentar e implementar exclusivamente este fluxo:
+LaunchRequest
+Responder mensagem de boas-vindas
+Nunca tentar interpretar comando
+shouldEndSession = false
+IntentRequest
+Extrair:
+utterance (texto falado completo)
+Encaminhar para o interpretador do backend
+O backend decide:
+consultar status
+registrar input
+tentar avançar
+bloquear ação
+A Alexa apenas fala a resposta recebida
+3. Padronização obrigatória da resposta Alexa
+Criar e usar uma única função utilitária:
+{
+  "version": "1.0",
+  "response": {
+    "outputSpeech": {
+      "type": "PlainText",
+      "text": "<texto vindo do backend canônico>"
+    },
+    "shouldEndSession": false
+  }
+}
+Regras:
+❌ Nunca retornar JSON interno ({ speech: ... })
+❌ Nunca retornar HTTP 4xx ou 5xx
+✅ Sempre HTTP 200
+❌ Nunca calcular proporções no webhook
+❌ Nunca avançar etapas no webhook
+4. Documentação a ser atualizada
+Gerar nova documentação contendo:
+Payload real recebido da Alexa (com ProcessCommandIntent)
+Exemplo real:
+{
+  "intent": {
+    "name": "ProcessCommandIntent",
+    "slots": {
+      "utterance": {
+        "value": "registra pH cinco ponto dois"
+      }
+    }
+  }
+}
+Fluxo:
+Fala → Backend interpreta → Backend executa → Alexa fala
+Remover qualquer menção a intents específicos
+5. Critério de aceite
+Considere correto somente quando:
+“Alexa, abrir matuh queijaria” funciona
+Qualquer frase livre chega no backend
+Nenhuma lógica de processo existe na Alexa
+O backend permanece soberano
+O webhook vira apenas um adaptador de voz
