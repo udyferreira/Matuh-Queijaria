@@ -49,7 +49,10 @@ interface MeasurementHistoryItem {
 }
 
 function formatValue(key: string, value: number | string): string {
-  if (key === "chamber_2_entry_date" || key === "timestamp") {
+  if (key === "chamber_2_entry_date") {
+    return new Date(value).toLocaleDateString("pt-BR");
+  }
+  if (key === "timestamp") {
     return new Date(value).toLocaleString("pt-BR");
   }
   if (typeof value === "number") {
