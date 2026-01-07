@@ -12,7 +12,7 @@ import { IngredientList } from "@/components/widgets/IngredientList";
 import { ChatAssistant } from "@/components/widgets/ChatAssistant";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
-import { getCheeseTypeName } from "@shared/schema";
+import { getCheeseTypeName, formatBatchCode } from "@shared/schema";
 
 const STAGE_NAMES: Record<number, string> = {
   1: "Separar o leite",
@@ -246,7 +246,7 @@ export default function BatchDetail() {
           <div>
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <span className="text-sm font-mono text-primary bg-primary/10 px-2 py-1 rounded">
-                LOTE #{batch.id.toString().padStart(4, '0')}
+                LOTE {formatBatchCode(batch.startedAt)}
               </span>
               <Badge variant={statusInfo.variant} data-testid="badge-batch-status">
                 {statusInfo.label}
@@ -649,7 +649,7 @@ export default function BatchDetail() {
         </div>
       </main>
 
-      <ChatAssistant context={`Lote #${batch.id}, Etapa ${batch.currentStageId}`} />
+      <ChatAssistant context={`Lote ${formatBatchCode(batch.startedAt)}, Etapa ${batch.currentStageId}`} />
     </div>
   );
 }

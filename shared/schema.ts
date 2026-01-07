@@ -114,6 +114,15 @@ export function getAllCheeseTypes(): CheeseType[] {
   return Object.values(CHEESE_TYPES);
 }
 
+// Format batch identifier as DDMMYY based on creation date
+export function formatBatchCode(startedAt: Date | string): string {
+  const date = typeof startedAt === 'string' ? new Date(startedAt) : startedAt;
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const year = date.getFullYear().toString().slice(-2);
+  return `${day}${month}${year}`;
+}
+
 // === EXPLICIT API CONTRACT TYPES ===
 
 // Batch Types

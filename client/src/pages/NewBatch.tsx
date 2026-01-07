@@ -60,7 +60,7 @@ export default function NewBatch() {
       recipeId: selectedCheese 
     }, {
       onSuccess: (batch) => {
-        toast({ title: "Lote Criado", description: `Lote #${batch.id} iniciado com sucesso.` });
+        toast({ title: "Lote Criado", description: `Lote iniciado com sucesso.` });
         setLocation(`/batch/${batch.id}`);
       },
       onError: (err) => {

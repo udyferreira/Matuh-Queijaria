@@ -4,7 +4,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Button } from "@/components/ui/button";
 import { useBatches } from "@/hooks/use-batches";
 import { ChatAssistant } from "@/components/widgets/ChatAssistant";
-import { getCheeseTypeName } from "@shared/schema";
+import { getCheeseTypeName, formatBatchCode } from "@shared/schema";
 
 export default function Home() {
   const { data: batches, isLoading } = useBatches();
@@ -64,7 +64,7 @@ export default function Home() {
                         {batch.status === 'active' ? 'Ativo' : batch.status === 'completed' ? 'Concluído' : 'Pausado'}
                       </span>
                       <span className="text-xs text-muted-foreground font-mono">
-                        #{batch.id.toString().padStart(4, '0')}
+                        {formatBatchCode(batch.startedAt)}
                       </span>
                     </div>
 
