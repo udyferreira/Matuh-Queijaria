@@ -1,0 +1,67 @@
+PROMPT PARA O REPLIT — DOCUMENTAÇÃO + AJUSTES DO WEBHOOK ALEXA
+Contexto
+Estamos integrando uma Alexa Skill (Custom, PT-BR) a um backend já existente.
+O endpoint configurado é /api/alexa/webhook.
+Atualmente, a Alexa consegue chamar o endpoint, mas responde com erro genérico (“Um problema ocorreu com a resposta da Skill”), e os logs mostram retorno HTTP 400 com JSON fora do padrão Alexa.
+Objetivo
+Quero que você documente e corrija integralmente a integração do webhook da Alexa, garantindo 100% de conformidade com o contrato oficial da Alexa Skills Kit, sem alterar a lógica canônica do backend.
+1. Documentação obrigatória a ser entregue
+Gere uma documentação clara e técnica contendo:
+Contrato do endpoint /api/alexa/webhook
+Método HTTP
+Headers relevantes
+Estrutura completa do payload recebido da Alexa
+Exemplos reais de:
+LaunchRequest
+IntentRequest (com slot AMAZON.SearchQuery)
+Estrutura exata das respostas esperadas pela Alexa
+Fluxo de decisão do webhook
+Como o backend diferencia LaunchRequest vs IntentRequest
+Como intents não reconhecidos são tratados
+Como erros de lógica são convertidos em resposta falada
+Exemplos completos
+Request → Response para:
+Abertura da skill (“Alexa, abrir matuh queijaria”)
+Comando válido
+Comando inválido
+Fallback seguro
+2. Correções obrigatórias no código
+Implemente os seguintes ajustes no webhook:
+Nunca retornar HTTP 4xx ou 5xx para a Alexa
+Todas as respostas devem ser HTTP 200
+Erros devem ser comunicados apenas via fala
+Implementar tratamento explícito de LaunchRequest
+Responder com mensagem de boas-vindas
+Manter shouldEndSession = false
+Padronizar TODAS as respostas no formato Alexa
+Incluir obrigatoriamente:
+{
+  "version": "1.0",
+  "response": {
+    "outputSpeech": {
+      "type": "PlainText",
+      "text": "..."
+    },
+    "shouldEndSession": false
+  }
+}
+Criar uma função utilitária única para respostas Alexa
+Proibir respostas “soltas” como { speech: "..." }
+Fallback seguro
+Quando o intent não for reconhecido ou não houver slot:
+Responder com mensagem falada apropriada
+Nunca lançar exceção
+Nunca retornar erro HTTP
+3. Restrições importantes
+❌ Não alterar a lógica canônica do processo produtivo
+❌ Não mover decisões para a Alexa
+❌ Não usar LLM para executar ações
+✅ O backend continua soberano
+✅ A Alexa é apenas interface de voz
+4. Critério de aceite
+Considere o trabalho concluído somente quando:
+“Alexa, abrir matuh queijaria”
+→ resposta falada correta (sem erro genérico)
+Comandos livres funcionarem sem falha
+O webhook estiver documentado e testável isoladamente
+Não existir mais retorno HTTP ≠ 200 para a Alexa
