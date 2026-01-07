@@ -162,11 +162,13 @@ export default function BatchDetail() {
     }
 
     // Default: legacy input for time values (stages 6, 7, 14)
+    // Cast type since date inputs are handled above by logCanonical
+    const legacyType = inputType as "ph" | "temperature" | "time";
     logInput({ 
       id, 
       data: { 
-        type: inputType, 
-        value: inputType === 'ph' ? parseFloat(inputVal) : inputVal 
+        type: legacyType, 
+        value: legacyType === 'ph' ? parseFloat(inputVal) : inputVal 
       } 
     }, {
       onSuccess: () => {
@@ -557,6 +559,12 @@ export default function BatchDetail() {
                     'temperature': 'Temperatura',
                     'time': 'Horário',
                     'recorded_time': 'Horário Registrado',
+                    'milk_volume_l': 'Volume de Leite (L)',
+                    'milk_temperature_c': 'Temperatura do Leite (°C)',
+                    'milk_ph': 'pH do Leite',
+                    'pieces_quantity': 'Quantidade de Peças',
+                    'chamber_2_entry_date': 'Data de Entrada na Câmara 2',
+                    'initial_ph': 'pH Inicial',
                   };
                   
                   const items: Array<{label: string; value: string}> = [];
