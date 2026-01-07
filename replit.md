@@ -75,6 +75,9 @@ Preferred communication style: Simple, everyday language.
 - ASK-compliant responses with proper format (version, outputSpeech, shouldEndSession)
 - Always returns HTTP 200 (errors communicated via speech)
 - Handles LaunchRequest, IntentRequest, SessionEndedRequest
+- Uses single ProcessCommandIntent with AMAZON.SearchQuery slot for free-form voice commands
+- Backend interprets utterances via interpretVoiceCommand() - Alexa is just a voice adapter
+- Supports spoken numbers in Portuguese (e.g., "cinco ponto dois" → 5.2)
 - Documentation available at `docs/ALEXA_WEBHOOK.md`
 
 ### Key npm Dependencies
