@@ -9,6 +9,7 @@ import Home from "@/pages/Home";
 import NewBatch from "@/pages/NewBatch";
 import BatchDetail from "@/pages/BatchDetail";
 import AlexaIntegration from "@/pages/AlexaIntegration";
+import Reports from "@/pages/Reports";
 
 function Router() {
   return (
@@ -17,6 +18,7 @@ function Router() {
       <Route path="/new" component={NewBatch} />
       <Route path="/batch/:id" component={BatchDetail} />
       <Route path="/alexa" component={AlexaIntegration} />
+      <Route path="/reports" component={Reports} />
       <Route component={NotFound} />
     </Switch>
   );

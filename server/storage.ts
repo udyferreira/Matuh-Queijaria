@@ -11,6 +11,8 @@ export interface IStorage extends IChatStorage {
   // Batch Operations
   getBatch(id: number): Promise<ProductionBatch | undefined>;
   getActiveBatches(): Promise<ProductionBatch[]>;
+  getCompletedBatches(): Promise<ProductionBatch[]>;
+  getAllBatches(): Promise<ProductionBatch[]>;
   createBatch(batch: InsertBatch): Promise<ProductionBatch>;
   updateBatch(id: number, updates: Partial<ProductionBatch>): Promise<ProductionBatch>;
   
@@ -38,6 +40,19 @@ export class DatabaseStorage implements IStorage {
     return await db.select()
       .from(productionBatches)
       .where(eq(productionBatches.status, "active"))
+      .orderBy(desc(productionBatches.startedAt));
+  }
+
+  async getCompletedBatches(): Promise<ProductionBatch[]> {
+    return await db.select()
+      .from(productionBatches)
+      .where(eq(productionBatches.status, "completed"))
+      .orderBy(desc(productionBatches.completedAt));
+  }
+
+  async getAllBatches(): Promise<ProductionBatch[]> {
+    return await db.select()
+      .from(productionBatches)
       .orderBy(desc(productionBatches.startedAt));
   }
 

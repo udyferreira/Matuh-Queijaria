@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Activity, Settings, ChefHat } from "lucide-react";
+import { Activity, Settings, ChefHat, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logoMatuh from "@assets/logoMatuh_1767667488292.jpg";
 
@@ -9,6 +9,7 @@ export function Navbar() {
   const navItems = [
     { href: "/", label: "Painel", icon: Activity },
     { href: "/new", label: "Novo Lote", icon: ChefHat },
+    { href: "/reports", label: "Relatórios", icon: FileText },
     { href: "/alexa", label: "Integrações", icon: Settings },
   ];
 

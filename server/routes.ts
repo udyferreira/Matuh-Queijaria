@@ -113,6 +113,11 @@ export async function registerRoutes(
     res.json(batches);
   });
 
+  app.get("/api/batches/completed", async (req, res) => {
+    const batches = await storage.getCompletedBatches();
+    res.json(batches);
+  });
+
   app.get(api.batches.get.path, async (req, res) => {
     const batch = await storage.getBatch(Number(req.params.id));
     if (!batch) return res.status(404).json({ message: "Batch not found" });

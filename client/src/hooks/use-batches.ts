@@ -19,6 +19,17 @@ export function useBatches() {
   });
 }
 
+export function useCompletedBatches() {
+  return useQuery({
+    queryKey: ["/api/batches/completed"],
+    queryFn: async () => {
+      const res = await fetch("/api/batches/completed");
+      if (!res.ok) throw new Error("Failed to fetch completed batches");
+      return api.batches.list.responses[200].parse(await res.json());
+    },
+  });
+}
+
 export function useBatch(id: number) {
   return useQuery({
     queryKey: [api.batches.get.path, id],
