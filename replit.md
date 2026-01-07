@@ -72,7 +72,10 @@ Preferred communication style: Simple, everyday language.
 
 ### Voice Integration
 - **Amazon Alexa**: Webhook endpoint at `/api/alexa/webhook` for voice commands
-- Token-based authentication for Alexa skills
+- ASK-compliant responses with proper format (version, outputSpeech, shouldEndSession)
+- Always returns HTTP 200 (errors communicated via speech)
+- Handles LaunchRequest, IntentRequest, SessionEndedRequest
+- Documentation available at `docs/ALEXA_WEBHOOK.md`
 
 ### Key npm Dependencies
 - `drizzle-orm` / `drizzle-kit` - Database ORM and migrations
