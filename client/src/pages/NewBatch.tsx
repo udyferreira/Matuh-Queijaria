@@ -23,8 +23,8 @@ export default function NewBatch() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const volume = parseFloat(milkVolume);
-    const temperature = milkTemperature ? parseFloat(milkTemperature) : undefined;
-    const ph = milkPh ? parseFloat(milkPh) : undefined;
+    const temperature = parseFloat(milkTemperature);
+    const ph = parseFloat(milkPh);
     
     if (isNaN(volume) || volume < 10 || volume > 200) {
       toast({
@@ -35,19 +35,19 @@ export default function NewBatch() {
       return;
     }
 
-    if (temperature !== undefined && (isNaN(temperature) || temperature < 0 || temperature > 50)) {
+    if (!milkTemperature || isNaN(temperature) || temperature < 0 || temperature > 50) {
       toast({
         title: "Temperatura Inválida",
-        description: "A temperatura deve estar entre 0°C e 50°C.",
+        description: "A temperatura é obrigatória e deve estar entre 0°C e 50°C.",
         variant: "destructive",
       });
       return;
     }
 
-    if (ph !== undefined && (isNaN(ph) || ph < 0 || ph > 14)) {
+    if (!milkPh || isNaN(ph) || ph < 0 || ph > 14) {
       toast({
         title: "pH Inválido",
-        description: "O pH deve estar entre 0 e 14.",
+        description: "O pH é obrigatório e deve estar entre 0 e 14.",
         variant: "destructive",
       });
       return;

@@ -63,19 +63,16 @@ export async function registerRoutes(
         ]
       };
       
-      if (milkTemperatureC !== undefined) {
-        initialMeasurements.milk_temperature_c = milkTemperatureC;
-        initialMeasurements._history.push({ 
-          key: 'milk_temperature_c', value: milkTemperatureC, timestamp: new Date().toISOString(), stageId: 1 
-        });
-      }
+      // Temperature and pH are now required by Stage 1
+      initialMeasurements.milk_temperature_c = milkTemperatureC;
+      initialMeasurements._history.push({ 
+        key: 'milk_temperature_c', value: milkTemperatureC, timestamp: new Date().toISOString(), stageId: 1 
+      });
       
-      if (milkPh !== undefined) {
-        initialMeasurements.milk_ph = milkPh;
-        initialMeasurements._history.push({ 
-          key: 'milk_ph', value: milkPh, timestamp: new Date().toISOString(), stageId: 1 
-        });
-      }
+      initialMeasurements.milk_ph = milkPh;
+      initialMeasurements._history.push({ 
+        key: 'milk_ph', value: milkPh, timestamp: new Date().toISOString(), stageId: 1 
+      });
 
       // Etapas 1 e 2 são concluídas automaticamente:
       // 1 - Separar leite e medir parâmetros iniciais (informado pelo usuário)
