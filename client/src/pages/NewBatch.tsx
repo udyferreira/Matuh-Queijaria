@@ -13,6 +13,8 @@ const cheeseTypes = getAllCheeseTypes();
 
 export default function NewBatch() {
   const [milkVolume, setMilkVolume] = useState<string>("50");
+  const [milkTemperature, setMilkTemperature] = useState<string>("");
+  const [milkPh, setMilkPh] = useState<string>("");
   const [selectedCheese, setSelectedCheese] = useState<string>("QUEIJO_NETE");
   const { mutate, isPending } = useStartBatch();
   const [, setLocation] = useLocation();
@@ -21,6 +23,8 @@ export default function NewBatch() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const volume = parseFloat(milkVolume);
+    const temperature = milkTemperature ? parseFloat(milkTemperature) : undefined;
+    const ph = milkPh ? parseFloat(milkPh) : undefined;
     
     if (isNaN(volume) || volume < 10 || volume > 200) {
       toast({
@@ -31,7 +35,30 @@ export default function NewBatch() {
       return;
     }
 
-    mutate({ milkVolumeL: volume, recipeId: selectedCheese }, {
+    if (temperature !== undefined && (isNaN(temperature) || temperature < 0 || temperature > 50)) {
+      toast({
+        title: "Temperatura Inválida",
+        description: "A temperatura deve estar entre 0°C e 50°C.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (ph !== undefined && (isNaN(ph) || ph < 0 || ph > 14)) {
+      toast({
+        title: "pH Inválido",
+        description: "O pH deve estar entre 0 e 14.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    mutate({ 
+      milkVolumeL: volume, 
+      milkTemperatureC: temperature,
+      milkPh: ph,
+      recipeId: selectedCheese 
+    }, {
       onSuccess: (batch) => {
         toast({ title: "Lote Criado", description: `Lote #${batch.id} iniciado com sucesso.` });
         setLocation(`/batch/${batch.id}`);
@@ -123,7 +150,53 @@ export default function NewBatch() {
                 </div>
                 <div className="flex items-center gap-2 text-amber-500/80 text-sm bg-amber-500/10 p-3 rounded-lg border border-amber-500/20">
                   <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                  <p>Mín: 10L • Máx: 200L</p>
+                  <p>Mín: 10L - Máx: 200L</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                    Temperatura do Leite (°C)
+                  </label>
+                  <div className="relative">
+                    <Input 
+                      type="number" 
+                      min="0" 
+                      max="50"
+                      step="0.1"
+                      value={milkTemperature}
+                      onChange={(e) => setMilkTemperature(e.target.value)}
+                      placeholder="Ex: 32"
+                      className="h-14 text-2xl font-display font-bold px-4 bg-secondary/50 border-secondary focus:border-primary/50 transition-all"
+                      data-testid="input-milk-temperature"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground text-lg font-medium">
+                      °C
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                    pH do Leite
+                  </label>
+                  <div className="relative">
+                    <Input 
+                      type="number" 
+                      min="0" 
+                      max="14"
+                      step="0.01"
+                      value={milkPh}
+                      onChange={(e) => setMilkPh(e.target.value)}
+                      placeholder="Ex: 6.7"
+                      className="h-14 text-2xl font-display font-bold px-4 bg-secondary/50 border-secondary focus:border-primary/50 transition-all"
+                      data-testid="input-milk-ph"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground text-lg font-medium">
+                      pH
+                    </span>
+                  </div>
                 </div>
               </div>
 

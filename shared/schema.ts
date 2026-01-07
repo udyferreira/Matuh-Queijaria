@@ -123,6 +123,8 @@ export type InsertBatch = z.infer<typeof insertBatchSchema>;
 // Request Types
 export type StartBatchRequest = {
   milkVolumeL: number;
+  milkTemperatureC?: number; // Initial milk temperature in Celsius
+  milkPh?: number; // Initial milk pH value
   recipeId?: string; // Cheese type ID (defaults to QUEIJO_NETE)
 };
 
