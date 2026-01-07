@@ -161,22 +161,56 @@ export default function BatchDetail() {
       return;
     }
 
-    // Default: legacy input for time values (stages 6, 7, 14)
-    // Cast type since date inputs are handled above by logCanonical
-    const legacyType = inputType as "ph" | "temperature" | "time";
-    logInput({ 
-      id, 
-      data: { 
-        type: legacyType, 
-        value: legacyType === 'ph' ? parseFloat(inputVal) : inputVal 
-      } 
-    }, {
-      onSuccess: () => {
-        toast({ title: "Registrado", description: "Medição salva com sucesso." });
-        setInputVal("");
-        handleAdvance(); 
-      }
-    });
+    // Validate HH:MM format for time inputs
+    const timeRegex = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
+    const isTimeInput = [6, 7, 14].includes(batch.currentStageId);
+    
+    if (isTimeInput && !timeRegex.test(inputVal)) {
+      toast({ title: "Erro", description: "Formato inválido. Use HH:MM (ex: 14:30)", variant: "destructive" });
+      return;
+    }
+
+    // Stage 6: Flocculation time
+    if (batch.currentStageId === 6) {
+      logCanonical({ id, data: { key: 'flocculation_time', value: inputVal } }, {
+        onSuccess: () => {
+          toast({ title: "Registrado", description: "Horário de floculação registrado." });
+          setInputVal("");
+          handleAdvance();
+        },
+        onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
+      });
+      return;
+    }
+
+    // Stage 7: Cut point time
+    if (batch.currentStageId === 7) {
+      logCanonical({ id, data: { key: 'cut_point_time', value: inputVal } }, {
+        onSuccess: () => {
+          toast({ title: "Registrado", description: "Horário do ponto de corte registrado." });
+          setInputVal("");
+          handleAdvance();
+        },
+        onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
+      });
+      return;
+    }
+
+    // Stage 14: Press start time
+    if (batch.currentStageId === 14) {
+      logCanonical({ id, data: { key: 'press_start_time', value: inputVal } }, {
+        onSuccess: () => {
+          toast({ title: "Registrado", description: "Horário da prensa registrado." });
+          setInputVal("");
+          handleAdvance();
+        },
+        onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
+      });
+      return;
+    }
+
+    // Default fallback (should not be reached for current stages)
+    toast({ title: "Erro", description: "Etapa não reconhecida.", variant: "destructive" });
   };
 
   const handlePause = () => {

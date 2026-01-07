@@ -38,6 +38,10 @@ const MEASUREMENT_LABELS: Record<string, string> = {
   ph_value: "pH",
   pieces_quantity: "Quantidade de Peças",
   chamber_2_entry_date: "Data Entrada Câmara 2",
+  flocculation_time: "Hora da Floculação",
+  cut_point_time: "Hora do Corte",
+  press_start_time: "Hora da Prensa",
+  turning_cycles_count: "Quantidade de Viradas",
   timestamp: "Data/Hora"
 };
 

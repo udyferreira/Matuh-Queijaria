@@ -548,6 +548,26 @@ export async function registerRoutes(
           details: `pH value must be <= 5.2 to exit this stage. Current pH: ${measurements.ph_value || 'not measured'}`
         });
       }
+
+      // Stage 15: Record turning_cycles_count in _history before advancing
+      // Re-fetch batch to get latest measurements and avoid race conditions
+      if (batch.currentStageId === 15) {
+        const freshBatch = await storage.getBatch(batchId);
+        if (freshBatch) {
+          const freshMeasurements = (freshBatch.measurements as Record<string, any>) || {};
+          const turningCount = (freshBatch as any).turningCyclesCount || 0;
+          const historyEntry = {
+            key: 'turning_cycles_count',
+            value: turningCount,
+            stageId: batch.currentStageId,
+            timestamp: new Date().toISOString()
+          };
+          const history = freshMeasurements._history || [];
+          history.push(historyEntry);
+          freshMeasurements._history = history;
+          await storage.updateBatch(batchId, { measurements: freshMeasurements });
+        }
+      }
     }
 
     // Validate transition
