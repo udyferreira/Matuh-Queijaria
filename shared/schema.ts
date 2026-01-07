@@ -12,12 +12,24 @@ export const productionBatches = pgTable("production_batches", {
   milkVolumeL: numeric("milk_volume_l").notNull(),
   status: text("status", { enum: ["active", "paused", "completed", "cancelled"] }).notNull().default("active"),
   
+  // New: Extended batch status for maturation lifecycle
+  batchStatus: text("batch_status", { 
+    enum: ["IN_PROGRESS", "MATURING", "READY_FOR_SALE", "CLOSED"] 
+  }).default("IN_PROGRESS"),
+  
   // JSONB storage for complex state
   calculatedInputs: jsonb("calculated_inputs").default({}),
-  measurements: jsonb("measurements").default({}), // ph, temps, timestamps
+  measurements: jsonb("measurements").default({}), // ph, temps, timestamps, pieces_quantity, etc.
   activeTimers: jsonb("active_timers").default([]),
   activeReminders: jsonb("active_reminders").default([]), // For recurring reminders (stage 15, 20)
   history: jsonb("history").default([]), // Log of all actions
+  
+  // New: Stage 15 loop tracking
+  turningCyclesCount: integer("turning_cycles_count").default(0),
+  
+  // New: Maturation control (Stage 19/20)
+  chamber2EntryDate: timestamp("chamber_2_entry_date"),
+  maturationEndDate: timestamp("maturation_end_date"),
   
   // Operational state
   pausedAt: timestamp("paused_at"),

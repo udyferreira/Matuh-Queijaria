@@ -1,0 +1,112 @@
+PROMPT PARA REPLIT — ATUALIZAÇÃO DO BACKEND / APIS / WEBHOOK
+Você está trabalhando em uma aplicação backend que orquestra a produção de queijo via um modelo canônico de receita (YAML), com controle rigoroso de etapas, timers, loops e entradas humanas.
+Objetivo:
+Atualizar o backend, as APIs REST e o webhook para refletirem integralmente a nova versão da receita QUEIJO_NETE (schema_version 1.4), incluindo novos inputs, loops condicionais, contadores automáticos e controle de maturação por tempo.
+1. Fonte de verdade (obrigatório)
+A aplicação deve carregar e interpretar o arquivo recipe.yml como fonte única de verdade do fluxo.
+Nenhuma regra de negócio pode ser hardcoded fora do que está descrito no YAML.
+2. Atualizações obrigatórias no modelo de dados (persistência)
+Atualize o modelo de lote (Batch ou equivalente) para suportar:
+Novos campos iniciais (Stage 1)
+milk_volume_l (number, obrigatório)
+milk_temperature_c (number, obrigatório)
+milk_ph (number, obrigatório)
+Novos campos de produção
+pieces_quantity (number, obrigatório – stage 13)
+initial_ph (number – stage 13)
+ph_measurements (array de numbers – histórico do stage 15)
+turning_cycles_count (number, calculado automaticamente)
+chamber_2_entry_date (date – stage 19)
+maturation_end_date (date = chamber_2_entry_date + 90 dias)
+batch_status (enum: IN_PROGRESS, MATURING, READY_FOR_SALE, CLOSED)
+3. Regras obrigatórias de validação por etapa (crítico)
+Implemente validação canônica por stage:
+Cada endpoint de input deve:
+Aceitar somente os campos definidos no operator_input_required do stage atual
+Rejeitar qualquer key fora da etapa com HTTP 400
+Retornar erro estruturado:
+{
+  "error": "INVALID_INPUT_FOR_STAGE",
+  "stage": 15,
+  "allowed_fields": ["ph_value"]
+}
+Não permitir:
+Avançar etapa sem cumprir inputs obrigatórios
+Pular etapas
+Alterar timers
+Reescrever medições anteriores
+4. Implementação do loop do Stage 15 (ponto crítico)
+O backend deve implementar loop controlado por estado, não por cron job solto:
+Regras
+Cada iteração do loop representa uma virada do queijo
+Ao iniciar o stage 15:
+turning_cycles_count inicia em 0
+A cada submissão válida de ph_value:
+Incrementar turning_cycles_count em +1
+Adicionar valor ao array ph_measurements
+Se ph_value <= 5.2:
+Encerrar o loop
+Avançar para o stage 16 imediatamente
+Se ph_value > 5.2:
+Permanecer no stage 15
+Iniciar um novo timer de até 2 horas
+O backend não deve exigir que as 2 horas sejam concluídas se o pH já atingiu 5.2
+5. Controle de maturação (Stages 19 e 20)
+No stage 19:
+Registrar chamber_2_entry_date
+Calcular maturation_end_date = entry_date + 90 dias
+Atualizar batch_status para MATURING
+No stage 20:
+Criar verificação automática diária (job interno ou verificação on-read):
+Se now >= maturation_end_date:
+Atualizar batch_status para READY_FOR_SALE
+Encerrar fluxo do lote (CLOSED)
+Não permitir inputs adicionais após encerramento
+6. APIs REST (atualizar ou criar)
+Implemente ou ajuste os endpoints abaixo:
+Criar lote
+POST /batches
+Consultar estado do lote
+GET /batches/{batchId}
+Submeter inputs de uma etapa
+POST /batches/{batchId}/stages/{stageId}/input
+Esse endpoint deve:
+Validar etapa atual
+Validar campos permitidos
+Atualizar estado
+Controlar loops
+Retornar próximo passo
+Webhook de eventos
+POST /webhooks/events
+Disparar eventos para:
+Início de loop
+Nova medição de pH
+Encerramento do stage 15
+Entrada na Câmara 2
+Lote pronto para comercialização
+7. Respostas padronizadas (exemplo)
+{
+  "batch_id": "abc123",
+  "current_stage": 15,
+  "turning_cycles_count": 3,
+  "ph_measurements": [5.8, 5.5, 5.3],
+  "next_action": "Medir pH ou aguardar até 2 horas"
+}
+8. Testes obrigatórios
+Crie testes automatizados para:
+Rejeição de inputs fora do stage correto (HTTP 400)
+Loop do stage 15 com:
+Encerramento antecipado
+Múltiplas iterações
+Contagem correta de turning_cycles_count
+Encerramento automático após 90 dias
+Impossibilidade de alterar lote encerrado
+9. Critério de aceite
+Considere a tarefa concluída somente se:
+O backend reflete fielmente o recipe.yml
+Nenhuma regra está hardcoded fora do modelo canônico
+O fluxo completo do lote pode ser executado do stage 1 ao encerramento
+Erros são previsíveis, estruturados e consistentes
+Importante:
+Não simplifique regras, não infira comportamentos não descritos e não remova validações explícitas.
+O sistema deve falhar de forma segura e explícita.

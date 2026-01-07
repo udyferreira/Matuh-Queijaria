@@ -215,3 +215,34 @@ export function useCancelBatch() {
     },
   });
 }
+
+export type CanonicalInput = {
+  key: string;
+  value: number | string;
+  unit?: string;
+  notes?: string;
+};
+
+export function useLogCanonicalInput() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: CanonicalInput }) => {
+      const url = `/api/batches/${id}/input/canonical`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to log canonical input");
+      }
+      return await res.json();
+    },
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: [api.batches.get.path, id] });
+      queryClient.invalidateQueries({ queryKey: [api.batches.status.path, id] });
+      queryClient.invalidateQueries({ queryKey: [api.batches.logs.path, id] });
+    },
+  });
+}

@@ -46,6 +46,8 @@ export const api = {
       path: '/api/batches',
       input: z.object({
         milkVolumeL: z.number().min(10).max(200),
+        milkTemperatureC: z.number().min(0).max(100).optional(),
+        milkPh: z.number().min(1).max(14).optional(),
         recipeId: z.string().optional().default("QUEIJO_NETE"),
       }),
       responses: {

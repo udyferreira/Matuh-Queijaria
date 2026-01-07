@@ -41,7 +41,7 @@ export async function registerRoutes(
 
   app.post(api.batches.start.path, async (req, res) => {
     try {
-      const { milkVolumeL, recipeId } = api.batches.start.input.parse(req.body);
+      const { milkVolumeL, milkTemperatureC, milkPh, recipeId } = api.batches.start.input.parse(req.body);
       
       // Validate cheese type is available
       const cheeseType = CHEESE_TYPES[recipeId as keyof typeof CHEESE_TYPES];
@@ -55,8 +55,30 @@ export async function registerRoutes(
       // Calculate inputs immediately
       const inputs = recipeManager.calculateInputs(milkVolumeL);
 
+      // Store initial measurements from Stage 1 (new YAML v1.4 fields)
+      const initialMeasurements: Record<string, any> = {
+        milk_volume_l: milkVolumeL,
+        _history: [
+          { key: 'milk_volume_l', value: milkVolumeL, timestamp: new Date().toISOString(), stageId: 1 }
+        ]
+      };
+      
+      if (milkTemperatureC !== undefined) {
+        initialMeasurements.milk_temperature_c = milkTemperatureC;
+        initialMeasurements._history.push({ 
+          key: 'milk_temperature_c', value: milkTemperatureC, timestamp: new Date().toISOString(), stageId: 1 
+        });
+      }
+      
+      if (milkPh !== undefined) {
+        initialMeasurements.milk_ph = milkPh;
+        initialMeasurements._history.push({ 
+          key: 'milk_ph', value: milkPh, timestamp: new Date().toISOString(), stageId: 1 
+        });
+      }
+
       // Etapas 1 e 2 são concluídas automaticamente:
-      // 1 - Separar leite (informado pelo usuário)
+      // 1 - Separar leite e medir parâmetros iniciais (informado pelo usuário)
       // 2 - Calcular proporções (feito automaticamente)
       // Inicia na etapa 3 - Aquecer o leite
       const batch = await storage.createBatch({
@@ -64,6 +86,7 @@ export async function registerRoutes(
         currentStageId: 3, // Start at stage 3 (heating milk)
         milkVolumeL: String(milkVolumeL), // DB stores as numeric string
         calculatedInputs: inputs,
+        measurements: initialMeasurements,
         status: "active",
         history: [
           { stageId: 1, action: "complete", timestamp: new Date().toISOString(), auto: true },
@@ -76,7 +99,7 @@ export async function registerRoutes(
         batchId: batch.id,
         stageId: 3,
         action: "start",
-        details: { milkVolume: milkVolumeL, calculatedInputs: inputs }
+        details: { milkVolume: milkVolumeL, milkTemperatureC, milkPh, calculatedInputs: inputs }
       });
 
       res.status(201).json(batch);
@@ -411,18 +434,30 @@ export async function registerRoutes(
       });
     }
 
+    // Check if batch is closed (maturation complete)
+    if ((batch as any).batchStatus === "CLOSED") {
+      return res.status(400).json({
+        message: "Batch is closed",
+        code: "BATCH_CLOSED",
+        details: "This batch has completed maturation and cannot receive new inputs."
+      });
+    }
+
     // Validate that the key is expected for current stage
     const expectedInputs = recipeManager.getExpectedInputsForStage(batch.currentStageId);
     if (expectedInputs.length > 0 && !expectedInputs.includes(key)) {
       return res.status(400).json({ 
         message: "Key não esperado para esta etapa",
         code: "INVALID_INPUT_KEY_FOR_STAGE",
+        stage: batch.currentStageId,
+        allowed_fields: expectedInputs,
         details: `stageId=${batch.currentStageId}, allowedKeys=[${expectedInputs.join(', ')}], receivedKey=${key}`
       });
     }
 
     const measurements = (batch.measurements as any) || {};
     const timestamp = new Date().toISOString();
+    const updates: any = {};
 
     // Store the canonical value
     measurements[key] = value;
@@ -432,14 +467,42 @@ export async function registerRoutes(
     inputHistory.push({ key, value, unit, notes, timestamp, stageId: batch.currentStageId });
     measurements._history = inputHistory;
 
-    // Special handling for pH measurements array
+    // Special handling for pH measurements array (Stage 15 loop)
     if (key === 'ph_value') {
       const phMeasurements = measurements.ph_measurements || [];
       phMeasurements.push({ value, timestamp, stageId: batch.currentStageId });
       measurements.ph_measurements = phMeasurements;
+      
+      // Stage 15: Increment turning cycles count
+      if (batch.currentStageId === 15) {
+        const currentCount = (batch as any).turningCyclesCount || 0;
+        updates.turningCyclesCount = currentCount + 1;
+      }
     }
 
-    await storage.updateBatch(batchId, { measurements });
+    // Store pieces_quantity (Stage 13)
+    if (key === 'pieces_quantity') {
+      measurements.pieces_quantity = value;
+    }
+
+    // Store initial_ph (Stage 13)
+    if (key === 'ph_value' && batch.currentStageId === 13) {
+      measurements.initial_ph = value;
+    }
+
+    // Handle chamber_2_entry_date (Stage 19) - triggers maturation
+    if (key === 'chamber_2_entry_date') {
+      const entryDate = new Date(value);
+      const maturationEndDate = new Date(entryDate);
+      maturationEndDate.setDate(maturationEndDate.getDate() + 90); // 90 days maturation
+      
+      updates.chamber2EntryDate = entryDate;
+      updates.maturationEndDate = maturationEndDate;
+      updates.batchStatus = "MATURING";
+    }
+
+    updates.measurements = measurements;
+    await storage.updateBatch(batchId, updates);
     
     await storage.logBatchAction({
       batchId,
@@ -448,7 +511,19 @@ export async function registerRoutes(
       details: { key, value, unit, notes }
     });
 
-    res.json(await storage.getBatch(batchId));
+    // Return updated batch with additional loop info for Stage 15
+    const updatedBatch = await storage.getBatch(batchId);
+    const response: any = { ...updatedBatch };
+    
+    if (batch.currentStageId === 15) {
+      response.turning_cycles_count = (updatedBatch as any).turningCyclesCount || 0;
+      response.ph_measurements = (updatedBatch?.measurements as any)?.ph_measurements || [];
+      response.next_action = value <= 5.2 
+        ? "pH atingiu 5.2. Pode avançar para próxima etapa."
+        : "Medir pH novamente ou aguardar até 2 horas";
+    }
+
+    res.json(response);
   });
 
   app.post(api.batches.advance.path, async (req, res) => {
@@ -566,6 +641,16 @@ export async function registerRoutes(
             description: `Lembrete diário: ${nextStage.name}`
         });
         updates.activeReminders = activeReminders;
+    }
+
+    // Special handling for Stage 20 (Maturation in Chamber 2)
+    // Check if maturation has already completed based on maturation_end_date
+    if (nextStage.id === 20) {
+        const maturationEndDate = (batch as any).maturationEndDate;
+        if (maturationEndDate && new Date(maturationEndDate) <= new Date()) {
+            // Maturation already complete - mark batch as ready for sale
+            updates.batchStatus = "READY_FOR_SALE";
+        }
     }
 
     const updatedBatch = await storage.updateBatch(batchId, updates);

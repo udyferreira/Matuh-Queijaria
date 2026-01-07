@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useBatch, useAdvanceStage, useLogMeasurement, usePauseBatch, useResumeBatch, useCompleteBatch, useCancelBatch } from "@/hooks/use-batches";
+import { useBatch, useAdvanceStage, useLogMeasurement, useLogCanonicalInput, usePauseBatch, useResumeBatch, useCompleteBatch, useCancelBatch } from "@/hooks/use-batches";
 import { TimerWidget } from "@/components/widgets/TimerWidget";
 import { IngredientList } from "@/components/widgets/IngredientList";
 import { ChatAssistant } from "@/components/widgets/ChatAssistant";
@@ -65,6 +65,7 @@ export default function BatchDetail() {
   const { data: batch, isLoading } = useBatch(id);
   const { mutate: advance, isPending: isAdvancing } = useAdvanceStage();
   const { mutate: logInput, isPending: isLogging } = useLogMeasurement();
+  const { mutate: logCanonical, isPending: isLoggingCanonical } = useLogCanonicalInput();
   const { mutate: pauseBatch, isPending: isPausing } = usePauseBatch();
   const { mutate: resumeBatch, isPending: isResuming } = useResumeBatch();
   const { mutate: completeBatch, isPending: isCompleting } = useCompleteBatch();
@@ -72,6 +73,7 @@ export default function BatchDetail() {
   const { toast } = useToast();
 
   const [inputVal, setInputVal] = useState("");
+  const [piecesQuantity, setPiecesQuantity] = useState("");
   const [cancelReason, setCancelReason] = useState("");
   const [pauseReason, setPauseReason] = useState("");
   const [showCancelDialog, setShowCancelDialog] = useState(false);
@@ -89,9 +91,11 @@ export default function BatchDetail() {
   const currentStageTimer = activeTimers.find((t: any) => t.stageId === batch.currentStageId);
   const isTimerStage = !!currentStageTimer;
   const isTimerComplete = currentStageTimer?.isComplete || (currentStageTimer ? new Date(currentStageTimer.endTime) <= new Date() : false);
-  const isInputStage = [6, 7, 13, 14, 15].includes(batch.currentStageId);
-  const inputType = [13, 15].includes(batch.currentStageId) ? "ph" : "time"; 
-  const inputLabel = inputType === "ph" ? "Valor do pH" : "Horário (HH:MM)";
+  const isInputStage = [6, 7, 13, 14, 15, 19].includes(batch.currentStageId);
+  const isMultiInputStage = batch.currentStageId === 13; // Stage 13 needs ph_value + pieces_quantity
+  const isDateInputStage = batch.currentStageId === 19; // Stage 19 needs chamber_2_entry_date
+  const inputType = [13, 15].includes(batch.currentStageId) ? "ph" : (batch.currentStageId === 19 ? "date" : "time"); 
+  const inputLabel = inputType === "ph" ? "Valor do pH" : (inputType === "date" ? "Data de entrada na Câmara 2" : "Horário (HH:MM)");
   const stageInstructions = STAGE_INSTRUCTIONS[batch.currentStageId] || [];
   const timerLabel = TIMER_LABELS[batch.currentStageId] || "Timer da Etapa";
 
@@ -106,6 +110,58 @@ export default function BatchDetail() {
     e.preventDefault();
     if (!inputVal) return;
 
+    // Stage 13: Multi-input (pH + pieces_quantity)
+    if (batch.currentStageId === 13) {
+      if (!piecesQuantity) {
+        toast({ title: "Erro", description: "Informe a quantidade de peças.", variant: "destructive" });
+        return;
+      }
+      // Log pH value first
+      logCanonical({ id, data: { key: 'ph_value', value: parseFloat(inputVal), unit: 'pH' } }, {
+        onSuccess: () => {
+          // Then log pieces quantity
+          logCanonical({ id, data: { key: 'pieces_quantity', value: parseInt(piecesQuantity) } }, {
+            onSuccess: () => {
+              toast({ title: "Registrado", description: "pH e quantidade de peças salvos." });
+              setInputVal("");
+              setPiecesQuantity("");
+              handleAdvance();
+            },
+            onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
+          });
+        },
+        onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
+      });
+      return;
+    }
+
+    // Stage 15: pH loop (no auto-advance, backend controls loop)
+    if (batch.currentStageId === 15) {
+      logCanonical({ id, data: { key: 'ph_value', value: parseFloat(inputVal), unit: 'pH' } }, {
+        onSuccess: () => {
+          toast({ title: "Registrado", description: "Medição de pH registrada." });
+          setInputVal("");
+          // Don't auto-advance - user clicks button when pH <= 5.2
+        },
+        onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
+      });
+      return;
+    }
+
+    // Stage 19: Date input (chamber entry date)
+    if (batch.currentStageId === 19) {
+      logCanonical({ id, data: { key: 'chamber_2_entry_date', value: inputVal } }, {
+        onSuccess: () => {
+          toast({ title: "Registrado", description: "Data de entrada na Câmara 2 registrada." });
+          setInputVal("");
+          handleAdvance();
+        },
+        onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
+      });
+      return;
+    }
+
+    // Default: legacy input for time values (stages 6, 7, 14)
     logInput({ 
       id, 
       data: { 
@@ -359,23 +415,79 @@ export default function BatchDetail() {
                       )}
                     </div>
                   ) : isInputStage ? (
-                    <form onSubmit={handleInputLog} className="max-w-md">
-                       <label className="block text-sm font-medium mb-2">{inputLabel}</label>
-                       <div className="flex gap-4">
-                         <Input 
-                           value={inputVal} 
-                           onChange={(e) => setInputVal(e.target.value)}
-                           type={inputType === 'ph' ? 'number' : 'time'}
-                           step={inputType === 'ph' ? '0.1' : undefined}
-                           className="text-lg h-12"
-                           placeholder="Insira o valor..."
-                           autoFocus
-                           data-testid="input-measurement"
-                         />
-                         <Button type="submit" size="lg" disabled={isLogging} data-testid="button-log-next">
-                           Registrar e Avançar
-                         </Button>
-                       </div>
+                    <form onSubmit={handleInputLog} className="max-w-md space-y-4">
+                       {/* Stage 13: Multi-input (pH + pieces) */}
+                       {isMultiInputStage ? (
+                         <>
+                           <div>
+                             <label className="block text-sm font-medium mb-2">Valor do pH</label>
+                             <Input 
+                               value={inputVal} 
+                               onChange={(e) => setInputVal(e.target.value)}
+                               type="number"
+                               step="0.1"
+                               className="text-lg h-12"
+                               placeholder="Ex: 6.5"
+                               autoFocus
+                               data-testid="input-ph-value"
+                             />
+                           </div>
+                           <div>
+                             <label className="block text-sm font-medium mb-2">Quantidade de Peças</label>
+                             <Input 
+                               value={piecesQuantity} 
+                               onChange={(e) => setPiecesQuantity(e.target.value)}
+                               type="number"
+                               className="text-lg h-12"
+                               placeholder="Ex: 24"
+                               data-testid="input-pieces-quantity"
+                             />
+                           </div>
+                           <Button type="submit" size="lg" disabled={isLoggingCanonical} data-testid="button-log-next" className="w-full">
+                             Registrar e Avançar
+                           </Button>
+                         </>
+                       ) : isDateInputStage ? (
+                         <>
+                           <label className="block text-sm font-medium mb-2">{inputLabel}</label>
+                           <div className="flex gap-4">
+                             <Input 
+                               value={inputVal} 
+                               onChange={(e) => setInputVal(e.target.value)}
+                               type="date"
+                               className="text-lg h-12"
+                               data-testid="input-date"
+                             />
+                             <Button type="submit" size="lg" disabled={isLoggingCanonical} data-testid="button-log-next">
+                               Registrar e Avançar
+                             </Button>
+                           </div>
+                         </>
+                       ) : (
+                         <>
+                           <label className="block text-sm font-medium mb-2">{inputLabel}</label>
+                           <div className="flex gap-4">
+                             <Input 
+                               value={inputVal} 
+                               onChange={(e) => setInputVal(e.target.value)}
+                               type={inputType === 'ph' ? 'number' : 'time'}
+                               step={inputType === 'ph' ? '0.1' : undefined}
+                               className="text-lg h-12"
+                               placeholder="Insira o valor..."
+                               autoFocus
+                               data-testid="input-measurement"
+                             />
+                             <Button type="submit" size="lg" disabled={isLogging || isLoggingCanonical} data-testid="button-log-next">
+                               {batch.currentStageId === 15 ? "Registrar pH" : "Registrar e Avançar"}
+                             </Button>
+                           </div>
+                           {batch.currentStageId === 15 && (
+                             <div className="text-sm text-muted-foreground mt-2">
+                               Registre o pH a cada 2 horas. Quando o pH atingir 5.2 ou menos, clique em "Concluir Etapa" abaixo.
+                             </div>
+                           )}
+                         </>
+                       )}
                     </form>
                   ) : (
                     <div className="space-y-4 text-lg">
@@ -393,7 +505,7 @@ export default function BatchDetail() {
                   )}
                 </div>
 
-                {!isInputStage && (
+                {(!isInputStage || batch.currentStageId === 15) && (
                   <Button 
                     size="lg" 
                     className="w-full h-16 text-lg font-bold premium-gradient shadow-lg text-amber-400"
@@ -401,7 +513,7 @@ export default function BatchDetail() {
                     disabled={isAdvancing || (isTimerStage && !isTimerComplete)}
                     data-testid="button-complete-step"
                   >
-                    {isAdvancing ? "Processando..." : isTimerStage && !isTimerComplete ? "Aguarde o Timer..." : "Marcar Etapa como Concluída"} 
+                    {isAdvancing ? "Processando..." : isTimerStage && !isTimerComplete ? "Aguarde o Timer..." : batch.currentStageId === 15 ? "Concluir Viragem (pH atingido)" : "Marcar Etapa como Concluída"} 
                     <ArrowRight className="ml-2 w-5 h-5" />
                   </Button>
                 )}
