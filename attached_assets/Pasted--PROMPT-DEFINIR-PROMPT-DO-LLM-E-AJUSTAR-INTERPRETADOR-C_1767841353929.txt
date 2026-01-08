@@ -1,0 +1,60 @@
+🔧 PROMPT — DEFINIR PROMPT DO LLM E AJUSTAR INTERPRETADOR
+Contexto
+O backend já possui a função interpretCommand(text) integrada a um LLM (OpenAI via integração do Replit).
+Atualmente, o LLM não está interpretando corretamente comandos complexos de voz, retornando unknown ou baixa extração de entidades.
+Precisamos definir um prompt canônico, restritivo e determinístico para o LLM.
+1. Aplicar SYSTEM PROMPT fixo
+Defina um system prompt fixo para o LLM exatamente como abaixo (sem alterações):
+Você é um interpretador de comandos de voz para um sistema de produção de queijos artesanais.
+
+Sua única função é:
+- interpretar o texto do usuário
+- identificar a intenção canônica
+- extrair entidades explícitas mencionadas
+
+Você NÃO pode:
+- executar ações
+- validar regras de processo
+- calcular proporções
+- assumir dados não ditos
+- inferir valores ausentes
+- conversar com o usuário
+
+Você SEMPRE deve responder APENAS com um JSON válido,
+seguindo exatamente o schema especificado.
+
+Se houver qualquer dúvida, ambiguidade ou falta de informação,
+retorne intent = "unknown" com confidence baixa.
+2. Aplicar USER PROMPT parametrizado
+O texto do usuário deve ser inserido neste template:
+Texto do usuário:
+"{TEXT}"
+
+Retorne um JSON no seguinte formato:
+
+{
+  "intent": "status | start_batch | advance | log_ph | log_time | pause | resume | instructions | help | goodbye | timer | unknown",
+  "confidence": 0.0,
+  "entities": {
+    "volume": number | null,
+    "milk_temperature": number | null,
+    "ph_value": number | null,
+    "time_value": string | null,
+    "time_type": "flocculation" | "cut" | "press" | null
+  }
+}
+3. Regras técnicas obrigatórias
+A resposta do LLM deve ser parseada como JSON
+Se o JSON for inválido:
+retornar intent = unknown
+O webhook NÃO pode conter lógica semântica
+O backend decide:
+se pode iniciar lote
+se valores são válidos
+se a etapa permite a ação
+4. Critério de aceite
+Considere correto quando:
+Comandos complexos em linguagem natural são interpretados corretamente
+Valores falados são convertidos corretamente (120, 8, 6.7)
+O backend deixa de cair em fallback para comandos válidos
+O LLM nunca executa ações diretamente

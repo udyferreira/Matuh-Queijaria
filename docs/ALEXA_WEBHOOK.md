@@ -22,13 +22,27 @@ interface InterpretedCommand {
   intent: "status" | "start_batch" | "advance" | "log_ph" | "log_time" | "pause" | "resume" | "instructions" | "help" | "goodbye" | "timer" | "unknown";
   confidence: number;  // 0.0 a 1.0
   entities: {
-    volume?: number;      // para start_batch
-    ph_value?: number;    // para log_ph  
-    time_value?: string;  // para log_time (formato "HH:MM")
-    time_type?: "flocculation" | "cut" | "press";
+    volume?: number | null;           // litros de leite
+    milk_temperature?: number | null; // temperatura do leite em graus
+    ph_value?: number | null;         // valor de pH
+    time_value?: string | null;       // horário formato "HH:MM"
+    time_type?: "flocculation" | "cut" | "press" | null;
   };
 }
 ```
+
+#### Prompt do LLM
+
+O LLM usa um **system prompt fixo** que define restrições estritas:
+- Apenas interpreta texto, nunca executa ações
+- Não valida regras de processo nem calcula proporções
+- Não assume dados não ditos nem infere valores ausentes
+- Sempre retorna JSON válido seguindo o schema
+
+O **user prompt** inclui exemplos de extração para valores falados em português:
+- "cento e vinte litros" → volume: 120
+- "seis ponto sete" → ph_value: 6.7
+- "dez e quinze" → time_value: "10:15"
 
 O backend é **SOBERANO** sobre:
 - Cálculos de proporções
