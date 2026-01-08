@@ -354,7 +354,21 @@ O webhook está correto quando:
             }
           ],
           "samples": [
-            "{utterance}"
+            "{utterance}",
+            "{utterance} etapa",
+            "{utterance} a etapa",
+            "{utterance} o lote",
+            "{utterance} produção",
+            "qual o {utterance}",
+            "qual é o {utterance}",
+            "qual a {utterance}",
+            "quero {utterance}",
+            "quero ver {utterance}",
+            "me diz o {utterance}",
+            "preciso de {utterance}",
+            "registrar {utterance}",
+            "iniciar {utterance}",
+            "começar {utterance}"
           ]
         },
         {
@@ -378,6 +392,34 @@ O webhook está correto quando:
   }
 }
 ```
+
+### Estrutura dos Sample Utterances
+
+**IMPORTANTE:** A estrutura dos samples determina o que vai para o slot `{utterance}`.
+
+#### Problema Comum
+Sample `avançar {utterance}` + usuário diz "avançar etapa" = slot recebe "etapa" (perde o verbo!)
+
+#### Solução Correta
+Estruturar samples para capturar o **verbo/ação**:
+
+| Sample | Usuário diz | Slot recebe |
+|--------|-------------|-------------|
+| `{utterance} etapa` | "avançar etapa" | "avançar" |
+| `{utterance} a etapa` | "próxima a etapa" | "próxima" |
+| `qual o {utterance}` | "qual o status" | "status" |
+| `quero {utterance}` | "quero avançar" | "avançar" |
+
+#### Palavras-Chave Reconhecidas pelo Backend
+
+**Status:** status, situação
+**Avançar:** avançar, próxima, próximo, concluir, finalizar, prosseguir, seguir
+**Instruções:** instrução, instruções, passos, como fazer, o que fazer
+**Timer:** timer, tempo, cronômetro, quanto falta
+**Pausar:** pausar, pausa, parar
+**Continuar:** continuar, retomar, resumir
+**Ajuda:** ajuda, socorro, comandos, opções
+**Sair:** tchau, adeus, encerrar, sair
 
 ### Endpoint
 

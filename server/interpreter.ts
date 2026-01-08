@@ -107,15 +107,18 @@ Retorne APENAS o JSON, sem markdown, explicações ou texto adicional.`;
 
 // Dicionário de fallback para comandos simples (1-2 palavras)
 // Evita chamada ao LLM para palavras-chave conhecidas
+// IMPORTANTE: Não incluir palavras ambíguas como "etapa" que podem ser complemento de vários comandos
 const SIMPLE_COMMAND_MAP: Record<string, InterpretedCommand["intent"]> = {
-  // Status
+  // Status - palavras que CLARAMENTE indicam consulta de status
   "status": "status",
-  "etapa": "status",
   "situação": "status",
+  "situacao": "status",
   "como está": "status",
   "como estamos": "status",
   
-  // Advance
+  // Advance - verbos de ação para avançar
+  // IMPORTANTE: Frases com "etapa" devem vir antes de palavras simples
+  // para que "continuar etapa" → advance (não resume)
   "avançar": "advance",
   "avancar": "advance",
   "próxima": "advance",
@@ -126,8 +129,15 @@ const SIMPLE_COMMAND_MAP: Record<string, InterpretedCommand["intent"]> = {
   "avancar etapa": "advance",
   "próxima etapa": "advance",
   "proxima etapa": "advance",
+  "continuar etapa": "advance",  // "continuar" + "etapa" = avançar (não resumir)
   "seguir": "advance",
-  "continuar etapa": "advance",
+  "seguir etapa": "advance",
+  "concluir": "advance",
+  "concluir etapa": "advance",
+  "finalizar": "advance",
+  "finalizar etapa": "advance",
+  "prosseguir": "advance",
+  "prosseguir etapa": "advance",
   
   // Help
   "ajuda": "help",
@@ -142,24 +152,30 @@ const SIMPLE_COMMAND_MAP: Record<string, InterpretedCommand["intent"]> = {
   "pausa": "pause",
   "parar": "pause",
   
-  // Resume
+  // Resume - "continuar" sem "etapa" = resume
   "continuar": "resume",
   "retomar": "resume",
   "resumir": "resume",
   "despausar": "resume",
   
-  // Instructions
+  // Instructions - palavras que indicam pedido de instrução
   "instruções": "instructions",
   "instrucoes": "instructions",
+  "instrução": "instructions",
+  "instrucao": "instructions",
   "o que fazer": "instructions",
   "o que faço": "instructions",
   "o que faco": "instructions",
+  "como fazer": "instructions",
+  "passos": "instructions",
   
   // Timer
   "timer": "timer",
   "tempo": "timer",
   "quanto falta": "timer",
   "tempo restante": "timer",
+  "cronômetro": "timer",
+  "cronometro": "timer",
   
   // Goodbye
   "tchau": "goodbye",
@@ -178,9 +194,9 @@ function trySimpleFallback(text: string): InterpretedCommand | null {
     return null;
   }
   
-  // Verificar match exato primeiro
+  // 1. Verificar match exato primeiro (maior prioridade)
   if (SIMPLE_COMMAND_MAP[normalized]) {
-    console.log(`Fallback match: "${normalized}" → ${SIMPLE_COMMAND_MAP[normalized]}`);
+    console.log(`Fallback exact match: "${normalized}" → ${SIMPLE_COMMAND_MAP[normalized]}`);
     return {
       intent: SIMPLE_COMMAND_MAP[normalized],
       confidence: 1.0,
@@ -188,10 +204,17 @@ function trySimpleFallback(text: string): InterpretedCommand | null {
     };
   }
   
-  // Verificar se contém alguma palavra-chave
-  for (const [keyword, intent] of Object.entries(SIMPLE_COMMAND_MAP)) {
-    if (normalized === keyword || normalized.includes(keyword)) {
-      console.log(`Fallback partial match: "${normalized}" contains "${keyword}" → ${intent}`);
+  // 2. Verificar frases multi-palavra no mapa (ex: "continuar etapa" antes de "continuar")
+  // Ordenar por tamanho decrescente para priorizar matches mais específicos
+  const sortedEntries = Object.entries(SIMPLE_COMMAND_MAP)
+    .sort((a, b) => b[0].length - a[0].length);
+  
+  for (const [keyword, intent] of sortedEntries) {
+    // Verificar se a frase contém a keyword como palavra completa
+    // Usar regex para evitar matches parciais dentro de palavras
+    const keywordPattern = new RegExp(`\\b${keyword.replace(/\s+/g, '\\s+')}\\b`, 'i');
+    if (keywordPattern.test(normalized)) {
+      console.log(`Fallback phrase match: "${normalized}" matches "${keyword}" → ${intent}`);
       return {
         intent,
         confidence: 0.95,
