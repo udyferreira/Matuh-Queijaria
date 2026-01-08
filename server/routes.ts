@@ -562,10 +562,16 @@ export async function registerRoutes(
   function parseSpokenTime(text: string): string | null {
     const normalized = text.toLowerCase().trim();
     
-    // Handle "agora" - current time
+    // Handle "agora" - current time in Brasília timezone (America/Sao_Paulo)
     if (normalized === "agora") {
       const now = new Date();
-      return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const brasiliaTime = now.toLocaleString('pt-BR', { 
+        timeZone: 'America/Sao_Paulo',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      return brasiliaTime;
     }
     
     // Handle "15:30" or "15 30" format
@@ -1072,6 +1078,49 @@ export async function registerRoutes(
                 `Não entendi o horário. Diga algo como 'quinze e trinta', '15:30', ou 'agora'.`,
                 false,
                 `Qual foi a hora ${typeLabel || 'do evento'}?`
+              ));
+            }
+          }
+          
+          // --- Deterministic fallback for "agora" in time registration before LLM ---
+          // This avoids LLM misinterpreting "agora" as "00:00"
+          const lowerText = textToInterpret.toLowerCase();
+          if ((lowerText.includes("horário") || lowerText.includes("hora")) && lowerText.includes("agora")) {
+            console.log("Deterministic fallback: registra horário agora");
+            const activeBatch = await batchService.getActiveBatch();
+            if (!activeBatch) {
+              return res.status(200).json(buildAlexaResponse(
+                "Não há lote ativo para registrar horário.",
+                false,
+                "O que mais posso ajudar?"
+              ));
+            }
+            
+            // Detect time_type from phrase
+            let timeType: string | undefined;
+            if (lowerText.includes("floculação") || lowerText.includes("flocul")) {
+              timeType = "flocculation";
+            } else if (lowerText.includes("corte") || lowerText.includes("ponto")) {
+              timeType = "cut_point";
+            } else if (lowerText.includes("prensa")) {
+              timeType = "press_start";
+            }
+            
+            const brasiliaTime = parseSpokenTime("agora");
+            if (brasiliaTime) {
+              const logResult = await batchService.logTime(activeBatch.id, brasiliaTime, timeType);
+              if (!logResult.success) {
+                return res.status(200).json(buildAlexaResponse(
+                  logResult.error || "Erro ao registrar horário.",
+                  false,
+                  "O que mais posso ajudar?"
+                ));
+              }
+              const typeLabel = getTimeTypeLabel(timeType);
+              return res.status(200).json(buildAlexaResponse(
+                `Hora ${typeLabel} registrada às ${brasiliaTime}.`,
+                false,
+                "O que mais posso ajudar?"
               ));
             }
           }
