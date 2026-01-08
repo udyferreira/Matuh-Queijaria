@@ -1,0 +1,59 @@
+PROMPT PARA O REPLIT — LIMPEZA DO INTERPRETADOR + PREPARO PARA LLM
+Contexto
+O backend recebe comandos de voz da Alexa como texto livre via ProcessCommandIntent.
+Atualmente existe um interpretador manual (regex, if/else, heurísticas) tentando entender os comandos, o que está causando fallback constante (“Não ouvi o comando.”).
+Vamos remover esse interpretador manual e preparar a arquitetura para uso de um LLM como interpretador, mantendo o backend soberano.
+1. Limpeza obrigatória (sem quebrar o sistema)
+Remover TODA lógica de interpretação manual de linguagem natural, incluindo:
+regex de comandos
+if/else baseados em palavras como “status”, “avançar”, etc.
+qualquer tentativa de “entender” o texto no webhook
+Manter intacto:
+o fluxo do /api/alexa/webhook
+validações de etapa
+regras de bloqueio do processo
+fallback falado
+buildAlexaResponse
+👉 Importante:
+Não apagar o fluxo. Trocar apenas o cérebro.
+2. Criar serviço interno de interpretação (ainda sem prompt)
+Criar uma função/serviço interno, por exemplo:
+interpretCommand(text: string)
+Por enquanto, essa função pode:
+apenas lançar um TODO
+ou retornar algo fixo de teste
+Exemplo temporário aceitável:
+{
+  "intent": "unknown",
+  "confidence": 0.0,
+  "entities": {}
+}
+⚠️ O webhook da Alexa não deve conter lógica semântica.
+3. Preparar integração com OpenAI (sem ativar ainda)
+Adicionar dependência oficial da OpenAI
+Preparar client usando:
+API key via variável de ambiente
+Não definir ainda o prompt
+Não chamar a OpenAI diretamente do webhook
+A chamada à OpenAI deve ficar isolada dentro de interpretCommand
+4. Contrato canônico do interpretador (obrigatório)
+Definir e documentar que interpretCommand SEMPRE retorna:
+{
+  "intent": "status | input | advance | help | unknown",
+  "confidence": 0.0,
+  "entities": {}
+}
+Regras:
+intent = unknown é válido
+Backend decide o que fazer
+LLM nunca executa ação
+LLM nunca valida processo
+5. Critério de aceite
+Considere correto quando:
+Nenhuma lógica de NLP manual existir no backend
+O webhook da Alexa apenas:
+extrai texto
+chama interpretCommand
+executa ou bloqueia
+A integração OpenAI estiver preparada, mas ainda neutra
+O sistema continuar funcionando (mesmo retornando fallback)

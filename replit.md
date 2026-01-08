@@ -76,8 +76,10 @@ Preferred communication style: Simple, everyday language.
 - Always returns HTTP 200 (errors communicated via speech)
 - Handles LaunchRequest, IntentRequest, SessionEndedRequest
 - Uses single ProcessCommandIntent with AMAZON.SearchQuery slot for free-form voice commands
-- Backend interprets utterances via interpretVoiceCommand() - Alexa is just a voice adapter
-- Supports spoken numbers in Portuguese (e.g., "cinco ponto dois" → 5.2)
+- **LLM-based interpretation**: interpretCommand() uses OpenAI to parse free-form text into canonical intents
+- **Backend execution**: executeIntent() validates and executes actions based on interpreted intent
+- Canonical intents: status, start_batch, advance, log_ph, log_time, pause, resume, instructions, help, goodbye, unknown
+- Backend is SOVEREIGN - LLM only interprets, never executes or validates process rules
 - Documentation available at `docs/ALEXA_WEBHOOK.md`
 
 ### Key npm Dependencies

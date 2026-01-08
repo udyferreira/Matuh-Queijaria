@@ -7,7 +7,27 @@ O webhook da Alexa para a Matuh Queijaria funciona como um **adaptador de voz pu
 ### Arquitetura
 
 ```
-Usuário fala → Alexa → ProcessCommandIntent → Backend interpreta → Backend executa → Alexa fala resposta
+Usuário fala → Alexa → ProcessCommandIntent → LLM interpreta → Backend executa → Alexa fala resposta
+```
+
+O processamento ocorre em duas etapas:
+
+1. **interpretCommand()** - LLM (OpenAI) analisa o texto livre e retorna um intent canônico
+2. **executeIntent()** - Backend valida e executa a ação baseada no intent
+
+#### Contrato do Interpretador (server/interpreter.ts)
+
+```typescript
+interface InterpretedCommand {
+  intent: "status" | "start_batch" | "advance" | "log_ph" | "log_time" | "pause" | "resume" | "instructions" | "help" | "goodbye" | "timer" | "unknown";
+  confidence: number;  // 0.0 a 1.0
+  entities: {
+    volume?: number;      // para start_batch
+    ph_value?: number;    // para log_ph  
+    time_value?: string;  // para log_time (formato "HH:MM")
+    time_type?: "flocculation" | "cut" | "press";
+  };
+}
 ```
 
 O backend é **SOBERANO** sobre:

@@ -741,257 +741,190 @@ export async function registerRoutes(
     return response;
   }
   
-  // Voice command interpreter - analyzes free-form text and executes actions
-  // The backend is SOVEREIGN - all decisions happen here, not in Alexa
-  async function interpretVoiceCommand(utterance: string): Promise<{ speech: string; shouldEndSession: boolean }> {
-    const text = utterance.toLowerCase().trim();
+  // Import LLM-based command interpreter
+  const { interpretCommand } = await import("./interpreter.js");
+  
+  // Execute action based on interpreted intent - backend is SOVEREIGN
+  // LLM only interprets, backend decides and executes
+  async function executeIntent(
+    command: Awaited<ReturnType<typeof interpretCommand>>
+  ): Promise<{ speech: string; shouldEndSession: boolean }> {
     
     // Get active batch for context
     const batches = await storage.getActiveBatches();
     const activeBatch = batches[0];
     
-    // --- COMMAND: Start batch ---
-    // Patterns: "iniciar lote", "começar produção", "novo lote", "iniciar com X litros"
-    if (text.includes("iniciar") || text.includes("começar") || text.includes("novo lote")) {
-      // Extract volume if mentioned
-      const volumeMatch = text.match(/(\d+)\s*(litros?|l\b)/i);
-      const milkVolume = volumeMatch ? parseInt(volumeMatch[1], 10) : 50;
-      
-      const inputs = recipeManager.calculateInputs(milkVolume);
-      await storage.createBatch({
-        recipeId: "queijo_nete",
-        currentStageId: 3,
-        milkVolumeL: String(milkVolume),
-        calculatedInputs: inputs,
-        status: "active",
-        history: [
-          { stageId: 1, action: "complete", timestamp: new Date().toISOString(), auto: true },
-          { stageId: 2, action: "complete", timestamp: new Date().toISOString(), auto: true },
-          { stageId: 3, action: "start", timestamp: new Date().toISOString() }
-        ]
-      });
-      
-      return {
-        speech: `Lote iniciado com ${milkVolume} litros de leite. Você vai precisar de: ${inputs.FERMENT_LR} mililitros de fermento LR, ${inputs.FERMENT_DX} de DX, ${inputs.FERMENT_KL} de KL, e ${inputs.RENNET} de coalho. Aqueça o leite a 32 graus para começar.`,
-        shouldEndSession: false
-      };
-    }
-    
-    // --- COMMAND: Status ---
-    // Patterns: "status", "como está", "qual etapa", "situação"
-    if (text.includes("status") || text.includes("como está") || text.includes("qual etapa") || text.includes("situação")) {
-      if (!activeBatch) {
-        return { speech: "Não há lote ativo no momento. Diga 'iniciar lote' para começar.", shouldEndSession: false };
+    switch (command.intent) {
+      case "start_batch": {
+        const milkVolume = command.entities.volume || 50;
+        const inputs = recipeManager.calculateInputs(milkVolume);
+        await storage.createBatch({
+          recipeId: "queijo_nete",
+          currentStageId: 3,
+          milkVolumeL: String(milkVolume),
+          calculatedInputs: inputs,
+          status: "active",
+          history: [
+            { stageId: 1, action: "complete", timestamp: new Date().toISOString(), auto: true },
+            { stageId: 2, action: "complete", timestamp: new Date().toISOString(), auto: true },
+            { stageId: 3, action: "start", timestamp: new Date().toISOString() }
+          ]
+        });
+        return {
+          speech: `Lote iniciado com ${milkVolume} litros de leite. Você vai precisar de: ${inputs.FERMENT_LR} mililitros de fermento LR, ${inputs.FERMENT_DX} de DX, ${inputs.FERMENT_KL} de KL, e ${inputs.RENNET} de coalho. Aqueça o leite a 32 graus para começar.`,
+          shouldEndSession: false
+        };
       }
       
-      const stage = recipeManager.getStage(activeBatch.currentStageId);
-      const timers = (activeBatch.activeTimers as any[]) || [];
-      const activeTimer = timers.find(t => new Date(t.endTime) > new Date());
-      
-      let speech = `Etapa ${activeBatch.currentStageId}: ${stage?.name || 'em andamento'}.`;
-      
-      if (activeTimer) {
-        const remaining = Math.ceil((new Date(activeTimer.endTime).getTime() - Date.now()) / 60000);
-        speech += ` Faltam ${remaining} minutos no timer.`;
-      }
-      
-      return { speech, shouldEndSession: false };
-    }
-    
-    // --- COMMAND: Timer check ---
-    // Patterns: "timer", "tempo", "quanto falta", "falta quanto"
-    if (text.includes("timer") || text.includes("quanto falta") || text.includes("falta quanto") || text.match(/\btempo\b/)) {
-      if (!activeBatch) {
-        return { speech: "Não há lote ativo.", shouldEndSession: false };
-      }
-      
-      const timers = (activeBatch.activeTimers as any[]) || [];
-      const now = new Date();
-      const activeTimer = timers.find(t => new Date(t.endTime) > now);
-      
-      if (!activeTimer) {
-        return { speech: "Não há timer ativo no momento.", shouldEndSession: false };
-      }
-      
-      const remaining = Math.ceil((new Date(activeTimer.endTime).getTime() - now.getTime()) / 60000);
-      if (remaining > 60) {
-        const hours = Math.floor(remaining / 60);
-        const mins = remaining % 60;
-        return { speech: `Faltam ${hours} horas e ${mins} minutos no timer.`, shouldEndSession: false };
-      }
-      return { speech: `Faltam ${remaining} minutos no timer.`, shouldEndSession: false };
-    }
-    
-    // --- COMMAND: Advance stage ---
-    // Patterns: "avançar", "próxima etapa", "próximo passo", "continuar", "pronto"
-    if (text.includes("avançar") || text.includes("próxima") || text.includes("próximo") || text.includes("continuar") || text.includes("pronto")) {
-      if (!activeBatch) {
-        return { speech: "Não há lote ativo para avançar.", shouldEndSession: false };
-      }
-      
-      const currentStage = recipeManager.getStage(activeBatch.currentStageId);
-      if (!currentStage) {
-        return { speech: "Etapa inválida.", shouldEndSession: false };
-      }
-      
-      const validation = recipeManager.validateAdvance(activeBatch, currentStage);
-      if (!validation.allowed) {
-        return { speech: validation.reason || "Não é possível avançar agora.", shouldEndSession: false };
-      }
-      
-      const nextStage = recipeManager.getNextStage(activeBatch.currentStageId);
-      if (!nextStage) {
-        await storage.updateBatch(activeBatch.id, { status: "completed" });
-        return { speech: "Parabéns! Receita concluída com sucesso!", shouldEndSession: false };
-      }
-      
-      await storage.updateBatch(activeBatch.id, { currentStageId: nextStage.id });
-      return { speech: `Avançando para etapa ${nextStage.id}: ${nextStage.name}.`, shouldEndSession: false };
-    }
-    
-    // --- COMMAND: Log pH ---
-    // Patterns: "registra pH X", "pH X", "acidez X", "pH cinco ponto dois"
-    // Helper to convert spoken numbers to digits
-    const parseSpokenNumber = (spoken: string): number | null => {
-      const numWords: Record<string, number> = {
-        'zero': 0, 'um': 1, 'uma': 1, 'dois': 2, 'duas': 2, 'tres': 3, 'três': 3,
-        'quatro': 4, 'cinco': 5, 'seis': 6, 'sete': 7, 'oito': 8, 'nove': 9,
-        'dez': 10, 'onze': 11, 'doze': 12, 'treze': 13, 'catorze': 14, 'quatorze': 14,
-        'quinze': 15, 'dezesseis': 16, 'dezessete': 17, 'dezoito': 18, 'dezenove': 19, 'vinte': 20
-      };
-      
-      // Try direct number first (e.g., "5.2", "5,2", "52")
-      const directMatch = spoken.match(/(\d+[.,]?\d*)/);
-      if (directMatch) return parseFloat(directMatch[1].replace(",", "."));
-      
-      // Try spoken format: "cinco ponto dois" or "cinco vírgula dois"
-      const spokenMatch = spoken.match(/(\w+)\s*(?:ponto|vírgula|virgula|e)\s*(\w+)/i);
-      if (spokenMatch) {
-        const intPart = numWords[spokenMatch[1].toLowerCase()];
-        const decPart = numWords[spokenMatch[2].toLowerCase()];
-        if (intPart !== undefined && decPart !== undefined) {
-          return parseFloat(`${intPart}.${decPart}`);
+      case "status": {
+        if (!activeBatch) {
+          return { speech: "Não há lote ativo no momento. Diga 'iniciar lote' para começar.", shouldEndSession: false };
         }
-      }
-      
-      // Try single spoken number
-      const singleMatch = spoken.match(/\b(\w+)\b/);
-      if (singleMatch && numWords[singleMatch[1].toLowerCase()] !== undefined) {
-        return numWords[singleMatch[1].toLowerCase()];
-      }
-      
-      return null;
-    };
-    
-    const phMatch = text.match(/(?:ph|acidez|registra\s*ph)\s*[:\s]?\s*(.+)/i);
-    if (phMatch) {
-      const phValue = parseSpokenNumber(phMatch[1]);
-      if (phValue === null) {
-        return { speech: "Não entendi o valor do pH. Diga algo como 'pH cinco ponto dois'.", shouldEndSession: false };
-      }
-      if (!activeBatch) {
-        return { speech: "Não há lote ativo para registrar pH.", shouldEndSession: false };
-      }
-      
-      const measurements = (activeBatch.measurements as any) || {};
-      measurements.ph_value = phValue;
-      const phHistory = measurements.ph_measurements || [];
-      phHistory.push({ value: phValue, timestamp: new Date().toISOString() });
-      measurements.ph_measurements = phHistory;
-      await storage.updateBatch(activeBatch.id, { measurements });
-      
-      return { speech: `pH ${phValue} registrado com sucesso.`, shouldEndSession: false };
-    }
-    
-    // --- COMMAND: Log time ---
-    // Patterns: "hora da floculação X:XX", "hora do corte X:XX", "registra horário X:XX"
-    const timeMatch = text.match(/(?:hora|horário|registra\s*hora)\s*(?:da\s*)?(floculação|corte|prensa)?\s*[:\s]?\s*(\d{1,2})[:\s](\d{2})/i);
-    if (timeMatch) {
-      if (!activeBatch) {
-        return { speech: "Não há lote ativo para registrar horário.", shouldEndSession: false };
-      }
-      
-      const timeType = timeMatch[1]?.toLowerCase();
-      const timeValue = `${timeMatch[2]}:${timeMatch[3]}`;
-      
-      const measurements = (activeBatch.measurements as any) || {};
-      const key = timeType === 'floculação' ? 'flocculation_time' :
-                  timeType === 'corte' ? 'cut_point_time' :
-                  timeType === 'prensa' ? 'press_start_time' : 'recorded_time';
-      measurements[key] = timeValue;
-      await storage.updateBatch(activeBatch.id, { measurements });
-      
-      const typeLabel = timeType ? ` de ${timeType}` : '';
-      return { speech: `Horário${typeLabel} ${timeValue} registrado.`, shouldEndSession: false };
-    }
-    
-    // --- COMMAND: Pause ---
-    // Patterns: "pausar", "pausa", "parar"
-    if (text.includes("pausar") || text.includes("pausa") || text.match(/\bparar\b/)) {
-      if (!activeBatch) {
-        return { speech: "Não há lote ativo para pausar.", shouldEndSession: false };
-      }
-      if (activeBatch.status !== "active") {
-        return { speech: `O lote já está ${activeBatch.status}.`, shouldEndSession: false };
-      }
-      
-      await storage.updateBatch(activeBatch.id, { status: "paused", pausedAt: new Date() });
-      return { speech: "Lote pausado. Diga 'retomar' quando quiser continuar.", shouldEndSession: false };
-    }
-    
-    // --- COMMAND: Resume ---
-    // Patterns: "retomar", "continuar", "despausar"
-    if (text.includes("retomar") || text.includes("despausar") || (text.includes("continuar") && activeBatch?.status === "paused")) {
-      if (!activeBatch) {
-        return { speech: "Não há lote para retomar.", shouldEndSession: false };
-      }
-      if (activeBatch.status !== "paused") {
-        return { speech: "O lote não está pausado.", shouldEndSession: false };
-      }
-      
-      await storage.updateBatch(activeBatch.id, { status: "active", pausedAt: null });
-      return { speech: "Lote retomado. Continuando de onde paramos.", shouldEndSession: false };
-    }
-    
-    // --- COMMAND: Instructions for current stage ---
-    // Patterns: "instruções", "o que fazer", "como fazer", "repetir"
-    if (text.includes("instrução") || text.includes("instruções") || text.includes("o que fazer") || text.includes("como fazer") || text.includes("repetir")) {
-      if (!activeBatch) {
-        return { speech: "Não há lote ativo.", shouldEndSession: false };
-      }
-      
-      const stage = recipeManager.getStage(activeBatch.currentStageId);
-      if (stage?.instructions && stage.instructions.length > 0) {
-        let speech = stage.instructions.join('. ');
-        if (stage.llm_guidance) {
-          speech += ` Dica: ${stage.llm_guidance}`;
+        const stage = recipeManager.getStage(activeBatch.currentStageId);
+        const timers = (activeBatch.activeTimers as any[]) || [];
+        const activeTimer = timers.find(t => new Date(t.endTime) > new Date());
+        let speech = `Etapa ${activeBatch.currentStageId}: ${stage?.name || 'em andamento'}.`;
+        if (activeTimer) {
+          const remaining = Math.ceil((new Date(activeTimer.endTime).getTime() - Date.now()) / 60000);
+          speech += ` Faltam ${remaining} minutos no timer.`;
         }
         return { speech, shouldEndSession: false };
       }
       
-      return { speech: stage?.name || "Prossiga com a produção.", shouldEndSession: false };
+      case "advance": {
+        if (!activeBatch) {
+          return { speech: "Não há lote ativo para avançar.", shouldEndSession: false };
+        }
+        const currentStage = recipeManager.getStage(activeBatch.currentStageId);
+        if (!currentStage) {
+          return { speech: "Etapa inválida.", shouldEndSession: false };
+        }
+        const validation = recipeManager.validateAdvance(activeBatch, currentStage);
+        if (!validation.allowed) {
+          return { speech: validation.reason || "Não é possível avançar agora.", shouldEndSession: false };
+        }
+        const nextStage = recipeManager.getNextStage(activeBatch.currentStageId);
+        if (!nextStage) {
+          await storage.updateBatch(activeBatch.id, { status: "completed" });
+          return { speech: "Parabéns! Receita concluída com sucesso!", shouldEndSession: false };
+        }
+        await storage.updateBatch(activeBatch.id, { currentStageId: nextStage.id });
+        return { speech: `Avançando para etapa ${nextStage.id}: ${nextStage.name}.`, shouldEndSession: false };
+      }
+      
+      case "log_ph": {
+        const phValue = command.entities.ph_value;
+        if (phValue === undefined) {
+          return { speech: "Não entendi o valor do pH. Diga algo como 'pH cinco ponto dois'.", shouldEndSession: false };
+        }
+        if (!activeBatch) {
+          return { speech: "Não há lote ativo para registrar pH.", shouldEndSession: false };
+        }
+        const measurements = (activeBatch.measurements as any) || {};
+        measurements.ph_value = phValue;
+        const phHistory = measurements.ph_measurements || [];
+        phHistory.push({ value: phValue, timestamp: new Date().toISOString() });
+        measurements.ph_measurements = phHistory;
+        await storage.updateBatch(activeBatch.id, { measurements });
+        return { speech: `pH ${phValue} registrado com sucesso.`, shouldEndSession: false };
+      }
+      
+      case "log_time": {
+        if (!activeBatch) {
+          return { speech: "Não há lote ativo para registrar horário.", shouldEndSession: false };
+        }
+        const timeValue = command.entities.time_value;
+        const timeType = command.entities.time_type;
+        if (!timeValue) {
+          return { speech: "Não entendi o horário. Diga algo como 'hora da floculação dez e trinta'.", shouldEndSession: false };
+        }
+        const measurements = (activeBatch.measurements as any) || {};
+        const key = timeType === 'flocculation' ? 'flocculation_time' :
+                    timeType === 'cut' ? 'cut_point_time' :
+                    timeType === 'press' ? 'press_start_time' : 'recorded_time';
+        measurements[key] = timeValue;
+        await storage.updateBatch(activeBatch.id, { measurements });
+        const typeLabel = timeType === 'flocculation' ? ' de floculação' :
+                          timeType === 'cut' ? ' de corte' :
+                          timeType === 'press' ? ' de prensa' : '';
+        return { speech: `Horário${typeLabel} ${timeValue} registrado.`, shouldEndSession: false };
+      }
+      
+      case "pause": {
+        if (!activeBatch) {
+          return { speech: "Não há lote ativo para pausar.", shouldEndSession: false };
+        }
+        if (activeBatch.status !== "active") {
+          return { speech: `O lote já está ${activeBatch.status}.`, shouldEndSession: false };
+        }
+        await storage.updateBatch(activeBatch.id, { status: "paused", pausedAt: new Date() });
+        return { speech: "Lote pausado. Diga 'retomar' quando quiser continuar.", shouldEndSession: false };
+      }
+      
+      case "resume": {
+        if (!activeBatch) {
+          return { speech: "Não há lote para retomar.", shouldEndSession: false };
+        }
+        if (activeBatch.status !== "paused") {
+          return { speech: "O lote não está pausado.", shouldEndSession: false };
+        }
+        await storage.updateBatch(activeBatch.id, { status: "active", pausedAt: null });
+        return { speech: "Lote retomado. Continuando de onde paramos.", shouldEndSession: false };
+      }
+      
+      case "instructions": {
+        if (!activeBatch) {
+          return { speech: "Não há lote ativo.", shouldEndSession: false };
+        }
+        const stage = recipeManager.getStage(activeBatch.currentStageId);
+        if (stage?.instructions && stage.instructions.length > 0) {
+          let speech = stage.instructions.join('. ');
+          if (stage.llm_guidance) {
+            speech += ` Dica: ${stage.llm_guidance}`;
+          }
+          return { speech, shouldEndSession: false };
+        }
+        return { speech: stage?.name || "Prossiga com a produção.", shouldEndSession: false };
+      }
+      
+      case "timer": {
+        if (!activeBatch) {
+          return { speech: "Não há lote ativo.", shouldEndSession: false };
+        }
+        const timers = (activeBatch.activeTimers as any[]) || [];
+        const now = new Date();
+        const activeTimer = timers.find(t => new Date(t.endTime) > now);
+        if (!activeTimer) {
+          return { speech: "Não há timer ativo no momento.", shouldEndSession: false };
+        }
+        const remaining = Math.ceil((new Date(activeTimer.endTime).getTime() - now.getTime()) / 60000);
+        if (remaining > 60) {
+          const hours = Math.floor(remaining / 60);
+          const mins = remaining % 60;
+          return { speech: `Faltam ${hours} horas e ${mins} minutos no timer.`, shouldEndSession: false };
+        }
+        return { speech: `Faltam ${remaining} minutos no timer.`, shouldEndSession: false };
+      }
+      
+      case "help": {
+        return {
+          speech: "Você pode dizer: status, avançar, registra pH cinco ponto dois, hora da floculação dez e trinta, pausar, retomar, ou instruções. O que deseja?",
+          shouldEndSession: false
+        };
+      }
+      
+      case "goodbye": {
+        return { speech: "Até logo! Bom trabalho na queijaria.", shouldEndSession: true };
+      }
+      
+      case "unknown":
+      default: {
+        return {
+          speech: "Não entendi o comando. Diga 'ajuda' para ver as opções disponíveis.",
+          shouldEndSession: false
+        };
+      }
     }
-    
-    // --- COMMAND: Help ---
-    // Patterns: "ajuda", "help", "comandos", "o que posso"
-    if (text.includes("ajuda") || text.includes("help") || text.includes("comandos") || text.includes("o que posso")) {
-      return {
-        speech: "Você pode dizer: status, avançar, registra pH cinco ponto dois, hora da floculação dez e trinta, pausar, retomar, ou instruções. O que deseja?",
-        shouldEndSession: false
-      };
-    }
-    
-    // --- COMMAND: Goodbye ---
-    // Patterns: "tchau", "adeus", "encerrar", "sair", "fechar"
-    if (text.includes("tchau") || text.includes("adeus") || text.includes("encerrar") || text.includes("sair") || text.includes("fechar")) {
-      return { speech: "Até logo! Bom trabalho na queijaria.", shouldEndSession: true };
-    }
-    
-    // --- FALLBACK: Unknown command ---
-    return {
-      speech: "Não entendi o comando. Diga 'ajuda' para ver as opções disponíveis.",
-      shouldEndSession: false
-    };
   }
 
   app.post("/api/alexa/webhook", async (req, res) => {
@@ -1059,8 +992,10 @@ export async function registerRoutes(
             ));
           }
           
-          // Backend interprets and executes the command
-          const result = await interpretVoiceCommand(utterance);
+          // LLM interprets the command, backend executes
+          const command = await interpretCommand(utterance);
+          console.log("LLM interpreted command:", JSON.stringify(command));
+          const result = await executeIntent(command);
           return res.status(200).json(buildAlexaResponse(
             result.speech,
             result.shouldEndSession,
