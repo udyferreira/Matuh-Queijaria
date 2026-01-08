@@ -528,6 +528,117 @@ export async function registerRoutes(
   // Import LLM-based command interpreter
   const { interpretCommand } = await import("./interpreter.js");
   
+  // --- Conversational State for Pending Inputs ---
+  // Simple in-memory state keyed by Alexa session ID
+  interface PendingInput {
+    type: "time" | "date" | "number";
+    subType?: string; // flocculation, cut_point, press_start, etc.
+    createdAt: number;
+  }
+  const pendingInputs = new Map<string, PendingInput>();
+  
+  // Clean up old pending inputs (older than 5 minutes)
+  function cleanupPendingInputs() {
+    const now = Date.now();
+    const entries = Array.from(pendingInputs.entries());
+    for (const [sessionId, pending] of entries) {
+      if (now - pending.createdAt > 5 * 60 * 1000) {
+        pendingInputs.delete(sessionId);
+      }
+    }
+  }
+  
+  // --- Deterministic Time Parsing ---
+  // Parses spoken time formats to HH:MM
+  const TIME_WORDS: Record<string, number> = {
+    "zero": 0, "uma": 1, "um": 1, "duas": 2, "dois": 2, "três": 3, "tres": 3,
+    "quatro": 4, "cinco": 5, "seis": 6, "sete": 7, "oito": 8, "nove": 9,
+    "dez": 10, "onze": 11, "doze": 12, "treze": 13, "catorze": 14, "quatorze": 14,
+    "quinze": 15, "dezesseis": 16, "dezessete": 17, "dezoito": 18, "dezenove": 19,
+    "vinte": 20, "trinta": 30, "quarenta": 40, "cinquenta": 50,
+    "meia": 30
+  };
+  
+  function parseSpokenTime(text: string): string | null {
+    const normalized = text.toLowerCase().trim();
+    
+    // Handle "agora" - current time
+    if (normalized === "agora") {
+      const now = new Date();
+      return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    }
+    
+    // Handle "15:30" or "15 30" format
+    const numericMatch = normalized.match(/^(\d{1,2})[:\s](\d{2})$/);
+    if (numericMatch) {
+      const hours = parseInt(numericMatch[1], 10);
+      const minutes = parseInt(numericMatch[2], 10);
+      if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+      }
+    }
+    
+    // Handle just "15" or "quinze" (assume :00)
+    const singleHourNum = normalized.match(/^(\d{1,2})$/);
+    if (singleHourNum) {
+      const hours = parseInt(singleHourNum[1], 10);
+      if (hours >= 0 && hours <= 23) {
+        return `${String(hours).padStart(2, '0')}:00`;
+      }
+    }
+    
+    // Handle spoken format "quinze trinta", "quinze e trinta", "quinze e meia"
+    const words = normalized.replace(/\s+e\s+/g, ' ').split(/\s+/);
+    let hours = -1;
+    let minutes = 0;
+    
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const value = TIME_WORDS[word];
+      
+      if (value !== undefined) {
+        if (hours === -1) {
+          // First number is hours
+          hours = value;
+          // Check for compound like "vinte e uma"
+          if (i + 1 < words.length && TIME_WORDS[words[i + 1]] !== undefined && TIME_WORDS[words[i + 1]] < 10) {
+            hours += TIME_WORDS[words[i + 1]];
+            i++;
+          }
+        } else {
+          // Second number is minutes
+          minutes = value;
+          // Check for compound like "trinta e cinco"
+          if (i + 1 < words.length && TIME_WORDS[words[i + 1]] !== undefined && TIME_WORDS[words[i + 1]] < 10) {
+            minutes += TIME_WORDS[words[i + 1]];
+          }
+          break;
+        }
+      }
+    }
+    
+    // If we only got hours, check for single word
+    if (hours === -1 && words.length === 1 && TIME_WORDS[words[0]] !== undefined) {
+      hours = TIME_WORDS[words[0]];
+    }
+    
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+    
+    return null;
+  }
+  
+  // Get human-readable time type label
+  function getTimeTypeLabel(timeType: string | undefined): string {
+    switch (timeType) {
+      case 'flocculation': return 'da floculação';
+      case 'cut_point': return 'do ponto de corte';
+      case 'press_start': return 'de início de prensa';
+      default: return 'do evento';
+    }
+  }
+  
   // Execute action based on interpreted intent - backend is SOVEREIGN
   // LLM only interprets, backend decides and executes
   // IMPORTANT: Uses batchService for ALL operations to ensure consistency with REST API
@@ -620,19 +731,26 @@ export async function registerRoutes(
           return { speech: "Não há lote ativo para registrar horário.", shouldEndSession: false };
         }
         const timeValue = command.entities.time_value;
-        const timeType = command.entities.time_type;
+        const timeType = command.entities.time_type || undefined;
+        
+        // If no time value, return with pending state indicator
+        // The webhook will set pendingInput for this session
         if (!timeValue) {
-          return { speech: "Não entendi o horário. Diga algo como 'hora da floculação dez e trinta'.", shouldEndSession: false };
+          const typeLabel = getTimeTypeLabel(timeType);
+          return { 
+            speech: `Qual foi a hora ${typeLabel}?`, 
+            shouldEndSession: false,
+            setPendingTime: true, // Signal to webhook to set pending state
+            pendingTimeType: timeType || null // null means generic time
+          } as any;
         }
         
-        const result = await batchService.logTime(activeBatch.id, timeValue, timeType || undefined);
+        const result = await batchService.logTime(activeBatch.id, timeValue, timeType);
         if (!result.success) {
           return { speech: result.error || "Erro ao registrar horário.", shouldEndSession: false };
         }
-        const typeLabel = timeType === 'flocculation' ? ' de floculação' :
-                          timeType === 'cut_point' ? ' do ponto de corte' :
-                          timeType === 'press_start' ? ' de início de prensa' : '';
-        return { speech: `Horário${typeLabel} ${timeValue} registrado.`, shouldEndSession: false };
+        const typeLabel = getTimeTypeLabel(timeType);
+        return { speech: `Hora ${typeLabel} registrada às ${timeValue}.`, shouldEndSession: false };
       }
       
       case "log_date": {
@@ -894,6 +1012,10 @@ export async function registerRoutes(
           
           console.log("Extracted utterance:", utterance);
           
+          // Get session ID for conversational state
+          const sessionId = alexaRequest?.session?.sessionId || 'default';
+          cleanupPendingInputs();
+          
           // GUARDA-CORPO: Se slot vazio, pedir clarificação amigável
           // Samples sem slot (ex: "status" sozinho) invocam o intent mas slot fica vazio
           // A Alexa não informa qual sample foi usado, então precisamos pedir mais contexto
@@ -907,10 +1029,68 @@ export async function registerRoutes(
             ));
           }
           
+          // --- Check for pending input state ---
+          const pending = pendingInputs.get(sessionId);
+          if (pending && pending.type === 'time') {
+            console.log(`Processing pending time input for ${pending.subType}: "${textToInterpret}"`);
+            
+            // Try to parse the utterance as a time value
+            const parsedTime = parseSpokenTime(textToInterpret);
+            if (parsedTime) {
+              // Clear pending state
+              pendingInputs.delete(sessionId);
+              
+              // Get active batch and log the time
+              const activeBatch = await batchService.getActiveBatch();
+              if (!activeBatch) {
+                return res.status(200).json(buildAlexaResponse(
+                  "Não há lote ativo para registrar horário.",
+                  false,
+                  "O que mais posso ajudar?"
+                ));
+              }
+              
+              const logResult = await batchService.logTime(activeBatch.id, parsedTime, pending.subType);
+              if (!logResult.success) {
+                return res.status(200).json(buildAlexaResponse(
+                  logResult.error || "Erro ao registrar horário.",
+                  false,
+                  "O que mais posso ajudar?"
+                ));
+              }
+              
+              const typeLabel = getTimeTypeLabel(pending.subType);
+              return res.status(200).json(buildAlexaResponse(
+                `Hora ${typeLabel} registrada às ${parsedTime}.`,
+                false,
+                "O que mais posso ajudar?"
+              ));
+            } else {
+              // Could not parse time - ask again
+              const typeLabel = getTimeTypeLabel(pending.subType);
+              return res.status(200).json(buildAlexaResponse(
+                `Não entendi o horário. Diga algo como 'quinze e trinta', '15:30', ou 'agora'.`,
+                false,
+                `Qual foi a hora ${typeLabel || 'do evento'}?`
+              ));
+            }
+          }
+          
           // LLM interprets the command, backend executes
           const command = await interpretCommand(textToInterpret);
           console.log("LLM interpreted command:", JSON.stringify(command));
-          const result = await executeIntent(command);
+          const result = await executeIntent(command) as any;
+          
+          // Check if executeIntent wants to set pending state
+          if (result.setPendingTime) {
+            pendingInputs.set(sessionId, {
+              type: 'time',
+              subType: result.pendingTimeType || undefined,
+              createdAt: Date.now()
+            });
+            console.log(`Set pending time input for session ${sessionId}: ${result.pendingTimeType || 'generic'}`);
+          }
+          
           return res.status(200).json(buildAlexaResponse(
             result.speech,
             result.shouldEndSession,
