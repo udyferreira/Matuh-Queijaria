@@ -99,12 +99,15 @@ REGRAS DE INTERPRETAÇÃO:
    - Extrair number_value como número
 
 5. QUERY_INPUT - Consulta de insumos calculados:
-   - Quando perguntar quantidade/quanto/dose de insumo → intent = "query_input"
-   - Mapear input_type:
-     - LR, fermento LR → "FERMENT_LR"
-     - DX, fermento DX → "FERMENT_DX"
-     - KL, fermento KL → "FERMENT_KL"
-     - coalho, rennet → "RENNET"
+   - SEMPRE retornar query_input quando:
+     - Perguntar por quantidade, proporção, valor, quanto, qual, me diga, deste lote
+     - Mesmo que a frase seja curta ou informal
+   - Mapear input_type OBRIGATORIAMENTE:
+     - "kl", "fermento kl" → "FERMENT_KL"
+     - "lr", "fermento lr" → "FERMENT_LR"
+     - "dx", "fermento dx" → "FERMENT_DX"
+     - "coalho", "rennet" → "RENNET"
+   - NUNCA retornar unknown se um input_type válido puder ser inferido
 
 EXEMPLOS:
 
@@ -130,10 +133,15 @@ LOG_NUMBER (valores):
 "a temperatura está em trinta graus" → {"intent":"log_number","confidence":0.95,"entities":{"number_type":"milk_temperature","number_value":30}}
 "são vinte e quatro peças" → {"intent":"log_number","confidence":0.95,"entities":{"number_type":"pieces_quantity","number_value":24}}
 
-QUERY_INPUT (consulta insumos):
-"qual a quantidade de LR" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_LR"}}
-"quanto de DX eu uso" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_DX"}}
+QUERY_INPUT (consulta insumos) - PRIORIDADE ALTA:
+"quanto de kl" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_KL"}}
+"qual a quantidade de coalho" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"RENNET"}}
+"qual é o kl deste lote" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_KL"}}
+"me diga o lr" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_LR"}}
+"quanto de dx eu uso" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_DX"}}
 "dose de coalho" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"RENNET"}}
+"kl deste lote" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_KL"}}
+"qual o coalho" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"RENNET"}}
 
 OUTROS:
 "avançar" → {"intent":"advance","confidence":0.95,"entities":{}}
@@ -229,8 +237,55 @@ const SIMPLE_COMMAND_MAP: Record<string, InterpretedCommand["intent"]> = {
   "fechar": "goodbye",
 };
 
+// Mapeamento de palavras-chave para input_type de insumos
+const INPUT_TYPE_MAP: Record<string, InterpretedCommand["entities"]["input_type"]> = {
+  "kl": "FERMENT_KL",
+  "fermento kl": "FERMENT_KL",
+  "lr": "FERMENT_LR",
+  "fermento lr": "FERMENT_LR",
+  "dx": "FERMENT_DX",
+  "fermento dx": "FERMENT_DX",
+  "coalho": "RENNET",
+  "rennet": "RENNET",
+};
+
+// Palavras que indicam consulta de quantidade/valor
+const QUERY_INDICATORS = /\b(quanto|qual|quantidade|proporção|proporcao|dose|me diga|deste lote|qual é|qual e|quanto de|quanto do)\b/i;
+
+function tryQueryInputFallback(text: string): InterpretedCommand | null {
+  const normalized = text.toLowerCase().trim();
+  
+  // Verificar se tem indicador de consulta
+  const hasQueryIndicator = QUERY_INDICATORS.test(normalized);
+  
+  // Verificar se menciona algum insumo
+  for (const [keyword, inputType] of Object.entries(INPUT_TYPE_MAP)) {
+    const keywordPattern = new RegExp(`\\b${keyword}\\b`, 'i');
+    if (keywordPattern.test(normalized)) {
+      // Se menciona insumo com indicador de consulta, ou é uma frase curta sobre insumo
+      if (hasQueryIndicator || normalized.split(/\s+/).length <= 4) {
+        console.log(`Query input detected: ${inputType} (from "${normalized}")`);
+        return {
+          intent: "query_input",
+          confidence: 0.95,
+          entities: { input_type: inputType }
+        };
+      }
+    }
+  }
+  
+  return null;
+}
+
 function trySimpleFallback(text: string): InterpretedCommand | null {
   const normalized = text.toLowerCase().trim();
+  
+  // 0. PRIMEIRO: Verificar query_input para consultas de insumos
+  // (prioridade máxima para evitar que vá para unknown)
+  const queryInputResult = tryQueryInputFallback(normalized);
+  if (queryInputResult) {
+    return queryInputResult;
+  }
   
   // Apenas para comandos curtos (até 3 palavras)
   const wordCount = normalized.split(/\s+/).length;
