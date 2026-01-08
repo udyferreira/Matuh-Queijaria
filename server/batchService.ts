@@ -328,8 +328,8 @@ export async function logTime(batchId: number, timeValue: string, timeType?: str
   
   const measurements = (batch.measurements as any) || {};
   const key = timeType === 'flocculation' ? 'flocculation_time' :
-              timeType === 'cut' ? 'cut_point_time' :
-              timeType === 'press' ? 'press_start_time' : 'recorded_time';
+              (timeType === 'cut' || timeType === 'cut_point') ? 'cut_point_time' :
+              (timeType === 'press' || timeType === 'press_start') ? 'press_start_time' : 'recorded_time';
   measurements[key] = timeValue;
   
   const inputHistory = measurements._history || [];
