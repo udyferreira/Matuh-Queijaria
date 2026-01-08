@@ -982,7 +982,30 @@ export async function registerRoutes(
         // --- ProcessCommandIntent: Main voice command processing ---
         // This is the ONLY custom intent - all voice commands come through here
         if (intentName === "ProcessCommandIntent") {
-          const utterance = slots.utterance?.value || "";
+          // Log the full slots structure for debugging
+          console.log("Alexa slots received:", JSON.stringify(slots, null, 2));
+          
+          // Extract utterance from multiple possible slot formats
+          // Alexa can send the value in different ways depending on slot type
+          let utterance = "";
+          const utteranceSlot = slots.utterance || slots.command || slots.query || Object.values(slots)[0];
+          
+          if (utteranceSlot) {
+            // Try direct value first
+            if (typeof utteranceSlot.value === "string") {
+              utterance = utteranceSlot.value;
+            }
+            // Try slotValue.value (for some slot types)
+            else if (utteranceSlot.slotValue?.value) {
+              utterance = utteranceSlot.slotValue.value;
+            }
+            // Try resolutions (for slots with entity resolution)
+            else if (utteranceSlot.resolutions?.resolutionsPerAuthority?.[0]?.values?.[0]?.value?.name) {
+              utterance = utteranceSlot.resolutions.resolutionsPerAuthority[0].values[0].value.name;
+            }
+          }
+          
+          console.log("Extracted utterance:", utterance);
           
           if (!utterance.trim()) {
             return res.status(200).json(buildAlexaResponse(
