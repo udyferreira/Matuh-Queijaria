@@ -79,7 +79,7 @@ Preferred communication style: Simple, everyday language.
 - **LLM-based interpretation**: interpretCommand() uses OpenAI to parse free-form text into canonical intents
 - **Backend execution**: executeIntent() validates and executes actions based on interpreted intent
 - Canonical intents: status, start_batch, advance, log_time, log_date, log_number, pause, resume, instructions, help, goodbye, timer, query_input, unknown
-- **log_time**: Registro de horários de processo (floculação, ponto de corte, início de prensa)
+- **log_time**: Registro de horários de processo (floculação, ponto de corte, início de prensa), com suporte a "agora" convertido para horário de Brasília (America/Sao_Paulo)
 - **log_date**: Registro de datas de processo (entrada câmara 2)
 - **log_number**: Registro de valores numéricos (pH, quantidade de peças, temperatura)
 - **query_input**: Consulta de insumos calculados (LR, DX, KL, coalho) com mapeamento para códigos (FERMENT_LR, FERMENT_DX, FERMENT_KL, RENNET)
