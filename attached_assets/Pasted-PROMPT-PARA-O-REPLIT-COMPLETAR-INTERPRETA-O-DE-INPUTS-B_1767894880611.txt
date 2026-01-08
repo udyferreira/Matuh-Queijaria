@@ -1,0 +1,101 @@
+PROMPT PARA O REPLIT — COMPLETAR INTERPRETAÇÃO DE INPUTS (BASEADO NA RECEITA)
+Contexto
+O arquivo interpreter.ts interpreta comandos de voz vindos da Alexa e retorna { intent, confidence, entities }.
+Atualmente ele reconhece corretamente controle de processo, início de lote, floculação e consultas de insumos, mas não cobre todos os inputs obrigatórios definidos na recipe.yml, o que gera bloqueios legítimos como:
+Missing required inputs: cut_point_time
+Missing required inputs: press_start_time
+Missing required inputs: chamber_2_entry_date
+🎯 Objetivo
+Atualizar o interpreter.ts para cobrir TODOS os inputs da receita, de forma genérica, escalável e sem criar lógica de negócio no LLM.
+🔧 Alterações obrigatórias no interpreter.ts
+1️⃣ Generalizar registro de HORÁRIOS (log_time)
+O intent log_time deve ser usado sempre que o usuário mencionar hora/horário relacionada a qualquer etapa.
+Mapear entities.time_type para:
+"time_type":
+  | "flocculation"
+  | "cut_point"
+  | "press_start"
+  | null
+Exemplos que DEVEM funcionar:
+“a floculação foi às cinco e vinte”
+“hora do ponto de corte catorze trinta e nove”
+“iniciei a prensa às dezessete horas”
+2️⃣ Registrar DATAS (log_date)
+Criar intent lógico log_date para datas de processo.
+Usar para:
+chamber_2_entry_date
+Exemplos:
+“coloquei na câmara dois hoje”
+“entrada na câmara dois foi dia oito do um”
+“foi para a câmara dois em oito de janeiro”
+Entities esperadas:
+date_type: "chamber_2_entry"
+date_value: "YYYY-MM-DD"
+3️⃣ Registrar VALORES NUMÉRICOS (log_number)
+Usar log_number para qualquer número manual:
+pH intermediário
+quantidade de peças
+temperatura informada fora do início do lote
+Mapear number_type:
+"number_type":
+  | "ph_value"
+  | "pieces_quantity"
+  | "milk_temperature"
+  | null
+Exemplos:
+“o pH agora é cinco ponto dois”
+“tem doze peças”
+“a temperatura está em trinta graus”
+4️⃣ Manter query_input para insumos calculados
+Continuar usando:
+input_type:
+  | "FERMENT_LR"
+  | "FERMENT_DX"
+  | "FERMENT_KL"
+  | "RENNET"
+Reconhecer frases naturais:
+“qual foi a quantidade de coalho”
+“quanto de DX eu usei”
+“dose de KL”
+5️⃣ Melhorar reconhecimento de STATUS
+Reconhecer como intent = "status":
+“qual etapa estou”
+“em que etapa estamos”
+“me diga a etapa”
+“qual é o status”
+📦 Schema final esperado
+intent:
+  | "status"
+  | "start_batch"
+  | "advance"
+  | "timer"
+  | "help"
+  | "log_time"
+  | "log_date"
+  | "log_number"
+  | "query_input"
+  | "unknown";
+
+entities: {
+  volume?: number | null;
+  milk_temperature?: number | null;
+  ph_value?: number | null;
+
+  time_type?: "flocculation" | "cut_point" | "press_start" | null;
+  time_value?: string | null; // HH:MM
+
+  date_type?: "chamber_2_entry" | null;
+  date_value?: string | null; // YYYY-MM-DD
+
+  number_type?: "ph_value" | "pieces_quantity" | "milk_temperature" | null;
+  number_value?: number | null;
+
+  input_type?: "FERMENT_LR" | "FERMENT_DX" | "FERMENT_KL" | "RENNET" | null;
+}
+✅ Critério de aceite
+Após a alteração:
+“hora do ponto de corte catorze trinta e nove” → log_time (cut_point)
+“iniciei a prensa às dezessete” → log_time (press_start)
+“coloquei na câmara dois hoje” → log_date
+“tem doze peças” → log_number (pieces_quantity)
+Nenhum Missing required inputs fica sem diálogo possível

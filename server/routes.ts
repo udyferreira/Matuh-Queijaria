@@ -615,23 +615,6 @@ export async function registerRoutes(
         };
       }
       
-      case "log_ph": {
-        const phValue = command.entities.ph_value;
-        if (phValue === undefined || phValue === null) {
-          return { speech: "Não entendi o valor do pH. Diga algo como 'pH cinco ponto dois'.", shouldEndSession: false };
-        }
-        if (!activeBatch) {
-          return { speech: "Não há lote ativo para registrar pH.", shouldEndSession: false };
-        }
-        
-        // FIXED: Now uses batchService for consistent logging
-        const result = await batchService.logPh(activeBatch.id, phValue);
-        if (!result.success) {
-          return { speech: result.error || "Erro ao registrar pH.", shouldEndSession: false };
-        }
-        return { speech: `pH ${phValue} registrado com sucesso.`, shouldEndSession: false };
-      }
-      
       case "log_time": {
         if (!activeBatch) {
           return { speech: "Não há lote ativo para registrar horário.", shouldEndSession: false };
@@ -642,15 +625,72 @@ export async function registerRoutes(
           return { speech: "Não entendi o horário. Diga algo como 'hora da floculação dez e trinta'.", shouldEndSession: false };
         }
         
-        // FIXED: Now uses batchService for consistent logging
         const result = await batchService.logTime(activeBatch.id, timeValue, timeType || undefined);
         if (!result.success) {
           return { speech: result.error || "Erro ao registrar horário.", shouldEndSession: false };
         }
         const typeLabel = timeType === 'flocculation' ? ' de floculação' :
-                          timeType === 'cut' ? ' de corte' :
-                          timeType === 'press' ? ' de prensa' : '';
+                          timeType === 'cut_point' ? ' do ponto de corte' :
+                          timeType === 'press_start' ? ' de início de prensa' : '';
         return { speech: `Horário${typeLabel} ${timeValue} registrado.`, shouldEndSession: false };
+      }
+      
+      case "log_date": {
+        if (!activeBatch) {
+          return { speech: "Não há lote ativo para registrar data.", shouldEndSession: false };
+        }
+        const dateValue = command.entities.date_value;
+        const dateType = command.entities.date_type;
+        if (!dateValue) {
+          return { speech: "Não entendi a data. Diga algo como 'entrada na câmara dois hoje'.", shouldEndSession: false };
+        }
+        
+        if (dateType === "chamber_2_entry") {
+          const measurements = (activeBatch.measurements as Record<string, any>) || {};
+          measurements["chamber_2_entry_date"] = dateValue;
+          await storage.updateBatch(activeBatch.id, { 
+            measurements,
+            chamber2EntryDate: new Date(dateValue)
+          });
+          return { speech: `Data de entrada na câmara dois ${dateValue} registrada.`, shouldEndSession: false };
+        }
+        
+        return { speech: "Tipo de data não reconhecido.", shouldEndSession: false };
+      }
+      
+      case "log_number": {
+        if (!activeBatch) {
+          return { speech: "Não há lote ativo para registrar valor.", shouldEndSession: false };
+        }
+        const numberValue = command.entities.number_value;
+        const numberType = command.entities.number_type;
+        if (numberValue === undefined || numberValue === null) {
+          return { speech: "Não entendi o valor. Diga algo como 'o pH é cinco ponto dois' ou 'tem doze peças'.", shouldEndSession: false };
+        }
+        
+        if (numberType === "ph_value") {
+          const result = await batchService.logPh(activeBatch.id, numberValue);
+          if (!result.success) {
+            return { speech: result.error || "Erro ao registrar pH.", shouldEndSession: false };
+          }
+          return { speech: `pH ${numberValue} registrado com sucesso.`, shouldEndSession: false };
+        }
+        
+        if (numberType === "pieces_quantity") {
+          const measurements = (activeBatch.measurements as Record<string, any>) || {};
+          measurements["pieces_quantity"] = numberValue;
+          await storage.updateBatch(activeBatch.id, { measurements });
+          return { speech: `Quantidade de ${numberValue} peças registrada.`, shouldEndSession: false };
+        }
+        
+        if (numberType === "milk_temperature") {
+          const measurements = (activeBatch.measurements as Record<string, any>) || {};
+          measurements["current_temperature"] = numberValue;
+          await storage.updateBatch(activeBatch.id, { measurements });
+          return { speech: `Temperatura ${numberValue} graus registrada.`, shouldEndSession: false };
+        }
+        
+        return { speech: "Tipo de valor não reconhecido.", shouldEndSession: false };
       }
       
       case "pause": {

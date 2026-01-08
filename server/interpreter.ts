@@ -1,14 +1,18 @@
 import OpenAI from "openai";
 
 export interface InterpretedCommand {
-  intent: "status" | "start_batch" | "advance" | "log_ph" | "log_time" | "log_temperature" | "pause" | "resume" | "instructions" | "help" | "goodbye" | "timer" | "query_input" | "unknown";
+  intent: "status" | "start_batch" | "advance" | "log_time" | "log_date" | "log_number" | "pause" | "resume" | "instructions" | "help" | "goodbye" | "timer" | "query_input" | "unknown";
   confidence: number;
   entities: {
     volume?: number | null;
     milk_temperature?: number | null;
     ph_value?: number | null;
     time_value?: string | null;
-    time_type?: "flocculation" | "cut" | "press" | null;
+    time_type?: "flocculation" | "cut_point" | "press_start" | null;
+    date_type?: "chamber_2_entry" | null;
+    date_value?: string | null;
+    number_type?: "ph_value" | "pieces_quantity" | "milk_temperature" | null;
+    number_value?: number | null;
     input_type?: "FERMENT_LR" | "FERMENT_DX" | "FERMENT_KL" | "RENNET" | null;
   };
 }
@@ -46,72 +50,94 @@ function buildUserPrompt(text: string): string {
 Retorne um JSON no seguinte formato:
 
 {
-  "intent": "status | start_batch | advance | log_ph | log_time | log_temperature | pause | resume | instructions | help | goodbye | timer | query_input | unknown",
+  "intent": "status | start_batch | advance | log_time | log_date | log_number | pause | resume | instructions | help | goodbye | timer | query_input | unknown",
   "confidence": 0.0,
   "entities": {
     "volume": number | null,
     "milk_temperature": number | null,
     "ph_value": number | null,
     "time_value": string | null,
-    "time_type": "flocculation" | "cut" | "press" | null,
+    "time_type": "flocculation" | "cut_point" | "press_start" | null,
+    "date_type": "chamber_2_entry" | null,
+    "date_value": string | null,
+    "number_type": "ph_value" | "pieces_quantity" | "milk_temperature" | null,
+    "number_value": number | null,
     "input_type": "FERMENT_LR" | "FERMENT_DX" | "FERMENT_KL" | "RENNET" | null
   }
 }
 
-Regras de extração:
-- volume: litros de leite mencionados (ex: "50 litros" → 50, "cento e vinte" → 120)
-- milk_temperature: temperatura do leite em graus (ex: "35 graus" → 35)
-- ph_value: valor de pH mencionado (ex: "seis ponto sete" → 6.7, "pH 5.2" → 5.2)
-- time_value: horário no formato "HH:MM" - SEMPRE converter horário falado para HH:MM
-  - "cinco e vinte" → "05:20"
-  - "dezessete e quarenta" → "17:40"
-  - "dez e meia" → "10:30"
-  - "às oito" → "08:00"
-  - "meio-dia" → "12:00"
-- time_type: tipo do registro de tempo - floculação, corte ou prensagem
-- input_type: tipo de insumo consultado - mapear nomes para códigos:
-  - LR, fermento LR → FERMENT_LR
-  - DX, fermento DX → FERMENT_DX
-  - KL, fermento KL → FERMENT_KL
-  - coalho, rennet → RENNET
-
 REGRAS DE INTERPRETAÇÃO:
 
-1. REGISTRO DE HORÁRIO (log_time):
-   - Se o usuário menciona floculação + horário → intent = "log_time"
-   - Extrair time_type = "flocculation" e time_value = "HH:MM"
-   - Exemplos: "a floculação foi às cinco e vinte", "anota floculação dezessete e quarenta"
+1. STATUS - Consulta de estado atual:
+   - "status", "situação", "qual etapa", "em que etapa", "como está" → intent = "status"
 
-2. CONSULTA DE INSUMOS (query_input):
-   - Se o usuário pergunta quantidade/quanto/dose de um insumo → intent = "query_input"
-   - Mapear o nome do insumo para input_type
-   - Exemplos: "qual a quantidade de LR", "quanto de DX eu uso", "dose de coalho"
+2. LOG_TIME - Registro de HORÁRIOS de processo:
+   - Quando mencionar horário + tipo de evento → intent = "log_time"
+   - Mapear time_type:
+     - floculação, flocular → "flocculation"
+     - ponto de corte, corte, cortei → "cut_point"
+     - prensa, prensagem, iniciei prensa → "press_start"
+   - Converter horário para HH:MM:
+     - "cinco e vinte" → "05:20"
+     - "catorze trinta e nove" → "14:39"
+     - "dezessete horas" → "17:00"
+     - "dez e meia" → "10:30"
+     - "às oito" → "08:00"
 
-3. Se o comando for ambíguo ou incompleto → intent = "unknown"
+3. LOG_DATE - Registro de DATAS de processo:
+   - Quando mencionar data + câmara/câmara dois → intent = "log_date"
+   - date_type = "chamber_2_entry"
+   - Converter data para YYYY-MM-DD:
+     - "hoje" → data atual
+     - "dia oito do um" → "2026-01-08"
+     - "oito de janeiro" → "2026-01-08"
 
-Exemplos de interpretação:
+4. LOG_NUMBER - Registro de VALORES numéricos:
+   - pH intermediário → number_type = "ph_value"
+   - quantidade de peças → number_type = "pieces_quantity"
+   - temperatura atual → number_type = "milk_temperature"
+   - Extrair number_value como número
 
-COMANDOS CURTOS (1-2 palavras):
+5. QUERY_INPUT - Consulta de insumos calculados:
+   - Quando perguntar quantidade/quanto/dose de insumo → intent = "query_input"
+   - Mapear input_type:
+     - LR, fermento LR → "FERMENT_LR"
+     - DX, fermento DX → "FERMENT_DX"
+     - KL, fermento KL → "FERMENT_KL"
+     - coalho, rennet → "RENNET"
+
+EXEMPLOS:
+
+STATUS:
 "status" → {"intent":"status","confidence":0.95,"entities":{}}
-"avançar" → {"intent":"advance","confidence":0.95,"entities":{}}
-"timer" → {"intent":"timer","confidence":0.95,"entities":{}}
+"qual etapa estou" → {"intent":"status","confidence":0.95,"entities":{}}
+"em que etapa estamos" → {"intent":"status","confidence":0.95,"entities":{}}
 
-REGISTRO DE HORÁRIOS:
+LOG_TIME (horários):
 "a floculação foi às cinco e vinte" → {"intent":"log_time","confidence":0.95,"entities":{"time_value":"05:20","time_type":"flocculation"}}
-"anota a floculação às dezessete e quarenta" → {"intent":"log_time","confidence":0.95,"entities":{"time_value":"17:40","time_type":"flocculation"}}
-"floculação dez e quinze" → {"intent":"log_time","confidence":0.95,"entities":{"time_value":"10:15","time_type":"flocculation"}}
-"hora do corte foi oito e meia" → {"intent":"log_time","confidence":0.9,"entities":{"time_value":"08:30","time_type":"cut"}}
+"hora do ponto de corte catorze trinta e nove" → {"intent":"log_time","confidence":0.95,"entities":{"time_value":"14:39","time_type":"cut_point"}}
+"iniciei a prensa às dezessete horas" → {"intent":"log_time","confidence":0.95,"entities":{"time_value":"17:00","time_type":"press_start"}}
+"o corte foi às oito e meia" → {"intent":"log_time","confidence":0.95,"entities":{"time_value":"08:30","time_type":"cut_point"}}
 
-CONSULTA DE INSUMOS:
+LOG_DATE (datas):
+"coloquei na câmara dois hoje" → {"intent":"log_date","confidence":0.95,"entities":{"date_type":"chamber_2_entry","date_value":"2026-01-08"}}
+"entrada na câmara dois foi dia oito do um" → {"intent":"log_date","confidence":0.95,"entities":{"date_type":"chamber_2_entry","date_value":"2026-01-08"}}
+"foi para a câmara dois em oito de janeiro" → {"intent":"log_date","confidence":0.95,"entities":{"date_type":"chamber_2_entry","date_value":"2026-01-08"}}
+
+LOG_NUMBER (valores):
+"o pH agora é cinco ponto dois" → {"intent":"log_number","confidence":0.95,"entities":{"number_type":"ph_value","number_value":5.2}}
+"tem doze peças" → {"intent":"log_number","confidence":0.95,"entities":{"number_type":"pieces_quantity","number_value":12}}
+"a temperatura está em trinta graus" → {"intent":"log_number","confidence":0.95,"entities":{"number_type":"milk_temperature","number_value":30}}
+"são vinte e quatro peças" → {"intent":"log_number","confidence":0.95,"entities":{"number_type":"pieces_quantity","number_value":24}}
+
+QUERY_INPUT (consulta insumos):
 "qual a quantidade de LR" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_LR"}}
-"quanto de fermento DX eu uso" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_DX"}}
-"a quantidade de LR" → {"intent":"query_input","confidence":0.9,"entities":{"input_type":"FERMENT_LR"}}
+"quanto de DX eu uso" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_DX"}}
 "dose de coalho" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"RENNET"}}
-"quanto de KL" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_KL"}}
 
-COMANDOS COM ENTIDADES:
+OUTROS:
+"avançar" → {"intent":"advance","confidence":0.95,"entities":{}}
 "iniciar lote com 120 litros" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":120}}
-"pH seis ponto sete" → {"intent":"log_ph","confidence":0.95,"entities":{"ph_value":6.7}}
 
 Retorne APENAS o JSON, sem markdown, explicações ou texto adicional.`;
 }
@@ -126,6 +152,13 @@ const SIMPLE_COMMAND_MAP: Record<string, InterpretedCommand["intent"]> = {
   "situacao": "status",
   "como está": "status",
   "como estamos": "status",
+  "qual etapa": "status",
+  "qual etapa estou": "status",
+  "em que etapa": "status",
+  "em que etapa estamos": "status",
+  "me diga a etapa": "status",
+  "qual é o status": "status",
+  "qual o status": "status",
   
   // Advance - verbos de ação para avançar
   // IMPORTANTE: Frases com "etapa" devem vir antes de palavras simples
@@ -284,7 +317,7 @@ export async function interpretCommand(text: string): Promise<InterpretedCommand
 
     const parsed = JSON.parse(jsonContent) as InterpretedCommand;
     
-    const validIntents = ["status", "start_batch", "advance", "log_ph", "log_time", "log_temperature", "pause", "resume", "instructions", "help", "goodbye", "timer", "query_input", "unknown"];
+    const validIntents = ["status", "start_batch", "advance", "log_time", "log_date", "log_number", "pause", "resume", "instructions", "help", "goodbye", "timer", "query_input", "unknown"];
     if (!parsed.intent || !validIntents.includes(parsed.intent)) {
       return { intent: "unknown", confidence: 0.0, entities: {} };
     }
@@ -295,9 +328,17 @@ export async function interpretCommand(text: string): Promise<InterpretedCommand
       if (typeof parsed.entities.milk_temperature === "number") cleanEntities.milk_temperature = parsed.entities.milk_temperature;
       if (typeof parsed.entities.ph_value === "number") cleanEntities.ph_value = parsed.entities.ph_value;
       if (typeof parsed.entities.time_value === "string") cleanEntities.time_value = parsed.entities.time_value;
-      if (parsed.entities.time_type && ["flocculation", "cut", "press"].includes(parsed.entities.time_type)) {
+      if (parsed.entities.time_type && ["flocculation", "cut_point", "press_start"].includes(parsed.entities.time_type)) {
         cleanEntities.time_type = parsed.entities.time_type;
       }
+      if (parsed.entities.date_type === "chamber_2_entry") {
+        cleanEntities.date_type = parsed.entities.date_type;
+      }
+      if (typeof parsed.entities.date_value === "string") cleanEntities.date_value = parsed.entities.date_value;
+      if (parsed.entities.number_type && ["ph_value", "pieces_quantity", "milk_temperature"].includes(parsed.entities.number_type)) {
+        cleanEntities.number_type = parsed.entities.number_type;
+      }
+      if (typeof parsed.entities.number_value === "number") cleanEntities.number_value = parsed.entities.number_value;
       if (parsed.entities.input_type && ["FERMENT_LR", "FERMENT_DX", "FERMENT_KL", "RENNET"].includes(parsed.entities.input_type)) {
         cleanEntities.input_type = parsed.entities.input_type;
       }
