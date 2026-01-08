@@ -1007,16 +1007,21 @@ export async function registerRoutes(
           
           console.log("Extracted utterance:", utterance);
           
-          if (!utterance.trim()) {
+          // GUARDA-CORPO: Se slot vazio, pedir clarificação amigável
+          // Samples sem slot (ex: "status" sozinho) invocam o intent mas slot fica vazio
+          // A Alexa não informa qual sample foi usado, então precisamos pedir mais contexto
+          let textToInterpret = utterance.trim();
+          if (!textToInterpret) {
+            console.log("Slot vazio - pedindo clarificação");
             return res.status(200).json(buildAlexaResponse(
-              "Não ouvi o comando. Tente novamente.",
+              "Entendi! Pode dar mais detalhes? Por exemplo: 'qual o status', 'quero avançar', ou 'preciso de ajuda'.",
               false,
-              "Diga um comando como 'status' ou 'avançar'."
+              "Diga um comando completo como 'qual o status' ou 'quero avançar'."
             ));
           }
           
           // LLM interprets the command, backend executes
-          const command = await interpretCommand(utterance);
+          const command = await interpretCommand(textToInterpret);
           console.log("LLM interpreted command:", JSON.stringify(command));
           const result = await executeIntent(command);
           return res.status(200).json(buildAlexaResponse(
