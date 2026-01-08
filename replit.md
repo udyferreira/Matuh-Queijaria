@@ -78,7 +78,8 @@ Preferred communication style: Simple, everyday language.
 - Uses single ProcessCommandIntent with AMAZON.SearchQuery slot for free-form voice commands
 - **LLM-based interpretation**: interpretCommand() uses OpenAI to parse free-form text into canonical intents
 - **Backend execution**: executeIntent() validates and executes actions based on interpreted intent
-- Canonical intents: status, start_batch, advance, log_ph, log_time, pause, resume, instructions, help, goodbye, timer, unknown
+- Canonical intents: status, start_batch, advance, log_ph, log_time, log_temperature, pause, resume, instructions, help, goodbye, timer, query_input, unknown
+- **query_input**: Consulta de insumos calculados (LR, DX, KL, coalho) com mapeamento para códigos (FERMENT_LR, FERMENT_DX, FERMENT_KL, RENNET)
 - Backend is SOVEREIGN - LLM only interprets, never executes or validates process rules
 - Documentation available at `docs/ALEXA_WEBHOOK.md`
 

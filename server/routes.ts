@@ -719,6 +719,40 @@ export async function registerRoutes(
         return { speech: `Faltam ${remaining} minutos no timer.`, shouldEndSession: false };
       }
       
+      case "query_input": {
+        if (!activeBatch) {
+          return { speech: "Não há lote ativo para consultar insumos.", shouldEndSession: false };
+        }
+        
+        const inputType = command.entities.input_type;
+        if (!inputType) {
+          return { speech: "Qual insumo você quer consultar? LR, DX, KL ou coalho?", shouldEndSession: false };
+        }
+        
+        const calculatedInputs = activeBatch.calculatedInputs as Record<string, number> | null;
+        if (!calculatedInputs) {
+          return { speech: "Os insumos ainda não foram calculados para este lote.", shouldEndSession: false };
+        }
+        
+        const inputNames: Record<string, string> = {
+          "FERMENT_LR": "fermento LR",
+          "FERMENT_DX": "fermento DX",
+          "FERMENT_KL": "fermento KL",
+          "RENNET": "coalho"
+        };
+        
+        const value = calculatedInputs[inputType];
+        if (value === undefined) {
+          return { speech: `O insumo ${inputNames[inputType] || inputType} não foi encontrado.`, shouldEndSession: false };
+        }
+        
+        const unit = inputType === "RENNET" ? "ml" : "gramas";
+        return { 
+          speech: `A quantidade de ${inputNames[inputType]} é ${value} ${unit}.`, 
+          shouldEndSession: false 
+        };
+      }
+      
       case "help": {
         return {
           speech: "Você pode dizer: status, avançar, registra pH cinco ponto dois, hora da floculação dez e trinta, pausar, retomar, ou instruções. Para iniciar um lote, diga: iniciar lote com 80 litros, temperatura 32 graus, pH 6.5.",

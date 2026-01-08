@@ -1,0 +1,86 @@
+PROMPT PARA O REPLIT — ATUALIZAR interpreter.ts (LOG_TIME E QUERY_INPUT)
+Contexto
+O arquivo interpreter.ts já existe e hoje é responsável por interpretar o texto vindo da Alexa e retornar um objeto { intent, confidence, entities }.
+Atualmente ele reconhece bem intents como start_batch, advance, status e timer, mas não reconhece corretamente:
+registro de horários de processo (ex: floculação)
+consultas sobre insumos já calculados (ex: quantidade de LR, DX, KL, coalho)
+Essas limitações estão bloqueando o avanço do fluxo na etapa de floculação e impedem perguntas operacionais básicas.
+🎯 Objetivo
+Atualizar apenas o interpreter.ts para:
+Reconhecer registro de horário de floculação (log_time)
+Reconhecer consulta de insumos calculados (query_input)
+Manter compatibilidade total com os intents já existentes
+Não mover lógica de negócio para o LLM (apenas interpretação)
+🔧 Alterações obrigatórias no interpreter.ts
+1️⃣ Atualizar o prompt do LLM (system + user)
+Modificar o prompt usado na função de interpretação para incluir explicitamente:
+reconhecimento de comandos de registro de dados
+reconhecimento de comandos de consulta de insumos
+O prompt deve instruir o LLM a:
+retornar somente JSON
+nunca inventar valores
+converter horários falados para formato HH:MM
+identificar log_time quando o usuário disser algo como:
+“a floculação foi às cinco e vinte”
+“anota a floculação às dezessete e quarenta”
+identificar query_input quando o usuário disser algo como:
+“qual a quantidade de LR”
+“quanto de fermento DX eu uso”
+“a quantidade de LR e DX”
+2️⃣ Estender o schema de retorno
+Garantir que o objeto retornado pelo interpreter.ts suporte estes novos campos, sem quebrar os existentes:
+intent:
+  | "status"
+  | "start_batch"
+  | "advance"
+  | "timer"
+  | "log_time"
+  | "log_ph"
+  | "log_temperature"
+  | "query_input"
+  | "help"
+  | "unknown";
+
+entities: {
+  volume?: number | null;
+  milk_temperature?: number | null;
+  ph_value?: number | null;
+
+  time_type?: "flocculation" | null;
+  time_value?: string | null; // formato HH:MM
+
+  input_type?: "FERMENT_LR" | "FERMENT_DX" | "FERMENT_KL" | "RENNET" | null;
+}
+3️⃣ Regras de interpretação (importante)
+No interpreter.ts:
+Se o usuário mencionar floculação + horário, retornar:
+intent = "log_time"
+entities.time_type = "flocculation"
+entities.time_value = "HH:MM"
+Se o usuário mencionar quantidade / quanto / dose + nome de insumo (LR, DX, KL, coalho):
+retornar intent = "query_input"
+mapear corretamente:
+LR → FERMENT_LR
+DX → FERMENT_DX
+KL → FERMENT_KL
+coalho → RENNET
+Se o comando for ambíguo ou incompleto:
+retornar intent = "unknown"
+4️⃣ O que NÃO fazer
+❌ Não executar lógica de negócio no interpreter
+❌ Não acessar batch, banco ou recipe no interpreter
+❌ Não assumir valores que o usuário não disse
+❌ Não criar intents novos na Alexa
+✅ Critério de aceite (testes manuais)
+Após a alteração, estes comandos devem gerar o JSON correto no log:
+“a floculação foi às cinco e vinte”
+intent: log_time
+time_type: flocculation
+time_value: 05:20
+“qual a quantidade de LR”
+intent: query_input
+input_type: FERMENT_LR
+“quanto de DX e KL eu uso”
+intent: query_input
+input_type: múltiplos ou o primeiro identificado (decisão de implementação)
+Comandos já existentes (advance, status, timer) continuam funcionando sem regressão.

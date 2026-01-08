@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 
 export interface InterpretedCommand {
-  intent: "status" | "start_batch" | "advance" | "log_ph" | "log_time" | "pause" | "resume" | "instructions" | "help" | "goodbye" | "timer" | "unknown";
+  intent: "status" | "start_batch" | "advance" | "log_ph" | "log_time" | "log_temperature" | "pause" | "resume" | "instructions" | "help" | "goodbye" | "timer" | "query_input" | "unknown";
   confidence: number;
   entities: {
     volume?: number | null;
@@ -9,6 +9,7 @@ export interface InterpretedCommand {
     ph_value?: number | null;
     time_value?: string | null;
     time_type?: "flocculation" | "cut" | "press" | null;
+    input_type?: "FERMENT_LR" | "FERMENT_DX" | "FERMENT_KL" | "RENNET" | null;
   };
 }
 
@@ -45,14 +46,15 @@ function buildUserPrompt(text: string): string {
 Retorne um JSON no seguinte formato:
 
 {
-  "intent": "status | start_batch | advance | log_ph | log_time | pause | resume | instructions | help | goodbye | timer | unknown",
+  "intent": "status | start_batch | advance | log_ph | log_time | log_temperature | pause | resume | instructions | help | goodbye | timer | query_input | unknown",
   "confidence": 0.0,
   "entities": {
     "volume": number | null,
     "milk_temperature": number | null,
     "ph_value": number | null,
     "time_value": string | null,
-    "time_type": "flocculation" | "cut" | "press" | null
+    "time_type": "flocculation" | "cut" | "press" | null,
+    "input_type": "FERMENT_LR" | "FERMENT_DX" | "FERMENT_KL" | "RENNET" | null
   }
 }
 
@@ -60,47 +62,56 @@ Regras de extração:
 - volume: litros de leite mencionados (ex: "50 litros" → 50, "cento e vinte" → 120)
 - milk_temperature: temperatura do leite em graus (ex: "35 graus" → 35)
 - ph_value: valor de pH mencionado (ex: "seis ponto sete" → 6.7, "pH 5.2" → 5.2)
-- time_value: horário no formato "HH:MM" (ex: "dez e meia" → "10:30", "às oito" → "08:00")
+- time_value: horário no formato "HH:MM" - SEMPRE converter horário falado para HH:MM
+  - "cinco e vinte" → "05:20"
+  - "dezessete e quarenta" → "17:40"
+  - "dez e meia" → "10:30"
+  - "às oito" → "08:00"
+  - "meio-dia" → "12:00"
 - time_type: tipo do registro de tempo - floculação, corte ou prensagem
+- input_type: tipo de insumo consultado - mapear nomes para códigos:
+  - LR, fermento LR → FERMENT_LR
+  - DX, fermento DX → FERMENT_DX
+  - KL, fermento KL → FERMENT_KL
+  - coalho, rennet → RENNET
+
+REGRAS DE INTERPRETAÇÃO:
+
+1. REGISTRO DE HORÁRIO (log_time):
+   - Se o usuário menciona floculação + horário → intent = "log_time"
+   - Extrair time_type = "flocculation" e time_value = "HH:MM"
+   - Exemplos: "a floculação foi às cinco e vinte", "anota floculação dezessete e quarenta"
+
+2. CONSULTA DE INSUMOS (query_input):
+   - Se o usuário pergunta quantidade/quanto/dose de um insumo → intent = "query_input"
+   - Mapear o nome do insumo para input_type
+   - Exemplos: "qual a quantidade de LR", "quanto de DX eu uso", "dose de coalho"
+
+3. Se o comando for ambíguo ou incompleto → intent = "unknown"
 
 Exemplos de interpretação:
 
-COMANDOS CURTOS (1-2 palavras) - muito comuns via voz:
+COMANDOS CURTOS (1-2 palavras):
 "status" → {"intent":"status","confidence":0.95,"entities":{}}
-"etapa" → {"intent":"status","confidence":0.95,"entities":{}}
-"situação" → {"intent":"status","confidence":0.95,"entities":{}}
 "avançar" → {"intent":"advance","confidence":0.95,"entities":{}}
-"próxima" → {"intent":"advance","confidence":0.95,"entities":{}}
-"seguir" → {"intent":"advance","confidence":0.95,"entities":{}}
-"ajuda" → {"intent":"help","confidence":0.95,"entities":{}}
-"comandos" → {"intent":"help","confidence":0.95,"entities":{}}
-"pausar" → {"intent":"pause","confidence":0.95,"entities":{}}
-"pausa" → {"intent":"pause","confidence":0.95,"entities":{}}
-"continuar" → {"intent":"resume","confidence":0.95,"entities":{}}
-"retomar" → {"intent":"resume","confidence":0.95,"entities":{}}
-"instruções" → {"intent":"instructions","confidence":0.95,"entities":{}}
 "timer" → {"intent":"timer","confidence":0.95,"entities":{}}
-"tempo" → {"intent":"timer","confidence":0.95,"entities":{}}
-"tchau" → {"intent":"goodbye","confidence":0.95,"entities":{}}
-"sair" → {"intent":"goodbye","confidence":0.95,"entities":{}}
 
-COMANDOS COM CONTEXTO:
-"qual o status" → {"intent":"status","confidence":0.95,"entities":{}}
-"como está o lote" → {"intent":"status","confidence":0.95,"entities":{}}
-"próxima etapa" → {"intent":"advance","confidence":0.95,"entities":{}}
-"avançar etapa" → {"intent":"advance","confidence":0.95,"entities":{}}
-"o que fazer agora" → {"intent":"instructions","confidence":0.85,"entities":{}}
-"quanto falta no timer" → {"intent":"timer","confidence":0.95,"entities":{}}
-"tempo restante" → {"intent":"timer","confidence":0.9,"entities":{}}
-
-COMANDOS COM ENTIDADES (requerem extração):
-"iniciar lote com 120 litros" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":120}}
-"começar produção 50 litros leite a 35 graus" → {"intent":"start_batch","confidence":0.9,"entities":{"volume":50,"milk_temperature":35}}
-"começar lote 100 litros temperatura 32 pH 6.5" → {"intent":"start_batch","confidence":0.9,"entities":{"volume":100,"milk_temperature":32,"ph_value":6.5}}
-"pH seis ponto sete" → {"intent":"log_ph","confidence":0.95,"entities":{"ph_value":6.7}}
-"registrar pH 5.2" → {"intent":"log_ph","confidence":0.95,"entities":{"ph_value":5.2}}
-"floculação às dez e quinze" → {"intent":"log_time","confidence":0.9,"entities":{"time_value":"10:15","time_type":"flocculation"}}
+REGISTRO DE HORÁRIOS:
+"a floculação foi às cinco e vinte" → {"intent":"log_time","confidence":0.95,"entities":{"time_value":"05:20","time_type":"flocculation"}}
+"anota a floculação às dezessete e quarenta" → {"intent":"log_time","confidence":0.95,"entities":{"time_value":"17:40","time_type":"flocculation"}}
+"floculação dez e quinze" → {"intent":"log_time","confidence":0.95,"entities":{"time_value":"10:15","time_type":"flocculation"}}
 "hora do corte foi oito e meia" → {"intent":"log_time","confidence":0.9,"entities":{"time_value":"08:30","time_type":"cut"}}
+
+CONSULTA DE INSUMOS:
+"qual a quantidade de LR" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_LR"}}
+"quanto de fermento DX eu uso" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_DX"}}
+"a quantidade de LR" → {"intent":"query_input","confidence":0.9,"entities":{"input_type":"FERMENT_LR"}}
+"dose de coalho" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"RENNET"}}
+"quanto de KL" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_KL"}}
+
+COMANDOS COM ENTIDADES:
+"iniciar lote com 120 litros" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":120}}
+"pH seis ponto sete" → {"intent":"log_ph","confidence":0.95,"entities":{"ph_value":6.7}}
 
 Retorne APENAS o JSON, sem markdown, explicações ou texto adicional.`;
 }
@@ -273,7 +284,7 @@ export async function interpretCommand(text: string): Promise<InterpretedCommand
 
     const parsed = JSON.parse(jsonContent) as InterpretedCommand;
     
-    const validIntents = ["status", "start_batch", "advance", "log_ph", "log_time", "pause", "resume", "instructions", "help", "goodbye", "timer", "unknown"];
+    const validIntents = ["status", "start_batch", "advance", "log_ph", "log_time", "log_temperature", "pause", "resume", "instructions", "help", "goodbye", "timer", "query_input", "unknown"];
     if (!parsed.intent || !validIntents.includes(parsed.intent)) {
       return { intent: "unknown", confidence: 0.0, entities: {} };
     }
@@ -286,6 +297,9 @@ export async function interpretCommand(text: string): Promise<InterpretedCommand
       if (typeof parsed.entities.time_value === "string") cleanEntities.time_value = parsed.entities.time_value;
       if (parsed.entities.time_type && ["flocculation", "cut", "press"].includes(parsed.entities.time_type)) {
         cleanEntities.time_type = parsed.entities.time_type;
+      }
+      if (parsed.entities.input_type && ["FERMENT_LR", "FERMENT_DX", "FERMENT_KL", "RENNET"].includes(parsed.entities.input_type)) {
+        cleanEntities.input_type = parsed.entities.input_type;
       }
     }
 
