@@ -1010,8 +1010,13 @@ export async function registerRoutes(
       }
       
       // --- SessionEndedRequest: Skill closing ---
+      // Session already ended by Alexa - return minimal response without speech
+      // This happens when: user is silent, timeout, error, or external close
       if (requestType === "SessionEndedRequest") {
-        return res.status(200).json(buildAlexaResponse("", true));
+        return res.status(200).json({
+          version: "1.0",
+          response: {}
+        });
       }
       
       // --- IntentRequest: Process voice command ---
