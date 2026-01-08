@@ -60,11 +60,88 @@ A Alexa **NÃO**:
 
 ## Modelo de Intents
 
-A skill utiliza **APENAS UM** intent customizado:
+A skill utiliza dois intents customizados:
 
 | Intent | Descrição |
 |--------|-----------|
-| `ProcessCommandIntent` | Captura qualquer frase livre via slot `utterance` (AMAZON.SearchQuery) |
+| `ProcessCommandIntent` | Captura comandos gerais via slot `utterance` (AMAZON.SearchQuery) |
+| `LogTimeIntent` | Registro de horários com slots nativos AMAZON.TIME e timeType customizado |
+
+### LogTimeIntent (Recomendado para Horários)
+
+O `LogTimeIntent` usa o slot nativo `AMAZON.TIME` para reconhecimento confiável de horários, evitando interpretações incorretas.
+
+**Slots:**
+| Slot | Tipo | Obrigatório | Descrição |
+|------|------|-------------|-----------|
+| `time` | AMAZON.TIME | Sim | Horário no formato HH:MM |
+| `timeType` | TimeTypeSlot (custom) | Não | Tipo do horário (floculação, corte, prensa) |
+
+**Configuração do Interaction Model:**
+
+```json
+{
+  "name": "LogTimeIntent",
+  "slots": [
+    {
+      "name": "time",
+      "type": "AMAZON.TIME"
+    },
+    {
+      "name": "timeType",
+      "type": "TimeTypeSlot"
+    }
+  ],
+  "samples": [
+    "hora da {timeType} às {time}",
+    "horário da {timeType} às {time}",
+    "registra hora da {timeType} às {time}",
+    "registra horário da {timeType} às {time}",
+    "a {timeType} foi às {time}",
+    "hora às {time}",
+    "registra hora às {time}",
+    "às {time}",
+    "{time}"
+  ]
+}
+```
+
+**Slot Type customizado (TimeTypeSlot):**
+
+```json
+{
+  "name": "TimeTypeSlot",
+  "values": [
+    { "name": { "value": "floculação", "synonyms": ["floculacao", "flocul"] } },
+    { "name": { "value": "corte", "synonyms": ["ponto de corte", "ponto"] } },
+    { "name": { "value": "prensa", "synonyms": ["início de prensa", "inicio de prensa"] } }
+  ]
+}
+```
+
+**Payload recebido:**
+```json
+{
+  "request": {
+    "type": "IntentRequest",
+    "intent": {
+      "name": "LogTimeIntent",
+      "slots": {
+        "time": { "value": "15:30" },
+        "timeType": { "value": "floculação" }
+      }
+    }
+  }
+}
+```
+
+O backend mapeia `timeType` para tipos internos:
+- "floculação" → `flocculation`
+- "corte" / "ponto" → `cut_point`
+- "prensa" → `press_start`
+
+**Tratamento de "agora":**
+Se o slot `time` contiver "now" ou "agora", o backend converte automaticamente para o horário atual de Brasília (America/Sao_Paulo).
 
 ### Intents Amazon Built-in (suportados)
 

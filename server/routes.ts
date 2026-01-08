@@ -733,30 +733,12 @@ export async function registerRoutes(
       }
       
       case "log_time": {
-        if (!activeBatch) {
-          return { speech: "Não há lote ativo para registrar horário.", shouldEndSession: false };
-        }
-        const timeValue = command.entities.time_value;
-        const timeType = command.entities.time_type || undefined;
-        
-        // If no time value, return with pending state indicator
-        // The webhook will set pendingInput for this session
-        if (!timeValue) {
-          const typeLabel = getTimeTypeLabel(timeType);
-          return { 
-            speech: `Qual foi a hora ${typeLabel}?`, 
-            shouldEndSession: false,
-            setPendingTime: true, // Signal to webhook to set pending state
-            pendingTimeType: timeType || null // null means generic time
-          } as any;
-        }
-        
-        const result = await batchService.logTime(activeBatch.id, timeValue, timeType);
-        if (!result.success) {
-          return { speech: result.error || "Erro ao registrar horário.", shouldEndSession: false };
-        }
-        const typeLabel = getTimeTypeLabel(timeType);
-        return { speech: `Hora ${typeLabel} registrada às ${timeValue}.`, shouldEndSession: false };
+        // Time registration is now handled exclusively by LogTimeIntent with AMAZON.TIME slot
+        // Redirect user to use proper time format for reliable recognition
+        return { 
+          speech: "Para registrar horários, diga: 'hora da floculação às quinze e trinta' ou 'hora do corte às 16 horas'. Use o formato com 'às' seguido do horário.", 
+          shouldEndSession: false 
+        };
       }
       
       case "log_date": {
@@ -990,6 +972,101 @@ export async function registerRoutes(
           ));
         }
         
+        // --- LogTimeIntent: Structured time registration with AMAZON.TIME slot ---
+        // This intent uses native Alexa time recognition for reliable parsing
+        if (intentName === "LogTimeIntent") {
+          console.log("LogTimeIntent received:", JSON.stringify(slots, null, 2));
+          
+          const activeBatch = await batchService.getActiveBatch();
+          if (!activeBatch) {
+            return res.status(200).json(buildAlexaResponse(
+              "Não há lote ativo para registrar horário.",
+              false,
+              "O que mais posso ajudar?"
+            ));
+          }
+          
+          // Extract time from AMAZON.TIME slot
+          // AMAZON.TIME formats: "15:30", "T15:30", "2026-01-08T15:30", "now", "MO", "AF", "EV", "NI"
+          let timeSlot = slots.time?.value;
+          // Extract time type from custom slot
+          const timeTypeSlot = slots.timeType?.value || slots.time_type?.value;
+          
+          // Map slot values to internal time types
+          let timeType: string | undefined;
+          if (timeTypeSlot) {
+            const normalizedType = timeTypeSlot.toLowerCase();
+            if (normalizedType.includes("floc") || normalizedType === "floculação" || normalizedType === "floculacao") {
+              timeType = "flocculation";
+            } else if (normalizedType.includes("corte") || normalizedType === "ponto") {
+              timeType = "cut_point";
+            } else if (normalizedType.includes("prensa")) {
+              timeType = "press_start";
+            }
+          }
+          
+          // Normalize AMAZON.TIME value to HH:MM format
+          // AMAZON.TIME can return: "15:30", "T15:30", "T15:30:00", "2026-01-08T15:30:00", "17", "now", "MO", "AF", "EV", "NI"
+          let timeValue: string | null = null;
+          if (timeSlot) {
+            // Handle special values
+            if (timeSlot === "now" || timeSlot === "agora") {
+              timeValue = parseSpokenTime("agora");
+            }
+            // Handle period values (MO=morning, AF=afternoon, EV=evening, NI=night)
+            else if (timeSlot === "MO" || timeSlot === "AF" || timeSlot === "EV" || timeSlot === "NI") {
+              // Use current Brasília time for period-based inputs
+              timeValue = parseSpokenTime("agora");
+            }
+            // Handle ISO format with T prefix: T15:30, T15:30:00, 2026-01-08T15:30:00+00:00
+            else if (timeSlot.includes("T")) {
+              const timeMatch = timeSlot.match(/T(\d{1,2}):(\d{2})/);
+              if (timeMatch) {
+                timeValue = `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
+              }
+            }
+            // Handle HH:MM or HH:MM:SS format directly
+            else if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(timeSlot)) {
+              const parts = timeSlot.split(":");
+              timeValue = `${parts[0].padStart(2, '0')}:${parts[1]}`;
+            }
+            // Handle bare hour (e.g., "17" for 5 PM)
+            else if (/^\d{1,2}$/.test(timeSlot)) {
+              const hour = parseInt(timeSlot, 10);
+              if (hour >= 0 && hour <= 23) {
+                timeValue = `${String(hour).padStart(2, '0')}:00`;
+              }
+            }
+          }
+          
+          // If no valid time, ask for it
+          if (!timeValue) {
+            const typeLabel = getTimeTypeLabel(timeType);
+            return res.status(200).json(buildAlexaResponse(
+              `Por favor, diga o horário ${typeLabel}. Por exemplo: 'hora da floculação às quinze e trinta'.`,
+              false,
+              `Qual foi a hora ${typeLabel}?`
+            ));
+          }
+          
+          // Log the time
+          const logResult = await batchService.logTime(activeBatch.id, timeValue, timeType);
+          if (!logResult.success) {
+            return res.status(200).json(buildAlexaResponse(
+              logResult.error || "Erro ao registrar horário.",
+              false,
+              "O que mais posso ajudar?"
+            ));
+          }
+          
+          const typeLabel = getTimeTypeLabel(timeType);
+          return res.status(200).json(buildAlexaResponse(
+            `Hora ${typeLabel} registrada às ${timeValue}.`,
+            false,
+            "O que mais posso ajudar?"
+          ));
+        }
+        
         // --- ProcessCommandIntent: Main voice command processing ---
         // This is the ONLY custom intent - all voice commands come through here
         if (intentName === "ProcessCommandIntent") {
@@ -1018,9 +1095,7 @@ export async function registerRoutes(
           
           console.log("Extracted utterance:", utterance);
           
-          // Get session ID for conversational state
-          const sessionId = alexaRequest?.session?.sessionId || 'default';
-          cleanupPendingInputs();
+          // Note: Time registration now uses LogTimeIntent exclusively
           
           // GUARDA-CORPO: Se slot vazio, pedir clarificação amigável
           // Samples sem slot (ex: "status" sozinho) invocam o intent mas slot fica vazio
@@ -1035,110 +1110,10 @@ export async function registerRoutes(
             ));
           }
           
-          // --- Check for pending input state ---
-          const pending = pendingInputs.get(sessionId);
-          if (pending && pending.type === 'time') {
-            console.log(`Processing pending time input for ${pending.subType}: "${textToInterpret}"`);
-            
-            // Try to parse the utterance as a time value
-            const parsedTime = parseSpokenTime(textToInterpret);
-            if (parsedTime) {
-              // Clear pending state
-              pendingInputs.delete(sessionId);
-              
-              // Get active batch and log the time
-              const activeBatch = await batchService.getActiveBatch();
-              if (!activeBatch) {
-                return res.status(200).json(buildAlexaResponse(
-                  "Não há lote ativo para registrar horário.",
-                  false,
-                  "O que mais posso ajudar?"
-                ));
-              }
-              
-              const logResult = await batchService.logTime(activeBatch.id, parsedTime, pending.subType);
-              if (!logResult.success) {
-                return res.status(200).json(buildAlexaResponse(
-                  logResult.error || "Erro ao registrar horário.",
-                  false,
-                  "O que mais posso ajudar?"
-                ));
-              }
-              
-              const typeLabel = getTimeTypeLabel(pending.subType);
-              return res.status(200).json(buildAlexaResponse(
-                `Hora ${typeLabel} registrada às ${parsedTime}.`,
-                false,
-                "O que mais posso ajudar?"
-              ));
-            } else {
-              // Could not parse time - ask again
-              const typeLabel = getTimeTypeLabel(pending.subType);
-              return res.status(200).json(buildAlexaResponse(
-                `Não entendi o horário. Diga algo como 'quinze e trinta', '15:30', ou 'agora'.`,
-                false,
-                `Qual foi a hora ${typeLabel || 'do evento'}?`
-              ));
-            }
-          }
-          
-          // --- Deterministic fallback for "agora" in time registration before LLM ---
-          // This avoids LLM misinterpreting "agora" as "00:00"
-          const lowerText = textToInterpret.toLowerCase();
-          if ((lowerText.includes("horário") || lowerText.includes("hora")) && lowerText.includes("agora")) {
-            console.log("Deterministic fallback: registra horário agora");
-            const activeBatch = await batchService.getActiveBatch();
-            if (!activeBatch) {
-              return res.status(200).json(buildAlexaResponse(
-                "Não há lote ativo para registrar horário.",
-                false,
-                "O que mais posso ajudar?"
-              ));
-            }
-            
-            // Detect time_type from phrase
-            let timeType: string | undefined;
-            if (lowerText.includes("floculação") || lowerText.includes("flocul")) {
-              timeType = "flocculation";
-            } else if (lowerText.includes("corte") || lowerText.includes("ponto")) {
-              timeType = "cut_point";
-            } else if (lowerText.includes("prensa")) {
-              timeType = "press_start";
-            }
-            
-            const brasiliaTime = parseSpokenTime("agora");
-            if (brasiliaTime) {
-              const logResult = await batchService.logTime(activeBatch.id, brasiliaTime, timeType);
-              if (!logResult.success) {
-                return res.status(200).json(buildAlexaResponse(
-                  logResult.error || "Erro ao registrar horário.",
-                  false,
-                  "O que mais posso ajudar?"
-                ));
-              }
-              const typeLabel = getTimeTypeLabel(timeType);
-              return res.status(200).json(buildAlexaResponse(
-                `Hora ${typeLabel} registrada às ${brasiliaTime}.`,
-                false,
-                "O que mais posso ajudar?"
-              ));
-            }
-          }
-          
           // LLM interprets the command, backend executes
           const command = await interpretCommand(textToInterpret);
           console.log("LLM interpreted command:", JSON.stringify(command));
           const result = await executeIntent(command) as any;
-          
-          // Check if executeIntent wants to set pending state
-          if (result.setPendingTime) {
-            pendingInputs.set(sessionId, {
-              type: 'time',
-              subType: result.pendingTimeType || undefined,
-              createdAt: Date.now()
-            });
-            console.log(`Set pending time input for session ${sessionId}: ${result.pendingTimeType || 'generic'}`);
-          }
           
           return res.status(200).json(buildAlexaResponse(
             result.speech,
