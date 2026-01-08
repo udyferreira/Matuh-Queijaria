@@ -1,0 +1,26 @@
+PROMPT — UNIFICAR FLUXO CANÔNICO (WEB + ALEXA) E CORRIGIR TIMERS/VALIDAÇÕES
+Temos um bug de arquitetura: o webhook Alexa implementa um fluxo paralelo dentro de executeIntent(...) em server/routes.ts, que cria batch e avança etapa sem passar pelos endpoints canônicos (api.batches.start e api.batches.advance). Isso gera inconsistência: validateAdvance exige timer bloqueante, mas o Alexa-flow nunca cria activeTimers, então retorna “Esta etapa requer aguardar o timer”, e em seguida o comando “timer” diz “Não há timer ativo”.
+1) Remover lógica paralela no Alexa (obrigatório)
+Dentro do handler do webhook Alexa, em executeIntent, não executar storage.createBatch e não executar storage.updateBatch diretamente para avançar etapa.
+2) Reutilizar o mesmo motor canônico do Web
+Refatorar para que os intents do Alexa chamem as mesmas funções do fluxo web:
+start_batch deve usar a mesma lógica do endpoint api.batches.start
+exigir milkVolumeL, milkTemperatureC, milkPh
+se faltar algum campo, responder com pergunta (ex: “Qual a temperatura do leite?” / “Qual o pH do leite?”) e manter sessão aberta
+NÃO usar default volume || 50 sem confirmação
+preencher measurements igual ao fluxo web
+advance deve usar a mesma lógica do endpoint api.batches.advance
+isso garante criação/limpeza de timers e reminders e mantém coerência
+status e timer devem ler do mesmo estado (activeTimers, activeReminders, currentStageId) que é mantido pelo fluxo canônico
+3) Implementação recomendada
+Extrair a lógica de api.batches.start e api.batches.advance para um serviço de domínio (ex: batchService.startBatch(...) e batchService.advanceBatch(...)) e chamar essas funções tanto no REST quanto no webhook Alexa, evitando duplicação.
+4) Critério de aceite
+Se a etapa exigir timer bloqueante, ao entrar nela deve existir activeTimers correspondente.
+O comando “avançar/próxima etapa” não deve retornar “reinicie a etapa” por ausência de timer.
+Se o backend disser “aguarde o timer”, o comando “timer” deve retornar o timer ativo com tempo restante.
+Iniciar lote via Alexa deve exigir volume + temperatura + pH (igual ao frontend web).
+Observação adicional importante (você vai querer corrigir)
+No start_batch do Alexa hoje existe:
+const milkVolume = command.entities.volume || 50;
+Isso é perigoso operacionalmente. Deve virar:
+se não vier volume, perguntar e não assumir 50.

@@ -6,6 +6,7 @@ import { CHEESE_TYPES, getCheeseTypeName } from "@shared/schema";
 import { recipeManager, getTimerDurationMinutes, getIntervalDurationMinutes, TEST_MODE } from "./recipe";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
+import * as batchService from "./batchService";
 import { z } from "zod";
 import { randomBytes } from "crypto";
 
@@ -43,63 +44,18 @@ export async function registerRoutes(
     try {
       const { milkVolumeL, milkTemperatureC, milkPh, recipeId } = api.batches.start.input.parse(req.body);
       
-      // Validate cheese type is available
-      const cheeseType = CHEESE_TYPES[recipeId as keyof typeof CHEESE_TYPES];
-      if (!cheeseType) {
-        return res.status(400).json({ message: `Tipo de queijo inválido: ${recipeId}` });
+      const result = await batchService.startBatch({
+        milkVolumeL,
+        milkTemperatureC,
+        milkPh,
+        recipeId
+      });
+      
+      if (!result.success) {
+        return res.status(400).json({ message: result.error, code: result.code });
       }
-      if (!cheeseType.available) {
-        return res.status(400).json({ message: `O queijo ${cheeseType.name} ainda não está disponível. Apenas Nete está disponível no momento.` });
-      }
-      
-      // Calculate inputs immediately
-      const inputs = recipeManager.calculateInputs(milkVolumeL);
 
-      // Store initial measurements from Stage 1 (new YAML v1.4 fields)
-      const initialMeasurements: Record<string, any> = {
-        milk_volume_l: milkVolumeL,
-        _history: [
-          { key: 'milk_volume_l', value: milkVolumeL, timestamp: new Date().toISOString(), stageId: 1 }
-        ]
-      };
-      
-      // Temperature and pH are now required by Stage 1
-      initialMeasurements.milk_temperature_c = milkTemperatureC;
-      initialMeasurements._history.push({ 
-        key: 'milk_temperature_c', value: milkTemperatureC, timestamp: new Date().toISOString(), stageId: 1 
-      });
-      
-      initialMeasurements.milk_ph = milkPh;
-      initialMeasurements._history.push({ 
-        key: 'milk_ph', value: milkPh, timestamp: new Date().toISOString(), stageId: 1 
-      });
-
-      // Etapas 1 e 2 são concluídas automaticamente:
-      // 1 - Separar leite e medir parâmetros iniciais (informado pelo usuário)
-      // 2 - Calcular proporções (feito automaticamente)
-      // Inicia na etapa 3 - Aquecer o leite
-      const batch = await storage.createBatch({
-        recipeId: recipeId,
-        currentStageId: 3, // Start at stage 3 (heating milk)
-        milkVolumeL: String(milkVolumeL), // DB stores as numeric string
-        calculatedInputs: inputs,
-        measurements: initialMeasurements,
-        status: "active",
-        history: [
-          { stageId: 1, action: "complete", timestamp: new Date().toISOString(), auto: true },
-          { stageId: 2, action: "complete", timestamp: new Date().toISOString(), auto: true },
-          { stageId: 3, action: "start", timestamp: new Date().toISOString() }
-        ]
-      });
-
-      await storage.logBatchAction({
-        batchId: batch.id,
-        stageId: 3,
-        action: "start",
-        details: { milkVolume: milkVolumeL, milkTemperatureC, milkPh, calculatedInputs: inputs }
-      });
-
-      res.status(201).json(batch);
+      res.status(201).json(result.batch);
     } catch (err) {
        if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
@@ -180,53 +136,29 @@ export async function registerRoutes(
     const batchId = Number(req.params.id);
     const { reason } = req.body || {};
     
-    const batch = await storage.getBatch(batchId);
-    if (!batch) return res.status(404).json({ message: "Batch not found" });
+    const result = await batchService.pauseBatch(batchId, reason);
     
-    if (batch.status !== "active") {
-      return res.status(400).json({ message: `Cannot pause batch with status: ${batch.status}` });
+    if (!result.success) {
+      const statusCode = result.error?.includes("not found") ? 404 : 400;
+      return res.status(statusCode).json({ message: result.error });
     }
 
-    const updatedBatch = await storage.updateBatch(batchId, {
-      status: "paused",
-      pausedAt: new Date(),
-      pauseReason: reason || null
-    });
-
-    await storage.logBatchAction({
-      batchId,
-      stageId: batch.currentStageId,
-      action: "pause",
-      details: { reason }
-    });
-
-    res.json(updatedBatch);
+    const batch = await storage.getBatch(batchId);
+    res.json(batch);
   });
 
   app.post("/api/batches/:id/resume", async (req, res) => {
     const batchId = Number(req.params.id);
     
-    const batch = await storage.getBatch(batchId);
-    if (!batch) return res.status(404).json({ message: "Batch not found" });
+    const result = await batchService.resumeBatch(batchId);
     
-    if (batch.status !== "paused") {
-      return res.status(400).json({ message: `Cannot resume batch with status: ${batch.status}` });
+    if (!result.success) {
+      const statusCode = result.error?.includes("not found") ? 404 : 400;
+      return res.status(statusCode).json({ message: result.error });
     }
 
-    const updatedBatch = await storage.updateBatch(batchId, {
-      status: "active",
-      pausedAt: null,
-      pauseReason: null
-    });
-
-    await storage.logBatchAction({
-      batchId,
-      stageId: batch.currentStageId,
-      action: "resume",
-      details: {}
-    });
-
-    res.json(updatedBatch);
+    const batch = await storage.getBatch(batchId);
+    res.json(batch);
   });
 
   app.post("/api/batches/:id/complete", async (req, res) => {
@@ -530,166 +462,18 @@ export async function registerRoutes(
 
   app.post(api.batches.advance.path, async (req, res) => {
     const batchId = Number(req.params.id);
-    const batch = await storage.getBatch(batchId);
-    if (!batch) return res.status(404).json({ message: "Batch not found" });
-
-    const currentStage = recipeManager.getStage(batch.currentStageId);
-    if (!currentStage) return res.status(500).json({ message: "Invalid stage" });
-
-    // Check if this is a loop stage (e.g., stage 15)
-    if (recipeManager.isLoopStage(batch.currentStageId)) {
-      const measurements = (batch.measurements as Record<string, any>) || {};
-      const canExitLoop = recipeManager.checkLoopExitCondition(batch.currentStageId, measurements);
-      
-      if (!canExitLoop) {
-        return res.status(400).json({
-          message: "Cannot advance: loop condition not met",
-          code: "LOOP_CONDITION_NOT_MET",
-          details: `pH value must be <= 5.2 to exit this stage. Current pH: ${measurements.ph_value || 'not measured'}`
-        });
-      }
-
-      // Stage 15: Record turning_cycles_count in _history before advancing
-      // Re-fetch batch to get latest measurements and avoid race conditions
-      if (batch.currentStageId === 15) {
-        const freshBatch = await storage.getBatch(batchId);
-        if (freshBatch) {
-          const freshMeasurements = (freshBatch.measurements as Record<string, any>) || {};
-          const turningCount = (freshBatch as any).turningCyclesCount || 0;
-          const historyEntry = {
-            key: 'turning_cycles_count',
-            value: turningCount,
-            stageId: batch.currentStageId,
-            timestamp: new Date().toISOString()
-          };
-          const history = freshMeasurements._history || [];
-          history.push(historyEntry);
-          freshMeasurements._history = history;
-          await storage.updateBatch(batchId, { measurements: freshMeasurements });
-        }
-      }
-    }
-
-    // Validate transition
-    const validation = recipeManager.validateAdvance(batch, currentStage);
-    if (!validation.allowed) {
-        return res.status(400).json({ 
-            message: "Cannot advance stage", 
-            code: "VALIDATION_FAILED",
-            details: validation.reason 
-        });
-    }
-
-    const nextStage = recipeManager.getNextStage(batch.currentStageId);
-    if (!nextStage) {
-        // Recipe complete
-        const completed = await storage.updateBatch(batchId, { 
-          status: "completed",
-          completedAt: new Date()
-        });
-        return res.json(completed);
-    }
-
-    // Clean up expired timers from current stage
-    let activeTimers = (batch.activeTimers as any[]) || [];
-    activeTimers = activeTimers.filter(t => t.stageId !== currentStage.id);
-
-    // Clean up reminders from current stage
-    let activeReminders = (batch.activeReminders as any[]) || [];
-    activeReminders = activeReminders.filter((r: any) => r.stageId !== currentStage.id);
-
-    // Handle new stage side-effects (e.g. start timers)
-    const updates: any = {
-        currentStageId: nextStage.id,
-        activeTimers,
-        activeReminders
-    };
-
-    // Handle regular timers (duration-based)
-    if (nextStage.timer) {
-        // Use helper functions that respect TEST_MODE
-        const durationMinutes = getTimerDurationMinutes(nextStage);
-        const intervalMinutes = getIntervalDurationMinutes(nextStage);
-        
-        // For interval timers (loop stages like stage 15)
-        if (intervalMinutes > 0) {
-            const intervalDesc = TEST_MODE ? "1 minuto (TESTE)" : `${nextStage.timer.interval_hours} horas`;
-            activeReminders.push({
-                id: generateId(),
-                stageId: nextStage.id,
-                type: "interval",
-                intervalHours: intervalMinutes / 60, // Store as hours for compatibility
-                nextTrigger: new Date(Date.now() + intervalMinutes * 60000).toISOString(),
-                acknowledged: false,
-                description: `Verificar pH a cada ${intervalDesc}`
-            });
-            updates.activeReminders = activeReminders;
-        }
-        
-        // For duration-based timers
-        if (durationMinutes > 0) {
-            const durationMs = durationMinutes * 60000;
-            activeTimers.push({
-                stageId: nextStage.id,
-                startTime: new Date().toISOString(),
-                endTime: new Date(Date.now() + durationMs).toISOString(),
-                durationMinutes: durationMinutes,
-                blocking: nextStage.timer.blocking
-            });
-            updates.activeTimers = activeTimers;
-        }
-    }
-
-    // Handle reminders (e.g., stage 20 daily reminder)
-    if (nextStage.reminder) {
-        const frequency = nextStage.reminder.frequency;
-        let nextTrigger: Date;
-        
-        if (TEST_MODE) {
-            // In TEST_MODE, reminders trigger in 1 minute
-            nextTrigger = new Date(Date.now() + 60000);
-        } else if (frequency === 'daily') {
-            // Next trigger is tomorrow at 9am
-            nextTrigger = new Date();
-            nextTrigger.setDate(nextTrigger.getDate() + 1);
-            nextTrigger.setHours(9, 0, 0, 0);
-        } else {
-            // Default: 24 hours from now
-            nextTrigger = new Date(Date.now() + 24 * 3600000);
-        }
-        
-        const reminderDesc = TEST_MODE ? `Lembrete (TESTE): ${nextStage.name}` : `Lembrete diário: ${nextStage.name}`;
-        activeReminders.push({
-            id: generateId(),
-            stageId: nextStage.id,
-            type: "daily",
-            nextTrigger: nextTrigger.toISOString(),
-            acknowledged: false,
-            description: reminderDesc
-        });
-        updates.activeReminders = activeReminders;
-    }
-
-    // Special handling for Stage 20 (Maturation in Chamber 2)
-    // Check if maturation has already completed based on maturation_end_date
-    if (nextStage.id === 20) {
-        const maturationEndDate = (batch as any).maturationEndDate;
-        if (maturationEndDate && new Date(maturationEndDate) <= new Date()) {
-            // Maturation already complete - mark batch as ready for sale
-            updates.batchStatus = "READY_FOR_SALE";
-        }
-    }
-
-    const updatedBatch = await storage.updateBatch(batchId, updates);
     
-    await storage.logBatchAction({
-        batchId,
-        stageId: nextStage.id,
-        action: "advance",
-        details: { from: currentStage.id, to: nextStage.id }
-    });
+    const result = await batchService.advanceBatch(batchId);
+    
+    if (!result.success) {
+      const statusCode = result.code === "BATCH_NOT_FOUND" ? 404 : 400;
+      return res.status(statusCode).json({ 
+        message: result.error, 
+        code: result.code 
+      });
+    }
 
-    res.json(updatedBatch);
+    res.json(result.batch);
   });
   
   // --- Alexa Webhook (ASK-Compliant) ---
@@ -746,32 +530,48 @@ export async function registerRoutes(
   
   // Execute action based on interpreted intent - backend is SOVEREIGN
   // LLM only interprets, backend decides and executes
+  // IMPORTANT: Uses batchService for ALL operations to ensure consistency with REST API
   async function executeIntent(
     command: Awaited<ReturnType<typeof interpretCommand>>
   ): Promise<{ speech: string; shouldEndSession: boolean }> {
     
     // Get active batch for context
-    const batches = await storage.getActiveBatches();
-    const activeBatch = batches[0];
+    const activeBatch = await batchService.getActiveBatch();
     
     switch (command.intent) {
       case "start_batch": {
-        const milkVolume = command.entities.volume || 50;
-        const inputs = recipeManager.calculateInputs(milkVolume);
-        await storage.createBatch({
-          recipeId: "queijo_nete",
-          currentStageId: 3,
-          milkVolumeL: String(milkVolume),
-          calculatedInputs: inputs,
-          status: "active",
-          history: [
-            { stageId: 1, action: "complete", timestamp: new Date().toISOString(), auto: true },
-            { stageId: 2, action: "complete", timestamp: new Date().toISOString(), auto: true },
-            { stageId: 3, action: "start", timestamp: new Date().toISOString() }
-          ]
+        // FIXED: Now requires volume + temperature + pH (same as web)
+        const milkVolume = command.entities.volume;
+        const milkTemperature = command.entities.milk_temperature;
+        const milkPh = command.entities.ph_value;
+        
+        // Check for missing fields and ask for them
+        const missing: string[] = [];
+        if (milkVolume === undefined || milkVolume === null) missing.push("volume de leite");
+        if (milkTemperature === undefined || milkTemperature === null) missing.push("temperatura do leite");
+        if (milkPh === undefined || milkPh === null) missing.push("pH do leite");
+        
+        if (missing.length > 0) {
+          return {
+            speech: `Para iniciar o lote, preciso saber: ${missing.join(", ")}. Por exemplo: "iniciar lote com 80 litros, temperatura 32 graus, pH 6.5".`,
+            shouldEndSession: false
+          };
+        }
+        
+        const result = await batchService.startBatch({
+          milkVolumeL: milkVolume!,
+          milkTemperatureC: milkTemperature!,
+          milkPh: milkPh!,
+          recipeId: "QUEIJO_NETE"
         });
+        
+        if (!result.success) {
+          return { speech: result.error || "Erro ao iniciar lote.", shouldEndSession: false };
+        }
+        
+        const inputs = result.batch.calculatedInputs;
         return {
-          speech: `Lote iniciado com ${milkVolume} litros de leite. Você vai precisar de: ${inputs.FERMENT_LR} mililitros de fermento LR, ${inputs.FERMENT_DX} de DX, ${inputs.FERMENT_KL} de KL, e ${inputs.RENNET} de coalho. Aqueça o leite a 32 graus para começar.`,
+          speech: `Lote iniciado com ${milkVolume} litros de leite a ${milkTemperature} graus e pH ${milkPh}. Você vai precisar de: ${inputs.FERMENT_LR} mililitros de fermento LR, ${inputs.FERMENT_DX} de DX, ${inputs.FERMENT_KL} de KL, e ${inputs.RENNET} de coalho. Aqueça o leite a 32 graus para começar.`,
           shouldEndSession: false
         };
       }
@@ -780,12 +580,14 @@ export async function registerRoutes(
         if (!activeBatch) {
           return { speech: "Não há lote ativo no momento. Diga 'iniciar lote' para começar.", shouldEndSession: false };
         }
-        const stage = recipeManager.getStage(activeBatch.currentStageId);
-        const timers = (activeBatch.activeTimers as any[]) || [];
-        const activeTimer = timers.find(t => new Date(t.endTime) > new Date());
-        let speech = `Etapa ${activeBatch.currentStageId}: ${stage?.name || 'em andamento'}.`;
+        const status = await batchService.getBatchStatus(activeBatch.id);
+        if (!status) {
+          return { speech: "Erro ao obter status.", shouldEndSession: false };
+        }
+        let speech = `Etapa ${status.currentStageId}: ${status.stageName || 'em andamento'}.`;
+        const activeTimer = status.activeTimers.find(t => !t.isComplete);
         if (activeTimer) {
-          const remaining = Math.ceil((new Date(activeTimer.endTime).getTime() - Date.now()) / 60000);
+          const remaining = Math.ceil(activeTimer.remainingSeconds / 60);
           speech += ` Faltam ${remaining} minutos no timer.`;
         }
         return { speech, shouldEndSession: false };
@@ -795,37 +597,38 @@ export async function registerRoutes(
         if (!activeBatch) {
           return { speech: "Não há lote ativo para avançar.", shouldEndSession: false };
         }
-        const currentStage = recipeManager.getStage(activeBatch.currentStageId);
-        if (!currentStage) {
-          return { speech: "Etapa inválida.", shouldEndSession: false };
+        
+        // FIXED: Now uses batchService which creates timers correctly
+        const result = await batchService.advanceBatch(activeBatch.id);
+        
+        if (!result.success) {
+          return { speech: result.error || "Não é possível avançar agora.", shouldEndSession: false };
         }
-        const validation = recipeManager.validateAdvance(activeBatch, currentStage);
-        if (!validation.allowed) {
-          return { speech: validation.reason || "Não é possível avançar agora.", shouldEndSession: false };
-        }
-        const nextStage = recipeManager.getNextStage(activeBatch.currentStageId);
-        if (!nextStage) {
-          await storage.updateBatch(activeBatch.id, { status: "completed" });
+        
+        if (result.completed) {
           return { speech: "Parabéns! Receita concluída com sucesso!", shouldEndSession: false };
         }
-        await storage.updateBatch(activeBatch.id, { currentStageId: nextStage.id });
-        return { speech: `Avançando para etapa ${nextStage.id}: ${nextStage.name}.`, shouldEndSession: false };
+        
+        return { 
+          speech: `Avançando para etapa ${result.nextStage?.id}: ${result.nextStage?.name}.`, 
+          shouldEndSession: false 
+        };
       }
       
       case "log_ph": {
         const phValue = command.entities.ph_value;
-        if (phValue === undefined) {
+        if (phValue === undefined || phValue === null) {
           return { speech: "Não entendi o valor do pH. Diga algo como 'pH cinco ponto dois'.", shouldEndSession: false };
         }
         if (!activeBatch) {
           return { speech: "Não há lote ativo para registrar pH.", shouldEndSession: false };
         }
-        const measurements = (activeBatch.measurements as any) || {};
-        measurements.ph_value = phValue;
-        const phHistory = measurements.ph_measurements || [];
-        phHistory.push({ value: phValue, timestamp: new Date().toISOString() });
-        measurements.ph_measurements = phHistory;
-        await storage.updateBatch(activeBatch.id, { measurements });
+        
+        // FIXED: Now uses batchService for consistent logging
+        const result = await batchService.logPh(activeBatch.id, phValue);
+        if (!result.success) {
+          return { speech: result.error || "Erro ao registrar pH.", shouldEndSession: false };
+        }
         return { speech: `pH ${phValue} registrado com sucesso.`, shouldEndSession: false };
       }
       
@@ -838,12 +641,12 @@ export async function registerRoutes(
         if (!timeValue) {
           return { speech: "Não entendi o horário. Diga algo como 'hora da floculação dez e trinta'.", shouldEndSession: false };
         }
-        const measurements = (activeBatch.measurements as any) || {};
-        const key = timeType === 'flocculation' ? 'flocculation_time' :
-                    timeType === 'cut' ? 'cut_point_time' :
-                    timeType === 'press' ? 'press_start_time' : 'recorded_time';
-        measurements[key] = timeValue;
-        await storage.updateBatch(activeBatch.id, { measurements });
+        
+        // FIXED: Now uses batchService for consistent logging
+        const result = await batchService.logTime(activeBatch.id, timeValue, timeType || undefined);
+        if (!result.success) {
+          return { speech: result.error || "Erro ao registrar horário.", shouldEndSession: false };
+        }
         const typeLabel = timeType === 'flocculation' ? ' de floculação' :
                           timeType === 'cut' ? ' de corte' :
                           timeType === 'press' ? ' de prensa' : '';
@@ -854,10 +657,12 @@ export async function registerRoutes(
         if (!activeBatch) {
           return { speech: "Não há lote ativo para pausar.", shouldEndSession: false };
         }
-        if (activeBatch.status !== "active") {
-          return { speech: `O lote já está ${activeBatch.status}.`, shouldEndSession: false };
+        
+        // FIXED: Now uses batchService for consistent state management
+        const result = await batchService.pauseBatch(activeBatch.id);
+        if (!result.success) {
+          return { speech: result.error || "Erro ao pausar lote.", shouldEndSession: false };
         }
-        await storage.updateBatch(activeBatch.id, { status: "paused", pausedAt: new Date() });
         return { speech: "Lote pausado. Diga 'retomar' quando quiser continuar.", shouldEndSession: false };
       }
       
@@ -865,10 +670,12 @@ export async function registerRoutes(
         if (!activeBatch) {
           return { speech: "Não há lote para retomar.", shouldEndSession: false };
         }
-        if (activeBatch.status !== "paused") {
-          return { speech: "O lote não está pausado.", shouldEndSession: false };
+        
+        // FIXED: Now uses batchService for consistent state management
+        const result = await batchService.resumeBatch(activeBatch.id);
+        if (!result.success) {
+          return { speech: result.error || "Erro ao retomar lote.", shouldEndSession: false };
         }
-        await storage.updateBatch(activeBatch.id, { status: "active", pausedAt: null });
         return { speech: "Lote retomado. Continuando de onde paramos.", shouldEndSession: false };
       }
       
@@ -891,13 +698,19 @@ export async function registerRoutes(
         if (!activeBatch) {
           return { speech: "Não há lote ativo.", shouldEndSession: false };
         }
-        const timers = (activeBatch.activeTimers as any[]) || [];
-        const now = new Date();
-        const activeTimer = timers.find(t => new Date(t.endTime) > now);
+        
+        // FIXED: Now reads timers from batchService which are created by advance
+        const status = await batchService.getBatchStatus(activeBatch.id);
+        if (!status) {
+          return { speech: "Erro ao obter status.", shouldEndSession: false };
+        }
+        
+        const activeTimer = status.activeTimers.find(t => !t.isComplete);
         if (!activeTimer) {
           return { speech: "Não há timer ativo no momento.", shouldEndSession: false };
         }
-        const remaining = Math.ceil((new Date(activeTimer.endTime).getTime() - now.getTime()) / 60000);
+        
+        const remaining = Math.ceil(activeTimer.remainingSeconds / 60);
         if (remaining > 60) {
           const hours = Math.floor(remaining / 60);
           const mins = remaining % 60;
@@ -908,7 +721,7 @@ export async function registerRoutes(
       
       case "help": {
         return {
-          speech: "Você pode dizer: status, avançar, registra pH cinco ponto dois, hora da floculação dez e trinta, pausar, retomar, ou instruções. O que deseja?",
+          speech: "Você pode dizer: status, avançar, registra pH cinco ponto dois, hora da floculação dez e trinta, pausar, retomar, ou instruções. Para iniciar um lote, diga: iniciar lote com 80 litros, temperatura 32 graus, pH 6.5.",
           shouldEndSession: false
         };
       }
