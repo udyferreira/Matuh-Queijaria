@@ -700,28 +700,40 @@ export async function registerRoutes(
   // The backend interprets the utterance and executes actions - Alexa is just a voice adapter.
   
   // Utility function to build Alexa-compliant responses
+  // CRITICAL: NEVER returns empty outputSpeech.text - always has fallback
+  const DEFAULT_FALLBACK_SPEECH = "Tudo bem. Até logo.";
+  const DEFAULT_SESSION_OPEN_FALLBACK = "Não entendi o comando. Pode repetir?";
+  const DEFAULT_REPROMPT = "O que mais posso ajudar?";
+  
   function buildAlexaResponse(
     speechText: string, 
     shouldEndSession: boolean = false, 
     repromptText?: string
   ) {
+    // NEVER allow empty speech text - always use a fallback
+    let finalSpeech = speechText?.trim();
+    if (!finalSpeech) {
+      finalSpeech = shouldEndSession ? DEFAULT_FALLBACK_SPEECH : DEFAULT_SESSION_OPEN_FALLBACK;
+    }
+    
     const response: any = {
       version: "1.0",
       response: {
         outputSpeech: {
           type: "PlainText",
-          text: speechText
+          text: finalSpeech
         },
         shouldEndSession
       }
     };
     
     // Only include reprompt when session stays open (ASK requirement)
-    if (repromptText && !shouldEndSession) {
+    if (!shouldEndSession) {
+      const finalReprompt = repromptText?.trim() || DEFAULT_REPROMPT;
       response.response.reprompt = {
         outputSpeech: {
           type: "PlainText",
-          text: repromptText
+          text: finalReprompt
         }
       };
     }
