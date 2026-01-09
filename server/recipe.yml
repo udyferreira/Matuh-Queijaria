@@ -144,6 +144,9 @@ stages:
       - flocculation_time
     stored_values:
       - flocculation_time
+    expected_intent: "LogTimeIntent"
+    expected_time_type: "floculação"
+    input_prompt: "Registre o horário da floculação dizendo: 'hora da floculação às quinze e vinte'."
 
   - id: 7
     name: "Anotar horário do ponto de corte"
@@ -152,6 +155,9 @@ stages:
       - cut_point_time
     stored_values:
       - cut_point_time
+    expected_intent: "LogTimeIntent"
+    expected_time_type: "corte"
+    input_prompt: "Registre o horário do ponto de corte dizendo: 'hora do corte às quinze e vinte'."
 
   - id: 8
     name: "Corte da massa com a Lira"
@@ -189,6 +195,8 @@ stages:
     stored_values:
       - initial_ph
       - pieces_quantity
+    expected_intent: "LogNumberIntent"
+    input_prompt: "Registre o pH e quantidade de peças. Diga: 'pH seis ponto cinco' ou 'quantidade oito peças'."
 
   - id: 14
     name: "Colocar na prensa"
@@ -197,6 +205,9 @@ stages:
       - press_start_time
     stored_values:
       - press_start_time
+    expected_intent: "LogTimeIntent"
+    expected_time_type: "prensa"
+    input_prompt: "Registre o horário de início da prensagem dizendo: 'hora da prensa às quinze e vinte'."
 
   - id: 15
     name: "Virar queijos e medir pH (loop controlado)"
@@ -240,6 +251,8 @@ stages:
       - chamber_2_entry_date
     stored_values:
       - chamber_2_entry_date
+    expected_intent: "LogDateIntent"
+    input_prompt: "Registre a data de entrada na câmara 2. Diga: 'data de entrada vinte e cinco de janeiro'."
     instructions:
       - "Colocar plaquinha com data de produção na tábua"
 

@@ -33,6 +33,9 @@ interface RecipeStage {
   loop_actions?: string[];
   llm_guidance?: string;
   parameters?: Record<string, any>;
+  expected_intent?: string;
+  expected_time_type?: string;
+  input_prompt?: string;
 }
 
 interface RecipeInput {
@@ -140,6 +143,29 @@ export class RecipeManager {
   isValidInputForStage(stageId: number, key: string): boolean {
     const expectedInputs = this.getExpectedInputsForStage(stageId);
     return expectedInputs.includes(key);
+  }
+
+  // Stage input lock: returns expected intent and prompt if stage requires structured input
+  getStageInputLock(stageId: number): { locked: boolean; expectedIntent?: string; expectedTimeType?: string; inputPrompt?: string } {
+    const stage = this.getStage(stageId);
+    if (!stage?.operator_input_required || stage.operator_input_required.length === 0) {
+      return { locked: false };
+    }
+    
+    return {
+      locked: true,
+      expectedIntent: stage.expected_intent,
+      expectedTimeType: stage.expected_time_type,
+      inputPrompt: stage.input_prompt || `Esta etapa requer input do operador: ${stage.operator_input_required.join(', ')}`
+    };
+  }
+
+  // Check if intent matches stage expectation
+  isExpectedIntentForStage(stageId: number, intentName: string): boolean {
+    const lock = this.getStageInputLock(stageId);
+    if (!lock.locked) return true; // No lock, any intent allowed
+    if (!lock.expectedIntent) return true; // No specific intent required
+    return lock.expectedIntent === intentName;
   }
 
   // Check if stage has a loop condition

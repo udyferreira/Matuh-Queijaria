@@ -71,18 +71,10 @@ REGRAS DE INTERPRETAÇÃO:
 1. STATUS - Consulta de estado atual:
    - "status", "situação", "qual etapa", "em que etapa", "como está" → intent = "status"
 
-2. LOG_TIME - Registro de HORÁRIOS de processo:
-   - Quando mencionar horário + tipo de evento → intent = "log_time"
-   - Mapear time_type:
-     - floculação, flocular → "flocculation"
-     - ponto de corte, corte, cortei → "cut_point"
-     - prensa, prensagem, iniciei prensa → "press_start"
-   - Converter horário para HH:MM:
-     - "cinco e vinte" → "05:20"
-     - "catorze trinta e nove" → "14:39"
-     - "dezessete horas" → "17:00"
-     - "dez e meia" → "10:30"
-     - "às oito" → "08:00"
+2. LOG_TIME - BLOQUEADO via ProcessCommandIntent:
+   - NÃO interprete horários. Registro de horário usa intent estruturada LogTimeIntent.
+   - Se o texto mencionar horário de floculação, corte ou prensa → retornar intent = "unknown"
+   - O usuário deve usar o comando de voz estruturado: "hora da floculação às quinze e vinte"
 
 3. LOG_DATE - Registro de DATAS de processo:
    - Quando mencionar data + câmara/câmara dois → intent = "log_date"
@@ -116,11 +108,10 @@ STATUS:
 "qual etapa estou" → {"intent":"status","confidence":0.95,"entities":{}}
 "em que etapa estamos" → {"intent":"status","confidence":0.95,"entities":{}}
 
-LOG_TIME (horários):
-"a floculação foi às cinco e vinte" → {"intent":"log_time","confidence":0.95,"entities":{"time_value":"05:20","time_type":"flocculation"}}
-"hora do ponto de corte catorze trinta e nove" → {"intent":"log_time","confidence":0.95,"entities":{"time_value":"14:39","time_type":"cut_point"}}
-"iniciei a prensa às dezessete horas" → {"intent":"log_time","confidence":0.95,"entities":{"time_value":"17:00","time_type":"press_start"}}
-"o corte foi às oito e meia" → {"intent":"log_time","confidence":0.95,"entities":{"time_value":"08:30","time_type":"cut_point"}}
+LOG_TIME (BLOQUEADO - usar LogTimeIntent):
+"a floculação foi às cinco e vinte" → {"intent":"unknown","confidence":0.5,"entities":{}}
+"hora do ponto de corte catorze trinta e nove" → {"intent":"unknown","confidence":0.5,"entities":{}}
+NOTA: Horários devem ser registrados via comando estruturado: "hora da floculação às quinze e vinte"
 
 LOG_DATE (datas):
 "coloquei na câmara dois hoje" → {"intent":"log_date","confidence":0.95,"entities":{"date_type":"chamber_2_entry","date_value":"2026-01-08"}}
