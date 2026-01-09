@@ -985,6 +985,55 @@ export async function registerRoutes(
           ));
         }
         
+        // === STAGE-AWARE INTENT GATING ===
+        // If stage has pending required inputs, block all intents except:
+        // - The expected intent for the stage
+        // - AMAZON.HelpIntent and AMAZON.StopIntent (handled above)
+        const activeBatchForGating = await batchService.getActiveBatch();
+        if (activeBatchForGating) {
+          const stageLock = recipeManager.getStageInputLock(activeBatchForGating.currentStageId);
+          
+          if (stageLock.locked && stageLock.expectedIntent) {
+            // Check if inputs are satisfied
+            const measurements = (activeBatchForGating.measurements as Record<string, any>) || {};
+            const expectedInputs = recipeManager.getExpectedInputsForStage(activeBatchForGating.currentStageId);
+            
+            // Map stored_values to measurements keys
+            const inputToMeasurementKey: Record<string, string> = {
+              'flocculation_time': 'flocculation_time',
+              'cut_point_time': 'cut_point_time',
+              'press_start_time': 'press_start_time',
+              'ph_value': 'initial_ph',
+              'pieces_quantity': 'pieces_quantity',
+              'chamber_2_entry_date': 'chamber_2_entry_date'
+            };
+            
+            const pendingInputs = expectedInputs.filter(input => {
+              const measurementKey = inputToMeasurementKey[input] || input;
+              return measurements[measurementKey] === undefined;
+            });
+            
+            const inputsSatisfied = pendingInputs.length === 0;
+            
+            // If inputs NOT satisfied and intent is NOT the expected one
+            if (!inputsSatisfied && intentName !== stageLock.expectedIntent) {
+              // Allow only specific intents that don't modify state
+              const allowedIntents = ['AMAZON.HelpIntent', 'AMAZON.StopIntent', 'AMAZON.CancelIntent'];
+              
+              // Also allow status query via ProcessCommandIntent 
+              // But NOT ProcessCommandIntent for anything else
+              if (!allowedIntents.includes(intentName || '')) {
+                console.log(`[GATING] Blocked intent ${intentName} at stage ${activeBatchForGating.currentStageId}. Expected: ${stageLock.expectedIntent}`);
+                return res.status(200).json(buildAlexaResponse(
+                  stageLock.inputPrompt || `Esta etapa requer input específico.`,
+                  false,
+                  `Use o comando apropriado para esta etapa.`
+                ));
+              }
+            }
+          }
+        }
+        
         // --- LogTimeIntent: Structured time registration with AMAZON.TIME slot ---
         // This intent uses native Alexa time recognition for reliable parsing
         if (intentName === "LogTimeIntent") {
