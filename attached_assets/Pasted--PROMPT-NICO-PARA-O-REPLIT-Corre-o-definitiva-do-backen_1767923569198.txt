@@ -1,0 +1,124 @@
+✅ PROMPT ÚNICO PARA O REPLIT
+(Correção definitiva do backend – fluxo por etapa, intents e LLM)
+🔧 Objetivo geral
+Alinhar o backend estritamente ao recipe.yml e ao Interaction Model da Alexa, garantindo que:
+Nenhuma etapa com input obrigatório seja pulada
+Nenhum input estruturado seja interpretado por LLM ou texto livre
+Não exista concorrência entre intents
+O fluxo seja determinístico, previsível e estável
+1️⃣ Controle de fluxo por etapa (REGRA MESTRA)
+Implemente stage-aware intent gating no backend.
+Regra obrigatória
+Se a etapa atual possui operator_input_required e ainda há inputs pendentes, então:
+❌ Bloquear advance
+❌ Bloquear ProcessCommandIntent
+❌ Bloquear LLM
+✅ Aceitar somente a intent esperada da etapa
+✅ Permitir apenas AMAZON.HelpIntent e AMAZON.StopIntent
+Pseudocódigo esperado
+const stage = getCurrentStage(batch);
+
+if (stage.operator_input_required?.length && !stage.inputsSatisfied) {
+  if (
+    intent.name !== stage.expected_intent &&
+    intent.name !== "AMAZON.HelpIntent" &&
+    intent.name !== "AMAZON.StopIntent"
+  ) {
+    return respondWith(stage.input_prompt);
+  }
+}
+2️⃣ Mapeamento explícito de intent esperada por etapa
+Use exatamente este mapeamento no backend:
+Etapa	expected_intent
+6 – Anotar horário de floculação	LogTimeIntent
+7 – Anotar horário do ponto de corte	LogTimeIntent
+13 – Medir pH inicial e registrar peças	RegisterPHAndPiecesIntent
+14 – Colocar na prensa	LogTimeIntent
+19 – Transferir para Câmara 2	RegisterChamberEntryDateIntent
+⚠️ Importante:
+RegisterChamberEntryDateIntent não possui “2” no nome
+O backend não deve inferir intent por texto
+3️⃣ Registro de horários (LogTimeIntent)
+Para LogTimeIntent:
+❌ Nunca interpretar horário por texto livre
+❌ Nunca chamar LLM
+❌ Nunca usar regex
+✅ Ler exclusivamente:
+slots.time.value (AMAZON.TIME)
+slots.time_type.value (TIME_TYPE)
+Persistência correta
+Mapear time_type para o campo correto da etapa:
+time_type	campo salvo
+floculação	flocculation_time
+corte	cut_point_time
+moldagem / prensa	press_start_time
+Após salvar:
+Marcar input como satisfeito
+Se não houver outros inputs pendentes, permitir avanço da etapa
+4️⃣ Etapa 13 – pH e quantidade de peças
+Para RegisterPHAndPiecesIntent:
+❌ Não aceitar texto livre
+❌ Não usar LLM
+✅ Ler apenas:
+ph_value (AMAZON.NUMBER)
+pieces_quantity (AMAZON.NUMBER)
+Persistência
+Salvar ph_value como initial_ph
+Salvar pieces_quantity normalmente
+Registrar ambos com stageId = 13
+Somente após os dois valores:
+Marcar etapa como completa
+Liberar avanço
+5️⃣ Etapa 19 – Entrada na Câmara 2
+Para RegisterChamberEntryDateIntent:
+❌ Não aceitar texto livre
+❌ Não interpretar “hoje”, “ontem” manualmente
+❌ Não usar LLM
+✅ Ler apenas:
+entry_date (AMAZON.DATE)
+Persistência
+Salvar em chamber_2_entry_date
+Registrar com stageId = 19
+Após salvar:
+Marcar etapa como completa
+Iniciar contagem de maturação conforme recipe.yml
+6️⃣ ProcessCommandIntent (uso correto)
+ProcessCommandIntent deve continuar existindo, porém:
+Permitido SOMENTE quando:
+A etapa não possui operator_input_required pendente
+Usos válidos:
+Início de lote
+Consulta de fermentos (“qual o KL”)
+Status
+Ajuda
+Explicações
+Bloqueado quando:
+Etapa estiver em modo de coleta obrigatória (LOCKED)
+7️⃣ LLM (política obrigatória)
+O LLM:
+✅ Pode:
+Explicar etapas (llm_guidance)
+Esclarecer dúvidas
+Reforçar cuidados
+❌ Não pode:
+Interpretar números
+Interpretar datas
+Interpretar horários
+Decidir avanço de etapa
+Preencher inputs obrigatórios
+O backend não deve chamar o LLM em nenhuma etapa com input obrigatório pendente.
+8️⃣ UX obrigatória (respostas)
+Nunca responder apenas:
+Missing required inputs
+Sempre responder com orientação explícita, por exemplo:
+Etapa 7:
+“Registre o horário do ponto de corte dizendo: ‘hora do corte às quinze e vinte’.”
+Etapa 13:
+“Informe o pH inicial e a quantidade de peças dizendo: ‘pH cinco e quatro e seis peças’.”
+9️⃣ Limpeza de inconsistências anteriores
+❌ Remover gravações genéricas como recorded_time
+❌ Não registrar múltiplos horários para a mesma etapa
+✅ Cada input deve ser:
+Único
+Associado à etapa correta
+Sobrescrito apenas se explicitamente refeito
