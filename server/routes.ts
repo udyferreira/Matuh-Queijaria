@@ -651,6 +651,13 @@ export async function registerRoutes(
     }
   }
   
+  // Get Portuguese month name
+  function getMonthName(month: number): string {
+    const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 
+                    'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    return months[month - 1] || 'mês desconhecido';
+  }
+  
   // Execute action based on interpreted intent - backend is SOVEREIGN
   // LLM only interprets, backend decides and executes
   // IMPORTANT: Uses batchService for ALL operations to ensure consistency with REST API
@@ -1070,6 +1077,182 @@ export async function registerRoutes(
             `Hora ${typeLabel} registrada às ${timeValue}.`,
             false,
             "O que mais posso ajudar?"
+          ));
+        }
+        
+        // --- RegisterPHAndPiecesIntent: Structured pH and pieces registration (Stage 13) ---
+        if (intentName === "RegisterPHAndPiecesIntent") {
+          console.log("RegisterPHAndPiecesIntent received:", JSON.stringify(slots, null, 2));
+          
+          const activeBatch = await batchService.getActiveBatch();
+          if (!activeBatch) {
+            return res.status(200).json(buildAlexaResponse(
+              "Não há lote ativo para registrar pH e quantidade de peças.",
+              false,
+              "O que mais posso ajudar?"
+            ));
+          }
+          
+          // Check if we're at the correct stage (13)
+          const currentStage = recipeManager.getStage(activeBatch.currentStageId);
+          if (activeBatch.currentStageId !== 13) {
+            return res.status(200).json(buildAlexaResponse(
+              `Esta etapa não requer pH e quantidade de peças. Estamos na etapa ${activeBatch.currentStageId}: ${currentStage?.name || 'em andamento'}.`,
+              false,
+              "O que mais posso ajudar?"
+            ));
+          }
+          
+          // Extract pH value from AMAZON.NUMBER slot
+          const phSlot = slots.ph_value?.value || slots.phValue?.value;
+          // Extract pieces quantity from AMAZON.NUMBER slot
+          const piecesSlot = slots.pieces_quantity?.value || slots.piecesQuantity?.value || slots.pieces?.value;
+          
+          let phValue: number | undefined;
+          let piecesQuantity: number | undefined;
+          
+          if (phSlot) {
+            const parsed = parseFloat(phSlot);
+            if (!isNaN(parsed) && parsed >= 1 && parsed <= 14) {
+              phValue = parsed;
+            }
+          }
+          
+          if (piecesSlot) {
+            const parsed = parseInt(piecesSlot, 10);
+            if (!isNaN(parsed) && parsed > 0) {
+              piecesQuantity = parsed;
+            }
+          }
+          
+          // Check what's already registered in measurements
+          const measurements = (activeBatch.measurements as Record<string, any>) || {};
+          const existingPh = measurements["initial_ph"];
+          const existingPieces = measurements["pieces_quantity"];
+          
+          // Build response based on what was provided and what's still needed
+          const results: string[] = [];
+          const stillNeeded: string[] = [];
+          
+          if (phValue !== undefined) {
+            measurements["initial_ph"] = phValue;
+            results.push(`pH ${phValue} registrado`);
+          } else if (existingPh === undefined) {
+            stillNeeded.push("o pH");
+          }
+          
+          if (piecesQuantity !== undefined) {
+            measurements["pieces_quantity"] = piecesQuantity;
+            results.push(`${piecesQuantity} peças registradas`);
+          } else if (existingPieces === undefined) {
+            stillNeeded.push("a quantidade de peças");
+          }
+          
+          // Update batch if we got new values
+          if (results.length > 0) {
+            await storage.updateBatch(activeBatch.id, { measurements });
+            console.log(`[Stage 13] Registered: ${results.join(', ')}`);
+          }
+          
+          // Build response
+          if (stillNeeded.length > 0) {
+            const responseText = results.length > 0 
+              ? `${results.join(' e ')}. Ainda falta informar ${stillNeeded.join(' e ')}.`
+              : `Por favor, informe ${stillNeeded.join(' e ')}. Diga: 'pH cinco ponto quatro e seis peças'.`;
+            return res.status(200).json(buildAlexaResponse(
+              responseText,
+              false,
+              `Informe ${stillNeeded.join(' e ')}.`
+            ));
+          }
+          
+          // Both values registered - check if we also have existing values
+          const finalPh = phValue ?? existingPh;
+          const finalPieces = piecesQuantity ?? existingPieces;
+          
+          return res.status(200).json(buildAlexaResponse(
+            `${results.join(' e ')}. Etapa 13 completa. Diga 'avançar' para continuar.`,
+            false,
+            "Diga 'avançar' para continuar."
+          ));
+        }
+        
+        // --- RegisterChamberEntryDateIntent: Structured date registration (Stage 19) ---
+        if (intentName === "RegisterChamberEntryDateIntent") {
+          console.log("RegisterChamberEntryDateIntent received:", JSON.stringify(slots, null, 2));
+          
+          const activeBatch = await batchService.getActiveBatch();
+          if (!activeBatch) {
+            return res.status(200).json(buildAlexaResponse(
+              "Não há lote ativo para registrar data de entrada na câmara.",
+              false,
+              "O que mais posso ajudar?"
+            ));
+          }
+          
+          // Check if we're at the correct stage (19)
+          const currentStage = recipeManager.getStage(activeBatch.currentStageId);
+          if (activeBatch.currentStageId !== 19) {
+            return res.status(200).json(buildAlexaResponse(
+              `Esta etapa não requer data de entrada na câmara. Estamos na etapa ${activeBatch.currentStageId}: ${currentStage?.name || 'em andamento'}.`,
+              false,
+              "O que mais posso ajudar?"
+            ));
+          }
+          
+          // Extract date from AMAZON.DATE slot
+          // AMAZON.DATE returns formats like: "2026-01-15", "2026-01", "2026-W03", "2026-01-15" for specific dates
+          // Special values: "XXXX-WXX-WE" for weekend, "today", "tomorrow", "yesterday"
+          const dateSlot = slots.entry_date?.value || slots.entryDate?.value || slots.date?.value;
+          
+          let dateValue: string | null = null;
+          
+          if (dateSlot) {
+            // Handle "today" equivalent (Alexa returns current date in YYYY-MM-DD format)
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateSlot)) {
+              dateValue = dateSlot;
+            }
+            // Handle relative dates that Alexa might resolve
+            else if (dateSlot.toLowerCase() === "today" || dateSlot === "hoje") {
+              const now = new Date();
+              // Adjust to Brasília timezone
+              const brasiliaOffset = -3 * 60; // UTC-3 in minutes
+              const localTime = new Date(now.getTime() + (brasiliaOffset - now.getTimezoneOffset()) * 60000);
+              dateValue = localTime.toISOString().split('T')[0];
+            }
+          }
+          
+          if (!dateValue) {
+            return res.status(200).json(buildAlexaResponse(
+              "Por favor, informe a data de entrada na câmara 2. Diga: 'entrada na câmara dois hoje' ou 'entrada na câmara dois dia quinze de janeiro'.",
+              false,
+              "Qual a data de entrada na câmara 2?"
+            ));
+          }
+          
+          // Save the date
+          const measurements = (activeBatch.measurements as Record<string, any>) || {};
+          measurements["chamber_2_entry_date"] = dateValue;
+          
+          // Calculate maturation end date (90 days)
+          const entryDate = new Date(dateValue);
+          entryDate.setDate(entryDate.getDate() + 90);
+          const maturationEndDate = entryDate.toISOString().split('T')[0];
+          
+          await storage.updateBatch(activeBatch.id, { 
+            measurements,
+            chamber2EntryDate: new Date(dateValue)
+          });
+          console.log(`[Stage 19] Chamber 2 entry date registered: ${dateValue}, maturation ends: ${maturationEndDate}`);
+          
+          // Format date for speech
+          const dateParts = dateValue.split('-');
+          const formattedDate = `${parseInt(dateParts[2])} de ${getMonthName(parseInt(dateParts[1]))}`;
+          
+          return res.status(200).json(buildAlexaResponse(
+            `Data de entrada na câmara 2 registrada: ${formattedDate}. A maturação de 90 dias terminará em ${parseInt(maturationEndDate.split('-')[2])} de ${getMonthName(parseInt(maturationEndDate.split('-')[1]))}. Diga 'avançar' para continuar.`,
+            false,
+            "Diga 'avançar' para continuar."
           ));
         }
         
