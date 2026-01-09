@@ -74,6 +74,12 @@ export async function registerRoutes(
     res.json(batches);
   });
 
+  app.get("/api/batches/active", async (req, res) => {
+    const batch = await batchService.getActiveBatch();
+    if (!batch) return res.status(404).json({ message: "Nenhum lote ativo" });
+    res.json(batch);
+  });
+
   app.get(api.batches.get.path, async (req, res) => {
     const batch = await storage.getBatch(Number(req.params.id));
     if (!batch) return res.status(404).json({ message: "Batch not found" });

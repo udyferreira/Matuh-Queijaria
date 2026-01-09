@@ -75,16 +75,29 @@ Preferred communication style: Simple, everyday language.
 - ASK-compliant responses with proper format (version, outputSpeech, shouldEndSession)
 - Always returns HTTP 200 (errors communicated via speech)
 - Handles LaunchRequest, IntentRequest, SessionEndedRequest
-- Uses single ProcessCommandIntent with AMAZON.SearchQuery slot for free-form voice commands
-- **LLM-based interpretation**: interpretCommand() uses OpenAI to parse free-form text into canonical intents
-- **Backend execution**: executeIntent() validates and executes actions based on interpreted intent
+- **LogTimeIntent**: Intent dedicado para registro de horários usando slot nativo AMAZON.TIME
+  - Normaliza múltiplos formatos: T15:30, T15:30:00, ISO completo, HH:MM, hora sozinha (17), "now", períodos (MO/AF/EV/NI)
+  - TimeTypeSlot customizado: floculação, corte/ponto, prensa
+  - Conversão automática de "now" para horário de Brasília (America/Sao_Paulo)
+- **ProcessCommandIntent**: Para comandos gerais via AMAZON.SearchQuery
+  - log_time bloqueado - redireciona para LogTimeIntent
+- **LLM-based interpretation**: interpretCommand() para comandos de texto livre
+- **Backend execution**: executeIntent() valida e executa ações
 - Canonical intents: status, start_batch, advance, log_time, log_date, log_number, pause, resume, instructions, help, goodbye, timer, query_input, unknown
-- **log_time**: Registro de horários de processo (floculação, ponto de corte, início de prensa), com suporte a "agora" convertido para horário de Brasília (America/Sao_Paulo)
-- **log_date**: Registro de datas de processo (entrada câmara 2)
-- **log_number**: Registro de valores numéricos (pH, quantidade de peças, temperatura)
-- **query_input**: Consulta de insumos calculados (LR, DX, KL, coalho) com mapeamento para códigos (FERMENT_LR, FERMENT_DX, FERMENT_KL, RENNET)
 - Backend is SOVEREIGN - LLM only interprets, never executes or validates process rules
 - Documentation available at `docs/ALEXA_WEBHOOK.md`
+
+### Stage Validation System
+- **Inputs obrigatórios**: validateAdvance verifica operator_input_required da etapa
+- **Timers bloqueantes**: Não permite avanço se timer.blocking está ativo
+- **Mapeamento de stored_values**: 
+  - Etapa 13: ph_value → initial_ph, pieces_quantity
+  - Etapa 6: flocculation_time
+  - Etapa 7: cut_point_time
+  - Etapa 14: press_start_time
+  - Etapa 19: chamber_2_entry_date → calcula maturationEndDate (90 dias)
+- **Loop etapa 15**: Sai quando pH <= 5.2 OU após 2 horas (2 min em TEST_MODE)
+- **UX amigável**: Mensagens claras informando qual input falta e como fornecê-lo
 
 ### Key npm Dependencies
 - `drizzle-orm` / `drizzle-kit` - Database ORM and migrations

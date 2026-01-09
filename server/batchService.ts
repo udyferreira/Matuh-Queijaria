@@ -115,29 +115,45 @@ export async function advanceBatch(batchId: number): Promise<AdvanceBatchResult>
 
   if (recipeManager.isLoopStage(batch.currentStageId)) {
     const measurements = (batch.measurements as Record<string, any>) || {};
-    const canExitLoop = recipeManager.checkLoopExitCondition(batch.currentStageId, measurements);
+    const canExitByPh = recipeManager.checkLoopExitCondition(batch.currentStageId, measurements);
     
-    if (!canExitLoop) {
+    // Check 2-hour max duration for stage 15
+    let canExitByTime = false;
+    if (batch.currentStageId === 15) {
+      const history = (batch.history as any[]) || [];
+      const stageStartEntry = history.find((h: any) => h.stageId === 15 && h.action === 'start');
+      if (stageStartEntry) {
+        const stageStartTime = new Date(stageStartEntry.timestamp);
+        const maxDurationMs = TEST_MODE ? 2 * 60 * 1000 : 2 * 60 * 60 * 1000; // 2 min in test, 2 hours in prod
+        const elapsed = Date.now() - stageStartTime.getTime();
+        canExitByTime = elapsed >= maxDurationMs;
+      }
+    }
+    
+    if (!canExitByPh && !canExitByTime) {
+      const phMessage = measurements.ph_value 
+        ? `pH atual: ${measurements.ph_value}` 
+        : 'pH ainda não medido';
       return {
         success: false,
-        error: `pH deve ser <= 5.2 para sair desta etapa. pH atual: ${measurements.ph_value || 'não medido'}`,
+        error: `pH deve ser <= 5.2 para sair desta etapa (${phMessage}). Ou aguarde completar 2 horas.`,
         code: "LOOP_CONDITION_NOT_MET"
       };
     }
 
+    // Record final state for stage 15
     if (batch.currentStageId === 15) {
       const freshBatch = await storage.getBatch(batchId);
       if (freshBatch) {
         const freshMeasurements = (freshBatch.measurements as Record<string, any>) || {};
         const turningCount = (freshBatch as any).turningCyclesCount || 0;
-        const historyEntry = {
-          key: 'turning_cycles_count',
-          value: turningCount,
-          stageId: batch.currentStageId,
-          timestamp: new Date().toISOString()
-        };
+        const timestamp = new Date().toISOString();
+        const historyEntries = [
+          { key: 'turning_cycles_count', value: turningCount, stageId: 15, timestamp },
+          { key: 'loop_exit_reason', value: canExitByPh ? 'ph_reached' : 'time_limit', stageId: 15, timestamp }
+        ];
         const history = freshMeasurements._history || [];
-        history.push(historyEntry);
+        history.push(...historyEntries);
         freshMeasurements._history = history;
         await storage.updateBatch(batchId, { measurements: freshMeasurements });
       }
@@ -289,22 +305,37 @@ export async function getBatchStatus(batchId: number) {
   };
 }
 
-export async function logPh(batchId: number, phValue: number) {
+export async function logPh(batchId: number, phValue: number, piecesQuantity?: number) {
   const batch = await storage.getBatch(batchId);
   if (!batch) return { success: false, error: "Lote não encontrado" };
   
   const measurements = (batch.measurements as any) || {};
-  measurements.ph_value = phValue;
-  const phHistory = measurements.ph_measurements || [];
-  phHistory.push({ value: phValue, timestamp: new Date().toISOString(), stageId: batch.currentStageId });
-  measurements.ph_measurements = phHistory;
-  
   const inputHistory = measurements._history || [];
-  inputHistory.push({ key: 'ph_value', value: phValue, timestamp: new Date().toISOString(), stageId: batch.currentStageId });
-  measurements._history = inputHistory;
+  const timestamp = new Date().toISOString();
   
+  // Stage 13: Store as initial_ph (per recipe.yml stored_values)
+  // Stage 15+: Store as ph_value in ph_measurements array
+  if (batch.currentStageId === 13) {
+    measurements.initial_ph = phValue;
+    inputHistory.push({ key: 'initial_ph', value: phValue, timestamp, stageId: 13 });
+    
+    if (piecesQuantity !== undefined) {
+      measurements.pieces_quantity = piecesQuantity;
+      inputHistory.push({ key: 'pieces_quantity', value: piecesQuantity, timestamp, stageId: 13 });
+    }
+  } else {
+    // For loop stages (15) and others, use ph_value and add to history
+    measurements.ph_value = phValue;
+    const phHistory = measurements.ph_measurements || [];
+    phHistory.push({ value: phValue, timestamp, stageId: batch.currentStageId });
+    measurements.ph_measurements = phHistory;
+    inputHistory.push({ key: 'ph_value', value: phValue, timestamp, stageId: batch.currentStageId });
+  }
+  
+  measurements._history = inputHistory;
   const updates: any = { measurements };
   
+  // Stage 15: Increment turning cycles count
   if (batch.currentStageId === 15) {
     const currentCount = (batch as any).turningCyclesCount || 0;
     updates.turningCyclesCount = currentCount + 1;
@@ -316,20 +347,46 @@ export async function logPh(batchId: number, phValue: number) {
     batchId,
     stageId: batch.currentStageId,
     action: "log_ph",
-    details: { ph_value: phValue }
+    details: { 
+      ph_value: phValue,
+      ...(piecesQuantity !== undefined && { pieces_quantity: piecesQuantity })
+    }
   });
   
-  return { success: true, phValue };
+  return { success: true, phValue, piecesQuantity };
 }
 
 export async function logTime(batchId: number, timeValue: string, timeType?: string) {
   const batch = await storage.getBatch(batchId);
   if (!batch) return { success: false, error: "Lote não encontrado" };
   
+  // Map timeType to storage key - NO generic fallback
+  const timeTypeMapping: Record<string, { key: string; expectedStage: number }> = {
+    'flocculation': { key: 'flocculation_time', expectedStage: 6 },
+    'cut': { key: 'cut_point_time', expectedStage: 7 },
+    'cut_point': { key: 'cut_point_time', expectedStage: 7 },
+    'press': { key: 'press_start_time', expectedStage: 14 },
+    'press_start': { key: 'press_start_time', expectedStage: 14 }
+  };
+  
+  const mapping = timeType ? timeTypeMapping[timeType] : null;
+  
+  if (!mapping) {
+    return { 
+      success: false, 
+      error: "Tipo de horário inválido. Use: floculação, corte, ou prensa.",
+      code: "INVALID_TIME_TYPE"
+    };
+  }
+  
+  const { key, expectedStage } = mapping;
+  
+  // Validate that we're on the correct stage (warning only, still allow)
+  if (batch.currentStageId !== expectedStage) {
+    console.warn(`logTime: Recording ${key} on stage ${batch.currentStageId}, expected stage ${expectedStage}`);
+  }
+  
   const measurements = (batch.measurements as any) || {};
-  const key = timeType === 'flocculation' ? 'flocculation_time' :
-              (timeType === 'cut' || timeType === 'cut_point') ? 'cut_point_time' :
-              (timeType === 'press' || timeType === 'press_start') ? 'press_start_time' : 'recorded_time';
   measurements[key] = timeValue;
   
   const inputHistory = measurements._history || [];
@@ -342,10 +399,59 @@ export async function logTime(batchId: number, timeValue: string, timeType?: str
     batchId,
     stageId: batch.currentStageId,
     action: "log_time",
-    details: { [key]: timeValue }
+    details: { [key]: timeValue, timeType }
   });
   
   return { success: true, key, timeValue };
+}
+
+export async function logDate(batchId: number, dateValue: string, dateType?: string) {
+  const batch = await storage.getBatch(batchId);
+  if (!batch) return { success: false, error: "Lote não encontrado" };
+  
+  // Only chamber_2_entry_date is supported currently
+  if (dateType !== 'chamber_2_entry' && dateType !== 'chamber2') {
+    return { 
+      success: false, 
+      error: "Tipo de data inválido. Use: entrada câmara 2.",
+      code: "INVALID_DATE_TYPE"
+    };
+  }
+  
+  const key = 'chamber_2_entry_date';
+  const expectedStage = 19;
+  
+  // Validate stage (warning only)
+  if (batch.currentStageId !== expectedStage) {
+    console.warn(`logDate: Recording ${key} on stage ${batch.currentStageId}, expected stage ${expectedStage}`);
+  }
+  
+  const measurements = (batch.measurements as any) || {};
+  measurements[key] = dateValue;
+  
+  // Calculate maturation end date (90 days from entry)
+  const entryDate = new Date(dateValue);
+  const maturationEndDate = new Date(entryDate);
+  maturationEndDate.setDate(maturationEndDate.getDate() + 90);
+  const maturationEndDateISO = maturationEndDate.toISOString();
+  
+  const inputHistory = measurements._history || [];
+  inputHistory.push({ key, value: dateValue, timestamp: new Date().toISOString(), stageId: batch.currentStageId });
+  measurements._history = inputHistory;
+  
+  await storage.updateBatch(batchId, { 
+    measurements,
+    maturationEndDate: new Date(maturationEndDateISO)
+  });
+  
+  await storage.logBatchAction({
+    batchId,
+    stageId: batch.currentStageId,
+    action: "log_date",
+    details: { [key]: dateValue, maturationEndDate: maturationEndDateISO }
+  });
+  
+  return { success: true, key, dateValue, maturationEndDate: maturationEndDateISO };
 }
 
 export async function pauseBatch(batchId: number, reason?: string) {

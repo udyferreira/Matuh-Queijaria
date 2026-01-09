@@ -209,19 +209,40 @@ export class RecipeManager {
     return calculated;
   }
 
-  validateAdvance(batch: ProductionBatch, currentStage: RecipeStage): { allowed: boolean; reason?: string } {
+  validateAdvance(batch: ProductionBatch, currentStage: RecipeStage): { allowed: boolean; reason?: string; missingInputs?: string[]; blockingTimer?: boolean } {
     // 1. Check required inputs
     if (currentStage.operator_input_required) {
       const measurements = batch.measurements as Record<string, any>;
-      const missingInputs = currentStage.operator_input_required.filter(key => !measurements || measurements[key] === undefined);
       
-      // Special case for initial milk volume which is on the batch root
-      if (currentStage.operator_input_required.includes('milk_volume_l') && !batch.milkVolumeL) {
-         return { allowed: false, reason: "Missing milk volume" };
-      }
-
-      if (missingInputs.length > 0 && !missingInputs.includes('milk_volume_l')) {
-        return { allowed: false, reason: `Missing required inputs: ${missingInputs.join(', ')}` };
+      // Map expected measurement keys to what's actually stored
+      const keyMapping: Record<string, string> = {
+        'ph_value': currentStage.id === 13 ? 'initial_ph' : 'ph_value',
+        'flocculation_time': 'flocculation_time',
+        'cut_point_time': 'cut_point_time',
+        'press_start_time': 'press_start_time',
+        'chamber_2_entry_date': 'chamber_2_entry_date',
+        'pieces_quantity': 'pieces_quantity',
+        'milk_volume_l': 'milk_volume_l',
+        'milk_temperature_c': 'milk_temperature_c',
+        'milk_ph': 'milk_ph'
+      };
+      
+      const missingInputs = currentStage.operator_input_required.filter(key => {
+        // Special case for milk_volume_l which is on the batch root
+        if (key === 'milk_volume_l') {
+          return !batch.milkVolumeL;
+        }
+        const storedKey = keyMapping[key] || key;
+        return !measurements || measurements[storedKey] === undefined;
+      });
+      
+      if (missingInputs.length > 0) {
+        const friendlyMessages = this.getFriendlyInputMessages(currentStage.id, missingInputs);
+        return { 
+          allowed: false, 
+          reason: friendlyMessages,
+          missingInputs
+        };
       }
     }
 
@@ -230,30 +251,91 @@ export class RecipeManager {
       const activeTimers = (batch.activeTimers as any[]) || [];
       const stageTimer = activeTimers.find(t => t.stageId === currentStage.id);
       
-      // Timer blocking DEVE existir para esta etapa
-      if (!stageTimer) {
-        // Isso pode acontecer se o timer não foi iniciado corretamente
-        // Não deveria ocorrer em fluxo normal, mas protege contra manipulação
-        return { allowed: false, reason: `Esta etapa requer aguardar o timer. Reinicie a etapa.` };
+      if (stageTimer) {
+        const now = new Date();
+        const endTime = new Date(stageTimer.endTime);
+        
+        if (now < endTime) {
+          const remainingMin = Math.ceil((endTime.getTime() - now.getTime()) / 60000);
+          return { 
+            allowed: false, 
+            reason: `Aguarde o timer terminar. Faltam ${remainingMin} minuto${remainingMin > 1 ? 's' : ''}.`,
+            blockingTimer: true
+          };
+        }
       }
-      
-      const now = new Date();
-      const endTime = new Date(stageTimer.endTime);
-      
-      if (now < endTime) {
-        const remainingMin = Math.ceil((endTime.getTime() - now.getTime()) / 60000);
-        return { allowed: false, reason: `Aguarde o timer. Faltam ${remainingMin} minutos.` };
-      }
-      // Timer expirou - permite avançar
     }
 
-    // 3. Loop conditions (e.g. pH check)
+    // 3. Loop conditions (e.g. pH check) - handled in batchService
     if (currentStage.type === 'loop' && currentStage.loop_condition) {
-       // Logic to check if loop exit condition is met
-       // Simplification: logic is handled in the route handler or specific specialized logic
+       // Logic is handled in batchService.advanceBatch
     }
 
     return { allowed: true };
+  }
+  
+  // Generate friendly messages based on stage and missing inputs
+  getFriendlyInputMessages(stageId: number, missingInputs: string[]): string {
+    const messages: string[] = [];
+    
+    for (const input of missingInputs) {
+      switch (input) {
+        case 'flocculation_time':
+          messages.push("Registre o horário de floculação. Diga: 'hora da floculação às [horário]'");
+          break;
+        case 'cut_point_time':
+          messages.push("Registre o horário do ponto de corte. Diga: 'hora do corte às [horário]'");
+          break;
+        case 'ph_value':
+          if (stageId === 13) {
+            messages.push("Registre o pH inicial e a quantidade de peças");
+          } else {
+            messages.push("Registre o pH atual");
+          }
+          break;
+        case 'pieces_quantity':
+          messages.push("Registre a quantidade de peças");
+          break;
+        case 'press_start_time':
+          messages.push("Registre o horário de início da prensa. Diga: 'hora da prensa às [horário]'");
+          break;
+        case 'chamber_2_entry_date':
+          messages.push("Registre a data de entrada na Câmara 2");
+          break;
+        case 'milk_volume_l':
+          messages.push("Informe o volume de leite em litros");
+          break;
+        case 'milk_temperature_c':
+          messages.push("Informe a temperatura do leite");
+          break;
+        case 'milk_ph':
+          messages.push("Informe o pH do leite");
+          break;
+        default:
+          messages.push(`Registre: ${input}`);
+      }
+    }
+    
+    return messages.join('. ');
+  }
+  
+  // Get the intent hint for a missing input
+  getIntentHintForInput(stageId: number, inputKey: string): string {
+    switch (inputKey) {
+      case 'flocculation_time':
+        return 'LogTimeIntent com timeType=floculação';
+      case 'cut_point_time':
+        return 'LogTimeIntent com timeType=corte';
+      case 'press_start_time':
+        return 'LogTimeIntent com timeType=prensa';
+      case 'ph_value':
+      case 'pieces_quantity':
+        return 'RegisterPHAndPiecesIntent';
+      case 'chamber_2_entry_date':
+        return 'RegisterChamber2EntryDateIntent';
+      default:
+        return 'ProcessCommandIntent';
+    }
   }
 }
 

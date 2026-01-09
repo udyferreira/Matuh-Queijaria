@@ -1,0 +1,47 @@
+🔧 Prompt – Alinhamento completo do backend e interpreter com recipe.yml
+Atualize o backend e o interpreter para cumprir rigorosamente o recipe.yml do QUEIJO_NETE, com as seguintes regras obrigatórias:
+1. Controle de avanço de etapa
+Antes de permitir advance, verificar:
+Se a etapa atual possui operator_input_required
+Se há inputs obrigatórios ainda não preenchidos
+Se existe timer.blocking = true ativo
+Se qualquer condição acima falhar:
+Bloquear avanço
+Guiar o usuário para fornecer o input faltante ou aguardar o timer
+2. Modo de coleta por etapa (stage input lock)
+Implementar um estado de bloqueio quando a etapa tiver inputs obrigatórios:
+stageInputLock = {
+  stageId,
+  missingInputs[]
+}
+Enquanto o lock existir:
+Ignorar intents de advance
+Aceitar apenas intents que preencham os inputs faltantes
+3. Mapeamento explícito de intents por etapa
+Associar cada etapa com inputs obrigatórios às intents corretas:
+Etapa 6 → LogTimeIntent (flocculation)
+Etapa 7 → LogTimeIntent (cut_point)
+Etapa 13 → RegisterPHAndPiecesIntent
+Etapa 14 → LogTimeIntent (press_start)
+Etapa 19 → RegisterChamber2EntryDateIntent
+4. Persistência correta de valores
+Garantir que:
+ph_value seja armazenado como initial_ph na etapa 13
+Todos os valores sejam registrados com stageId correto
+Remover qualquer gravação genérica como recorded_time
+5. Loop da etapa 15
+Implementar controle explícito de loop:
+Cada ciclo registra um pH em ph_measurements[]
+Incrementar turning_cycles_count
+Encerrar loop se ph_value <= 5.2 ou se atingir 2 horas
+6. Respeitar política do LLM
+O LLM:
+Não pode avançar etapas
+Não pode calcular proporções
+Só pode explicar, alertar e lembrar ações
+Todas as decisões de fluxo devem ser feitas pelo engine de receita
+7. UX obrigatória
+Nunca retornar “Missing required inputs” sem:
+Informar qual input é esperado
+Solicitar explicitamente o valor ao operador
+O objetivo é garantir que nenhuma etapa seja pulada, que inputs obrigatórios sejam sempre coletados no momento correto e que o fluxo siga estritamente o recipe.yml.
