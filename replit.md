@@ -75,16 +75,31 @@ Preferred communication style: Simple, everyday language.
 - ASK-compliant responses with proper format (version, outputSpeech, shouldEndSession)
 - Always returns HTTP 200 (errors communicated via speech)
 - Handles LaunchRequest, IntentRequest, SessionEndedRequest
-- **LogTimeIntent**: Intent dedicado para registro de horários usando slot nativo AMAZON.TIME
-  - Normaliza múltiplos formatos: T15:30, T15:30:00, ISO completo, HH:MM, hora sozinha (17), "now", períodos (MO/AF/EV/NI)
-  - TimeTypeSlot customizado: floculação, corte/ponto, prensa
-  - Conversão automática de "now" para horário de Brasília (America/Sao_Paulo)
-- **ProcessCommandIntent**: Para comandos gerais via AMAZON.SearchQuery
-  - log_time bloqueado - redireciona para LogTimeIntent
-- **LLM-based interpretation**: interpretCommand() para comandos de texto livre
-- **Backend execution**: executeIntent() valida e executa ações
-- Canonical intents: status, start_batch, advance, log_time, log_date, log_number, pause, resume, instructions, help, goodbye, timer, query_input, unknown
-- Backend is SOVEREIGN - LLM only interprets, never executes or validates process rules
+
+**Stage-Aware Intent Gating (REGRA MESTRA)**:
+- Se etapa tem `operator_input_required` pendente, bloqueia TODOS os intents exceto:
+  - O `expected_intent` da etapa
+  - AMAZON.HelpIntent, AMAZON.StopIntent, AMAZON.CancelIntent
+- ProcessCommandIntent e LLM bloqueados quando há inputs pendentes
+
+**Intents Estruturados por Etapa**:
+- **LogTimeIntent** (etapas 6, 7, 14): Registro de horários via AMAZON.TIME
+  - timeType → etapa: floculação→6, corte→7, prensa→14
+  - Valida currentStageId antes de registrar
+  - Normaliza formatos: T15:30, HH:MM, "now", períodos (MO/AF/EV/NI)
+- **RegisterPHAndPiecesIntent** (etapa 13): Registro de pH e quantidade de peças
+  - Slots: ph_value (AMAZON.NUMBER), pieces_quantity (AMAZON.NUMBER)
+  - Só aceito na etapa 13, rejeitado em outras
+- **RegisterChamberEntryDateIntent** (etapa 19): Registro de data de entrada na câmara 2
+  - Slot: entry_date (AMAZON.DATE)
+  - Só aceito na etapa 19, rejeitado em outras
+  - Calcula automaticamente maturationEndDate (90 dias)
+
+**ProcessCommandIntent**: Para comandos gerais (status, avançar, ajuda)
+  - Bloqueado quando etapa tem inputs pendentes
+  - log_time via texto livre bloqueado - redireciona para LogTimeIntent
+
+- **Backend is SOVEREIGN** - LLM only interprets, never executes or validates
 - Documentation available at `docs/ALEXA_WEBHOOK.md`
 
 ### Stage Validation System
