@@ -195,7 +195,6 @@ stages:
     stored_values:
       - initial_ph
       - pieces_quantity
-    expected_intent: "LogNumberIntent"
     input_prompt: "Registre o pH e quantidade de peças. Diga: 'pH seis ponto cinco' ou 'quantidade oito peças'."
 
   - id: 14
@@ -251,8 +250,7 @@ stages:
       - chamber_2_entry_date
     stored_values:
       - chamber_2_entry_date
-    expected_intent: "LogDateIntent"
-    input_prompt: "Registre a data de entrada na câmara 2. Diga: 'data de entrada vinte e cinco de janeiro'."
+    input_prompt: "Registre a data de entrada na câmara 2. Diga: 'coloquei na câmara dois hoje'."
     instructions:
       - "Colocar plaquinha com data de produção na tábua"
 

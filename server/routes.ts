@@ -1079,22 +1079,8 @@ export async function registerRoutes(
           // Log the full slots structure for debugging
           console.log("Alexa slots received:", JSON.stringify(slots, null, 2));
           
-          // STAGE INPUT LOCK: Check if current stage requires structured input only
-          // If locked, reject ProcessCommandIntent and guide user to use correct intent
-          const currentBatch = await batchService.getActiveBatch();
-          if (currentBatch) {
-            const inputLock = recipeManager.getStageInputLock(currentBatch.currentStageId);
-            if (inputLock.locked && inputLock.expectedIntent) {
-              console.log(`Stage ${currentBatch.currentStageId} input-locked: expects ${inputLock.expectedIntent}`);
-              
-              // Block ProcessCommandIntent - stage requires structured intent
-              return res.status(200).json(buildAlexaResponse(
-                inputLock.inputPrompt || "Esta etapa requer um comando estruturado específico.",
-                false,
-                inputLock.inputPrompt
-              ));
-            }
-          }
+          // Note: Stage input lock is now handled by executeIntent blocking log_time when LogTimeIntent should be used
+          // ProcessCommandIntent is allowed for status/help/advance commands even at locked stages
           
           // Extract utterance from multiple possible slot formats
           // Alexa can send the value in different ways depending on slot type
