@@ -1048,24 +1048,48 @@ export async function registerRoutes(
             ));
           }
           
-          // Extract time from AMAZON.TIME slot
-          // AMAZON.TIME formats: "15:30", "T15:30", "2026-01-08T15:30", "now", "MO", "AF", "EV", "NI"
-          let timeSlot = slots.time?.value;
           // Extract time type from custom slot
           const timeTypeSlot = slots.timeType?.value || slots.time_type?.value;
           
-          // Map slot values to internal time types
+          // Map slot values to internal time types and expected stages
+          // timeType → stageId mapping ensures intent is only used at correct stage
+          const timeTypeMapping: Record<string, { timeType: string; expectedStage: number; label: string }> = {
+            'flocculation': { timeType: 'flocculation', expectedStage: 6, label: 'floculação' },
+            'cut_point': { timeType: 'cut_point', expectedStage: 7, label: 'ponto de corte' },
+            'press_start': { timeType: 'press_start', expectedStage: 14, label: 'início de prensa' }
+          };
+          
           let timeType: string | undefined;
+          let expectedStage: number | undefined;
+          
           if (timeTypeSlot) {
             const normalizedType = timeTypeSlot.toLowerCase();
             if (normalizedType.includes("floc") || normalizedType === "floculação" || normalizedType === "floculacao") {
               timeType = "flocculation";
+              expectedStage = 6;
             } else if (normalizedType.includes("corte") || normalizedType === "ponto") {
               timeType = "cut_point";
-            } else if (normalizedType.includes("prensa")) {
+              expectedStage = 7;
+            } else if (normalizedType.includes("prensa") || normalizedType.includes("moldagem")) {
               timeType = "press_start";
+              expectedStage = 14;
             }
           }
+          
+          // STAGE VALIDATION: Reject if not at the expected stage
+          if (expectedStage && activeBatch.currentStageId !== expectedStage) {
+            const currentStage = recipeManager.getStage(activeBatch.currentStageId);
+            const typeInfo = timeType ? timeTypeMapping[timeType] : null;
+            return res.status(200).json(buildAlexaResponse(
+              `Não é possível registrar horário de ${typeInfo?.label || 'evento'} nesta etapa. Estamos na etapa ${activeBatch.currentStageId}: ${currentStage?.name || 'em andamento'}.`,
+              false,
+              "O que mais posso ajudar?"
+            ));
+          }
+          
+          // Extract time from AMAZON.TIME slot
+          // AMAZON.TIME formats: "15:30", "T15:30", "2026-01-08T15:30", "now", "MO", "AF", "EV", "NI"
+          let timeSlot = slots.time?.value;
           
           // Normalize AMAZON.TIME value to HH:MM format
           // AMAZON.TIME can return: "15:30", "T15:30", "T15:30:00", "2026-01-08T15:30:00", "17", "now", "MO", "AF", "EV", "NI"
