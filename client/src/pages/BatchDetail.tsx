@@ -589,6 +589,21 @@ export default function BatchDetail() {
                   <span className="text-muted-foreground">Iniciado</span>
                   <span className="font-mono">{new Date(batch.startedAt).toLocaleTimeString('pt-BR')}</span>
                 </div>
+                
+                {batch.chamber2EntryDate && (
+                  <div className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
+                    <span className="text-muted-foreground">Entrada na Câmara 2</span>
+                    <span className="font-mono font-bold">{new Date(batch.chamber2EntryDate).toLocaleDateString('pt-BR')}</span>
+                  </div>
+                )}
+                
+                {batch.maturationEndDate && (
+                  <div className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
+                    <span className="text-muted-foreground">Fim da Maturação</span>
+                    <span className="font-mono font-bold">{new Date(batch.maturationEndDate).toLocaleDateString('pt-BR')}</span>
+                  </div>
+                )}
+                
                 {(() => {
                   const measurements = batch.measurements as Record<string, any> || {};
                   const history = measurements._history as Array<{key: string; value: any; stageId: number; timestamp: string}> || [];
@@ -596,6 +611,7 @@ export default function BatchDetail() {
                   // Mapa de tradução para labels
                   const labelMap: Record<string, string> = {
                     'ph_value': 'Medição de pH',
+                    'ph_measurement': 'Medição de pH',
                     'cut_point_time': 'Horário do Ponto de Corte',
                     'press_start_time': 'Horário de Início da Prensagem',
                     'flocculation_time': 'Horário de Floculação',
@@ -608,6 +624,8 @@ export default function BatchDetail() {
                     'pieces_quantity': 'Quantidade de Peças',
                     'chamber_2_entry_date': 'Data de Entrada na Câmara 2',
                     'initial_ph': 'pH Inicial',
+                    'turning_cycles_count': 'Quantidade de Viradas',
+                    'loop_exit_reason': 'Motivo de Saída',
                   };
                   
                   const items: Array<{label: string; value: string}> = [];

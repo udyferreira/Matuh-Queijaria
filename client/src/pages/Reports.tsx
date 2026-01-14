@@ -36,12 +36,15 @@ const MEASUREMENT_LABELS: Record<string, string> = {
   milk_temperature_c: "Temperatura do Leite (°C)",
   milk_ph: "pH do Leite",
   ph_value: "pH",
+  ph_measurement: "Medição de pH",
+  initial_ph: "pH Inicial",
   pieces_quantity: "Quantidade de Peças",
   chamber_2_entry_date: "Data Entrada Câmara 2",
   flocculation_time: "Hora da Floculação",
   cut_point_time: "Hora do Corte",
   press_start_time: "Hora da Prensa",
   turning_cycles_count: "Quantidade de Viradas",
+  loop_exit_reason: "Motivo de Saída do Loop",
   timestamp: "Data/Hora"
 };
 
@@ -158,6 +161,8 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
               </CardTitle>
               <p className="text-sm text-muted-foreground">
                 {getCheeseTypeName(batch.recipeId)} - {batch.milkVolumeL}L - Concluído em {batch.completedAt ? new Date(batch.completedAt).toLocaleDateString("pt-BR") : "N/A"}
+                {batch.chamber2EntryDate && ` | Entrada Câmara 2: ${new Date(batch.chamber2EntryDate).toLocaleDateString("pt-BR")}`}
+                {batch.maturationEndDate && ` | Fim Maturação: ${new Date(batch.maturationEndDate).toLocaleDateString("pt-BR")}`}
               </p>
             </div>
           </div>
@@ -242,6 +247,16 @@ function PrintableReport({ batches }: { batches: ProductionBatch[] }) {
                 {getCheeseTypeName(batch.recipeId)} - {batch.milkVolumeL}L - 
                 Concluído em {batch.completedAt ? new Date(batch.completedAt).toLocaleDateString("pt-BR") : "N/A"}
               </p>
+              {batch.chamber2EntryDate && (
+                <p className="text-sm">
+                  Entrada na Câmara 2: {new Date(batch.chamber2EntryDate).toLocaleDateString("pt-BR")}
+                </p>
+              )}
+              {batch.maturationEndDate && (
+                <p className="text-sm">
+                  Fim da Maturação: {new Date(batch.maturationEndDate).toLocaleDateString("pt-BR")}
+                </p>
+              )}
             </div>
             
             {stageIds.map((stageId) => {
