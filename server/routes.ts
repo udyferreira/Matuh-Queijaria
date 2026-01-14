@@ -433,8 +433,10 @@ export async function registerRoutes(
     // Handle chamber_2_entry_date (Stage 19) - triggers maturation
     if (key === 'chamber_2_entry_date') {
       const entryDate = new Date(value);
-      const maturationEndDate = new Date(entryDate);
-      maturationEndDate.setDate(maturationEndDate.getDate() + 90); // 90 days maturation
+      // Maturation is 90 days from batch start (startedAt), not from chamber entry
+      const batchStartDate = new Date(batch.startedAt);
+      const maturationEndDate = new Date(batchStartDate);
+      maturationEndDate.setDate(maturationEndDate.getDate() + 90);
       
       updates.chamber2EntryDate = entryDate;
       updates.maturationEndDate = maturationEndDate;
@@ -1515,10 +1517,10 @@ export async function registerRoutes(
           const measurements = (activeBatch.measurements as Record<string, any>) || {};
           measurements["chamber_2_entry_date"] = dateValue;
           
-          // Calculate maturation end date (90 days)
-          const entryDate = new Date(dateValue);
-          entryDate.setDate(entryDate.getDate() + 90);
-          const maturationEndDate = entryDate.toISOString().split('T')[0];
+          // Calculate maturation end date (90 days from batch start, not from chamber entry)
+          const batchStartDate = new Date(activeBatch.startedAt);
+          batchStartDate.setDate(batchStartDate.getDate() + 90);
+          const maturationEndDate = batchStartDate.toISOString().split('T')[0];
           
           await storage.updateBatch(activeBatch.id, { 
             measurements,

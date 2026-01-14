@@ -429,9 +429,9 @@ export async function logDate(batchId: number, dateValue: string, dateType?: str
   const measurements = (batch.measurements as any) || {};
   measurements[key] = dateValue;
   
-  // Calculate maturation end date (90 days from entry)
-  const entryDate = new Date(dateValue);
-  const maturationEndDate = new Date(entryDate);
+  // Calculate maturation end date (90 days from batch start, not from chamber entry)
+  const batchStartDate = new Date(batch.startedAt);
+  const maturationEndDate = new Date(batchStartDate);
   maturationEndDate.setDate(maturationEndDate.getDate() + 90);
   const maturationEndDateISO = maturationEndDate.toISOString();
   
