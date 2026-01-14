@@ -1312,12 +1312,13 @@ export async function registerRoutes(
             }
             
             const savedPh = phValue ?? existingPh;
-            const prompt = `pH ${savedPh} registrado. Quantas peças foram enformadas?`;
+            // IMPORTANT: Prompt must match intent model samples: "{pieces_quantity} peças" or "são {pieces_quantity} peças"
+            const prompt = `pH ${savedPh} registrado. Quantas peças foram enformadas? Diga, por exemplo: seis peças.`;
             return res.status(200).json(buildAlexaElicitSlotResponse(
               "pieces_quantity",
               "RegisterPHAndPiecesIntent",
               prompt,
-              "Quantas peças foram enformadas?",
+              "Quantas peças? Diga, por exemplo: seis peças.",
               slots
             ));
           }
@@ -1355,7 +1356,7 @@ export async function registerRoutes(
           console.log(`[Stage 13] Complete: pH ${effectivePh}, ${effectivePieces} pieces saved.`);
           
           return res.status(200).json(buildAlexaResponse(
-            `Registrado: pH ${effectivePh} e ${effectivePieces} peças. Etapa 13 completa. Diga 'avançar' para continuar.`,
+            `pH ${effectivePh} e ${effectivePieces} peças registrados. Etapa concluída. Diga 'avançar' para continuar.`,
             false,
             "Diga 'avançar' para continuar."
           ));

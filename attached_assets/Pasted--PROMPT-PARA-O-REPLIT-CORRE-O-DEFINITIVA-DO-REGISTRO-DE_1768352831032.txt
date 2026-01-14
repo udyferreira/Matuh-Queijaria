@@ -1,0 +1,86 @@
+🔧 PROMPT PARA O REPLIT — CORREÇÃO DEFINITIVA DO REGISTRO DE PEÇAS (ETAPA 13)
+Contexto:
+Já existem os intents RegisterPHAndPiecesIntent, LogTimeIntent e RegisterChamberEntryDateIntent corretamente cadastrados na Alexa Skill.
+Não criar novos intents.
+Não alterar o interaction model no backend — ele já está definido na Alexa Console.
+🎯 OBJETIVO
+Corrigir definitivamente o fluxo da Etapa 13 (pH inicial + quantidade de peças) para que:
+O backend grave corretamente pieces_quantity
+O diálogo Alexa funcione em modo multi-turn sem quebrar
+Nenhuma resposta do backend instrua frases que não existam no intent model
+Nunca seja retornado {} ou resposta vazia
+A etapa só seja concluída quando ambos os valores existirem
+✅ REGRAS DE NEGÓCIO (OBRIGATÓRIAS)
+Etapa 13 espera exclusivamente o intent:
+RegisterPHAndPiecesIntent
+Campos obrigatórios:
+ph_value
+pieces_quantity
+O usuário pode informar:
+apenas o pH
+apenas as peças
+ambos juntos
+O backend deve conduzir o diálogo até completar os dois
+🧠 AJUSTES OBRIGATÓRIOS NO BACKEND (interpreter.ts)
+1️⃣ Nunca retornar {} ou resposta vazia
+Garanta que todo caminho de execução do RegisterPHAndPiecesIntent retorne:
+outputSpeech
+ou Dialog.ElicitSlot
+❌ Remover qualquer:
+return {};
+return;
+2️⃣ Tratamento correto do slot pieces_quantity
+O slot pode chegar como:
+undefined
+"?"
+Isso NÃO é erro, é comportamento normal da Alexa.
+Implementar:
+const piecesRaw = slots.pieces_quantity?.value;
+
+const pieces =
+  piecesRaw && piecesRaw !== "?"
+    ? Number(piecesRaw)
+    : undefined;
+Se pieces for inválido (undefined, NaN, <= 0):
+➡️ elicitar novamente o slot
+3️⃣ Elicitar peças usando APENAS frases compatíveis com o intent model
+⚠️ IMPORTANTE
+O backend NÃO pode dizer frases que não existam nos samples do intent.
+✅ Samples válidos já existentes no JSON:
+"{pieces_quantity} peças"
+"são {pieces_quantity} peças"
+✅ Portanto, a fala do backend DEVE ser:
+"Quantas peças foram enformadas? Diga, por exemplo: seis peças."
+❌ NÃO usar:
+“diga apenas o número”
+“quantidade de peças”
+“informe a quantidade”
+qualquer frase sem a palavra peças
+4️⃣ Fluxo correto do diálogo (multi-turn)
+Caso A — usuário informou só o pH:
+Usuário: pH seis ponto dois
+Alexa: pH 6.2 registrado. Quantas peças foram enformadas? Diga, por exemplo: seis peças.
+➡️ Backend retorna Dialog.ElicitSlot para pieces_quantity
+Caso B — usuário respondeu corretamente:
+Usuário: seis peças
+➡️ Backend:
+salva pieces_quantity
+conclui a etapa
+avança o fluxo
+Resposta final:
+"pH 6.2 e 6 peças registrados. Etapa concluída."
+5️⃣ Só concluir a etapa quando ambos existirem
+if (phValue !== undefined && pieces !== undefined) {
+  // salvar ambos
+  // marcar etapa como completa
+}
+Nunca concluir a etapa apenas com pH.
+🔒 GATING (manter)
+ProcessCommandIntent continua bloqueado na etapa 13
+Apenas RegisterPHAndPiecesIntent pode avançar
+📌 RESUMO DO QUE DEVE SER ALTERADO
+✅ Corrigir parsing de pieces_quantity
+✅ Garantir Dialog.ElicitSlot consistente
+✅ Remover qualquer retorno vazio {}
+✅ Ajustar falas do backend para casar 100% com os samples
+✅ Etapa 13 só conclui com pH e peças
