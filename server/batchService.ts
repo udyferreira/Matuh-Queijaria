@@ -405,11 +405,92 @@ export async function logTime(batchId: number, timeValue: string, timeType?: str
   return { success: true, key, timeValue };
 }
 
-export async function logDate(batchId: number, dateValue: string, dateType?: string) {
+/**
+ * Calculate maturation end date: 90 days from batch start date
+ * This is the SINGLE SOURCE OF TRUTH for this calculation
+ */
+export function getMaturationEndDate(batchStartDate: Date): Date {
+  const maturationEndDate = new Date(batchStartDate);
+  maturationEndDate.setDate(maturationEndDate.getDate() + 90);
+  return maturationEndDate;
+}
+
+/**
+ * Record chamber 2 entry date and calculate maturation end date
+ * This is the centralized function for Stage 19 completion
+ * Used by both REST API and Alexa webhook
+ */
+export async function recordChamber2Entry(
+  batchId: number, 
+  entryDateValue: string,
+  options?: { unit?: string; notes?: string }
+): Promise<{
+  success: boolean;
+  error?: string;
+  code?: string;
+  chamber2EntryDate?: Date;
+  maturationEndDate?: Date;
+  maturationEndDateISO?: string;
+}> {
   const batch = await storage.getBatch(batchId);
-  if (!batch) return { success: false, error: "Lote não encontrado" };
+  if (!batch) {
+    return { success: false, error: "Lote não encontrado", code: "BATCH_NOT_FOUND" };
+  }
   
-  // Only chamber_2_entry_date is supported currently
+  const expectedStage = 19;
+  if (batch.currentStageId !== expectedStage) {
+    console.warn(`recordChamber2Entry: Recording on stage ${batch.currentStageId}, expected stage ${expectedStage}`);
+  }
+  
+  const entryDate = new Date(entryDateValue);
+  const maturationEndDate = getMaturationEndDate(new Date(batch.startedAt));
+  const maturationEndDateISO = maturationEndDate.toISOString();
+  
+  const measurements = (batch.measurements as any) || {};
+  measurements["chamber_2_entry_date"] = entryDateValue;
+  
+  const inputHistory = measurements._history || [];
+  const historyEntry: Record<string, any> = { 
+    key: "chamber_2_entry_date", 
+    value: entryDateValue, 
+    timestamp: new Date().toISOString(), 
+    stageId: batch.currentStageId 
+  };
+  if (options?.unit) historyEntry.unit = options.unit;
+  if (options?.notes) historyEntry.notes = options.notes;
+  inputHistory.push(historyEntry);
+  measurements._history = inputHistory;
+  
+  await storage.updateBatch(batchId, { 
+    measurements,
+    chamber2EntryDate: entryDate,
+    maturationEndDate: maturationEndDate,
+    batchStatus: "MATURING"
+  });
+  
+  await storage.logBatchAction({
+    batchId,
+    stageId: batch.currentStageId,
+    action: "log_date",
+    details: { 
+      chamber_2_entry_date: entryDateValue, 
+      maturationEndDate: maturationEndDateISO 
+    }
+  });
+  
+  return { 
+    success: true, 
+    chamber2EntryDate: entryDate,
+    maturationEndDate: maturationEndDate,
+    maturationEndDateISO: maturationEndDateISO
+  };
+}
+
+/**
+ * @deprecated Use recordChamber2Entry instead
+ * Kept for backward compatibility - delegates to recordChamber2Entry
+ */
+export async function logDate(batchId: number, dateValue: string, dateType?: string) {
   if (dateType !== 'chamber_2_entry' && dateType !== 'chamber2') {
     return { 
       success: false, 
@@ -418,40 +499,18 @@ export async function logDate(batchId: number, dateValue: string, dateType?: str
     };
   }
   
-  const key = 'chamber_2_entry_date';
-  const expectedStage = 19;
+  const result = await recordChamber2Entry(batchId, dateValue);
   
-  // Validate stage (warning only)
-  if (batch.currentStageId !== expectedStage) {
-    console.warn(`logDate: Recording ${key} on stage ${batch.currentStageId}, expected stage ${expectedStage}`);
+  if (!result.success) {
+    return result;
   }
   
-  const measurements = (batch.measurements as any) || {};
-  measurements[key] = dateValue;
-  
-  // Calculate maturation end date (90 days from batch start, not from chamber entry)
-  const batchStartDate = new Date(batch.startedAt);
-  const maturationEndDate = new Date(batchStartDate);
-  maturationEndDate.setDate(maturationEndDate.getDate() + 90);
-  const maturationEndDateISO = maturationEndDate.toISOString();
-  
-  const inputHistory = measurements._history || [];
-  inputHistory.push({ key, value: dateValue, timestamp: new Date().toISOString(), stageId: batch.currentStageId });
-  measurements._history = inputHistory;
-  
-  await storage.updateBatch(batchId, { 
-    measurements,
-    maturationEndDate: new Date(maturationEndDateISO)
-  });
-  
-  await storage.logBatchAction({
-    batchId,
-    stageId: batch.currentStageId,
-    action: "log_date",
-    details: { [key]: dateValue, maturationEndDate: maturationEndDateISO }
-  });
-  
-  return { success: true, key, dateValue, maturationEndDate: maturationEndDateISO };
+  return { 
+    success: true, 
+    key: 'chamber_2_entry_date', 
+    dateValue, 
+    maturationEndDate: result.maturationEndDateISO 
+  };
 }
 
 export async function pauseBatch(batchId: number, reason?: string) {

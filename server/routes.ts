@@ -430,17 +430,21 @@ export async function registerRoutes(
       measurements.initial_ph = value;
     }
 
-    // Handle chamber_2_entry_date (Stage 19) - triggers maturation
+    // Handle chamber_2_entry_date (Stage 19) - use centralized function
     if (key === 'chamber_2_entry_date') {
-      const entryDate = new Date(value);
-      // Maturation is 90 days from batch start (startedAt), not from chamber entry
-      const batchStartDate = new Date(batch.startedAt);
-      const maturationEndDate = new Date(batchStartDate);
-      maturationEndDate.setDate(maturationEndDate.getDate() + 90);
-      
-      updates.chamber2EntryDate = entryDate;
-      updates.maturationEndDate = maturationEndDate;
-      updates.batchStatus = "MATURING";
+      const result = await batchService.recordChamber2Entry(batchId, value, { unit, notes });
+      if (!result.success) {
+        return res.status(400).json({ message: result.error, code: result.code });
+      }
+      // recordChamber2Entry handles all updates including measurements, so skip inline update
+      await storage.logBatchAction({
+        batchId,
+        stageId: batch.currentStageId,
+        action: "canonical_input",
+        details: { key, value, unit, notes }
+      });
+      const updatedBatch = await storage.getBatch(batchId);
+      return res.json(updatedBatch);
     }
 
     updates.measurements = measurements;
@@ -1513,20 +1517,18 @@ export async function registerRoutes(
             ));
           }
           
-          // Save the date
-          const measurements = (activeBatch.measurements as Record<string, any>) || {};
-          measurements["chamber_2_entry_date"] = dateValue;
+          // Use centralized function for chamber 2 entry
+          const result = await batchService.recordChamber2Entry(activeBatch.id, dateValue);
           
-          // Calculate maturation end date (90 days from batch start, not from chamber entry)
-          const batchStartDate = new Date(activeBatch.startedAt);
-          batchStartDate.setDate(batchStartDate.getDate() + 90);
-          const maturationEndDate = batchStartDate.toISOString().split('T')[0];
+          if (!result.success) {
+            return res.status(200).json(buildAlexaResponse(
+              result.error || "Erro ao registrar data.",
+              false,
+              "Tente novamente."
+            ));
+          }
           
-          await storage.updateBatch(activeBatch.id, { 
-            measurements,
-            chamber2EntryDate: new Date(dateValue),
-            maturationEndDate: new Date(maturationEndDate)
-          });
+          const maturationEndDate = result.maturationEndDateISO!.split('T')[0];
           console.log(`[Stage 19] Chamber 2 entry date registered: ${dateValue}, maturation ends: ${maturationEndDate}`);
           
           // Format date for speech
