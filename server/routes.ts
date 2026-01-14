@@ -1522,7 +1522,8 @@ export async function registerRoutes(
           
           await storage.updateBatch(activeBatch.id, { 
             measurements,
-            chamber2EntryDate: new Date(dateValue)
+            chamber2EntryDate: new Date(dateValue),
+            maturationEndDate: new Date(maturationEndDate)
           });
           console.log(`[Stage 19] Chamber 2 entry date registered: ${dateValue}, maturation ends: ${maturationEndDate}`);
           
