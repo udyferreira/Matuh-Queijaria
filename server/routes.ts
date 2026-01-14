@@ -587,24 +587,7 @@ export async function registerRoutes(
     return response;
   }
   
-  // Normalize pH value: 54 -> 5.4, 62 -> 6.2, etc.
-  function normalizePHValue(rawValue: string | number): number | null {
-    let num = typeof rawValue === 'string' ? parseFloat(rawValue) : rawValue;
-    if (isNaN(num)) return null;
-    
-    // If it's an integer between 40 and 80, divide by 10
-    // This handles cases like "54" spoken as "cinquenta e quatro" for pH 5.4
-    if (Number.isInteger(num) && num >= 40 && num <= 80) {
-      num = num / 10;
-    }
-    
-    // Validate pH range (4.0 to 7.5 is typical for cheese making)
-    if (num < 4.0 || num > 7.5) {
-      return null;
-    }
-    
-    return Math.round(num * 10) / 10; // Round to 1 decimal place
-  }
+  // normalizePHValue is now centralized in batchService.ts
   
   // Import LLM-based command interpreter
   const { interpretCommand } = await import("./interpreter.js");
@@ -840,13 +823,11 @@ export async function registerRoutes(
         }
         
         if (dateType === "chamber_2_entry") {
-          const measurements = (activeBatch.measurements as Record<string, any>) || {};
-          measurements["chamber_2_entry_date"] = dateValue;
-          await storage.updateBatch(activeBatch.id, { 
-            measurements,
-            chamber2EntryDate: new Date(dateValue)
-          });
-          return { speech: `Data de entrada na câmara dois ${dateValue} registrada.`, shouldEndSession: false };
+          const result = await batchService.recordChamber2Entry(activeBatch.id, dateValue);
+          if (!result.success) {
+            return { speech: result.error || "Erro ao registrar data.", shouldEndSession: false };
+          }
+          return { speech: `Data de entrada na câmara dois ${dateValue} registrada. Maturação termina em 90 dias.`, shouldEndSession: false };
         }
         
         return { speech: "Tipo de data não reconhecido.", shouldEndSession: false };
@@ -1253,11 +1234,11 @@ export async function registerRoutes(
           
           console.log(`[Stage ${stageId}] Slots received - pH: ${phSlot}, pieces: ${piecesSlot}`);
           
-          // Normalize pH value
+          // Normalize pH value using centralized function
           let phValue: number | undefined;
           let phError: string | undefined;
           if (phSlot) {
-            const normalized = normalizePHValue(phSlot);
+            const normalized = batchService.normalizePHValue(phSlot);
             if (normalized !== null) {
               phValue = normalized;
             } else {
@@ -1326,36 +1307,18 @@ export async function registerRoutes(
               ));
             }
             
-            // Step 3: Both values present - save and confirm
-            if (phValue !== undefined) {
-              measurements["initial_ph"] = phValue;
-            }
-            if (piecesQuantity !== undefined) {
-              measurements["pieces_quantity"] = piecesQuantity;
+            // Step 3: Both values present - use centralized logPh
+            const result = await batchService.logPh(activeBatch.id, effectivePh, effectivePieces);
+            
+            if (!result.success) {
+              return res.status(200).json(buildAlexaResponse(
+                result.error || "Erro ao registrar valores.",
+                false,
+                "Tente novamente."
+              ));
             }
             
-            // Add to history for tracking
-            const history = measurements._history || [];
-            if (phValue !== undefined) {
-              history.push({
-                key: "initial_ph",
-                value: phValue,
-                stageId: 13,
-                timestamp: new Date().toISOString()
-              });
-            }
-            if (piecesQuantity !== undefined) {
-              history.push({
-                key: "pieces_quantity",
-                value: piecesQuantity,
-                stageId: 13,
-                timestamp: new Date().toISOString()
-              });
-            }
-            measurements._history = history;
-            
-            await storage.updateBatch(activeBatch.id, { measurements });
-            console.log(`[Stage 13] Complete: pH ${effectivePh}, ${effectivePieces} pieces saved.`);
+            console.log(`[Stage 13] Complete: pH ${effectivePh}, ${effectivePieces} pieces saved via batchService.`);
             
             return res.status(200).json(buildAlexaResponse(
               `pH ${effectivePh} e ${effectivePieces} peças registrados. Etapa concluída. Diga 'avançar' para continuar.`,
@@ -1366,11 +1329,10 @@ export async function registerRoutes(
           
           // ============================================
           // STAGE 15: Loop de viradas - só pH (ignora peças)
+          // Uses centralized batchService.logPh()
           // ============================================
           if (stageId === 15) {
             console.log(`[Stage 15] Processing pH for turning loop`);
-            
-            const measurements = (activeBatch.measurements as Record<string, any>) || {};
             
             // Step 1: If no pH provided, elicit it
             if (phValue === undefined) {
@@ -1387,67 +1349,36 @@ export async function registerRoutes(
               ));
             }
             
-            // Initialize pH measurements array if needed
-            if (!measurements.ph_measurements) {
-              measurements.ph_measurements = [];
+            // Use centralized logPh function
+            const result = await batchService.logPh(activeBatch.id, phValue);
+            
+            if (!result.success) {
+              return res.status(200).json(buildAlexaResponse(
+                result.error || "Erro ao registrar pH.",
+                false,
+                "Tente novamente."
+              ));
             }
             
-            // CRITICAL: Set ph_value for advanceBatch loop exit condition check
-            measurements.ph_value = phValue;
+            const turningCycles = result.turningCyclesCount || 1;
+            console.log(`[Stage 15] pH ${phValue} recorded. Turning cycles: ${turningCycles}`);
             
-            // Add pH to measurements history
-            measurements.ph_measurements.push({
-              value: phValue,
-              timestamp: new Date().toISOString()
-            });
-            
-            // Track in _history
-            const history = measurements._history || [];
-            history.push({
-              key: "ph_measurement",
-              value: phValue,
-              stageId: 15,
-              timestamp: new Date().toISOString()
-            });
-            measurements._history = history;
-            
-            // Increment turning cycles count
-            const currentTurningCycles = activeBatch.turningCyclesCount || 0;
-            const newTurningCycles = currentTurningCycles + 1;
-            
-            console.log(`[Stage 15] pH ${phValue} recorded. Turning cycles: ${newTurningCycles}`);
-            
-            // Check loop exit condition: pH <= 5.2
-            const TARGET_PH = 5.2;
-            
-            if (phValue <= TARGET_PH) {
-              // pH reached target - exit loop and advance to next stage
-              await storage.updateBatch(activeBatch.id, { 
-                measurements,
-                turningCyclesCount: newTurningCycles
-              });
-              
-              // Advance to next stage
+            if (result.shouldExitLoop) {
+              // pH reached target - advance to next stage
               const advanceResult = await batchService.advanceBatch(activeBatch.id);
-              
-              console.log(`[Stage 15] pH ${phValue} <= ${TARGET_PH}. Loop complete. Advancing to stage ${advanceResult.nextStage?.id || 16}.`);
+              console.log(`[Stage 15] pH ${phValue} reached target. Loop complete. Advancing to stage ${advanceResult.nextStage?.id || 16}.`);
               
               return res.status(200).json(buildAlexaResponse(
-                `pH ${phValue} registrado. Valor ideal atingido! Queijos virados ${newTurningCycles} vezes. Avançando para a próxima etapa.`,
+                `pH ${phValue} registrado. Valor ideal atingido! Queijos virados ${turningCycles} vezes. Avançando para a próxima etapa.`,
                 false,
                 "O que mais posso ajudar?"
               ));
             } else {
               // pH still above target - continue loop
-              await storage.updateBatch(activeBatch.id, { 
-                measurements,
-                turningCyclesCount: newTurningCycles
-              });
-              
-              console.log(`[Stage 15] pH ${phValue} > ${TARGET_PH}. Continue monitoring.`);
+              console.log(`[Stage 15] pH ${phValue} above target. Continue monitoring.`);
               
               return res.status(200).json(buildAlexaResponse(
-                `pH ${phValue} registrado. Queijos virados ${newTurningCycles} vez${newTurningCycles > 1 ? 'es' : ''}. Continue monitorando ou informe novo pH.`,
+                `pH ${phValue} registrado. Queijos virados ${turningCycles} vez${turningCycles > 1 ? 'es' : ''}. Continue monitorando ou informe novo pH.`,
                 false,
                 "Informe o próximo pH ou diga 'status' para ver o progresso."
               ));

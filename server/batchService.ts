@@ -5,6 +5,27 @@ import { randomBytes } from "crypto";
 
 const generateId = () => randomBytes(8).toString('hex');
 
+/**
+ * Normalize pH value: 54 -> 5.4, 62 -> 6.2, etc.
+ * Handles cases like "54" spoken as "cinquenta e quatro" for pH 5.4
+ */
+export function normalizePHValue(rawValue: string | number): number | null {
+  let num = typeof rawValue === 'string' ? parseFloat(rawValue) : rawValue;
+  if (isNaN(num)) return null;
+  
+  // If it's an integer between 40 and 80, divide by 10
+  if (Number.isInteger(num) && num >= 40 && num <= 80) {
+    num = num / 10;
+  }
+  
+  // Validate pH range (4.0 to 7.5 is typical for cheese making)
+  if (num < 4.0 || num > 7.5) {
+    return null;
+  }
+  
+  return Math.round(num * 10) / 10; // Round to 1 decimal place
+}
+
 export interface StartBatchParams {
   milkVolumeL: number;
   milkTemperatureC: number;
@@ -305,17 +326,36 @@ export async function getBatchStatus(batchId: number) {
   };
 }
 
-export async function logPh(batchId: number, phValue: number, piecesQuantity?: number) {
+const TARGET_PH = 5.2;
+
+export interface LogPhResult {
+  success: boolean;
+  error?: string;
+  phValue?: number;
+  piecesQuantity?: number;
+  stageId?: number;
+  turningCyclesCount?: number;
+  shouldExitLoop?: boolean;
+  phReachedTarget?: boolean;
+}
+
+/**
+ * Log pH measurement for any stage
+ * - Stage 13: Stores as initial_ph, optionally with pieces_quantity
+ * - Stage 15: Stores in ph_measurements array, increments turning cycles, checks loop exit condition
+ * - Other stages: Stores as ph_value
+ */
+export async function logPh(batchId: number, phValue: number, piecesQuantity?: number): Promise<LogPhResult> {
   const batch = await storage.getBatch(batchId);
   if (!batch) return { success: false, error: "Lote não encontrado" };
   
   const measurements = (batch.measurements as any) || {};
   const inputHistory = measurements._history || [];
   const timestamp = new Date().toISOString();
+  const stageId = batch.currentStageId;
   
   // Stage 13: Store as initial_ph (per recipe.yml stored_values)
-  // Stage 15+: Store as ph_value in ph_measurements array
-  if (batch.currentStageId === 13) {
+  if (stageId === 13) {
     measurements.initial_ph = phValue;
     inputHistory.push({ key: 'initial_ph', value: phValue, timestamp, stageId: 13 });
     
@@ -327,33 +367,53 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
     // For loop stages (15) and others, use ph_value and add to history
     measurements.ph_value = phValue;
     const phHistory = measurements.ph_measurements || [];
-    phHistory.push({ value: phValue, timestamp, stageId: batch.currentStageId });
+    phHistory.push({ value: phValue, timestamp, stageId });
     measurements.ph_measurements = phHistory;
-    inputHistory.push({ key: 'ph_value', value: phValue, timestamp, stageId: batch.currentStageId });
+    inputHistory.push({ key: 'ph_measurement', value: phValue, timestamp, stageId });
   }
   
   measurements._history = inputHistory;
   const updates: any = { measurements };
   
-  // Stage 15: Increment turning cycles count
-  if (batch.currentStageId === 15) {
+  let turningCyclesCount: number | undefined;
+  let shouldExitLoop = false;
+  let phReachedTarget = false;
+  
+  // Stage 15: Increment turning cycles count and check loop exit condition
+  if (stageId === 15) {
     const currentCount = (batch as any).turningCyclesCount || 0;
-    updates.turningCyclesCount = currentCount + 1;
+    turningCyclesCount = currentCount + 1;
+    updates.turningCyclesCount = turningCyclesCount;
+    
+    // Check if pH reached target (loop exit condition)
+    if (phValue <= TARGET_PH) {
+      shouldExitLoop = true;
+      phReachedTarget = true;
+    }
   }
   
   await storage.updateBatch(batchId, updates);
   
   await storage.logBatchAction({
     batchId,
-    stageId: batch.currentStageId,
+    stageId,
     action: "log_ph",
     details: { 
       ph_value: phValue,
-      ...(piecesQuantity !== undefined && { pieces_quantity: piecesQuantity })
+      ...(piecesQuantity !== undefined && { pieces_quantity: piecesQuantity }),
+      ...(turningCyclesCount !== undefined && { turning_cycles: turningCyclesCount })
     }
   });
   
-  return { success: true, phValue, piecesQuantity };
+  return { 
+    success: true, 
+    phValue, 
+    piecesQuantity, 
+    stageId,
+    turningCyclesCount,
+    shouldExitLoop,
+    phReachedTarget
+  };
 }
 
 export async function logTime(batchId: number, timeValue: string, timeType?: string) {
