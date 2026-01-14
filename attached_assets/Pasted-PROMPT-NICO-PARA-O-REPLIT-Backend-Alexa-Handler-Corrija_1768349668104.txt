@@ -1,0 +1,46 @@
+PROMPT ÚNICO PARA O REPLIT (Backend + Alexa Handler)
+Corrija o backend para resolver definitivamente a coleta de inputs na etapa 13 (RegisterPHAndPiecesIntent) e eliminar inconsistências vistas nos logs.
+1) Etapa 13: Implementar slot elicitation (Dialog) no handler de RegisterPHAndPiecesIntent
+Hoje a intent chega, mas os slots vêm vazios (ph_value sem value e pieces_quantity com "?"). Ajuste o handler para:
+Se ph_value estiver ausente ou inválido:
+Responder com Dialog.ElicitSlot para o slot ph_value
+Prompt: “Qual é o pH inicial? Diga, por exemplo: ‘cinco vírgula quatro’.”
+Reprompt equivalente
+Se pieces_quantity estiver ausente ou inválido:
+Responder com Dialog.ElicitSlot para o slot pieces_quantity
+Prompt: “Quantas peças foram enformadas?”
+Reprompt equivalente
+Se ambos estiverem presentes:
+Normalizar e salvar (ver item 2)
+Marcar inputs satisfeitos e permitir avanço da etapa 13
+Observação: manter shouldEndSession=false durante a elicitação.
+2) Normalização de pH (aceitar “54” como 5.4)
+Quando ph_value vier como número inteiro entre 40 e 80 (ex.: 54), interpretar como “5.4” (dividir por 10). Isso permite o operador dizer “cinquenta e quatro” para pH 5,4.
+Regras:
+Se ph_value >= 10 e <= 99 e não tiver parte decimal: ph = ph_value / 10
+Se ph_value já vier decimal (ex.: 5.4), manter
+Validar faixa plausível de pH (ex.: 4.0 a 7.5). Se fora, pedir novamente via ElicitSlot.
+3) Persistência correta na etapa 13
+Salvar ph_value normalizado como initial_ph
+Salvar pieces_quantity como número inteiro
+Registrar ambos com stageId=13 no histórico de medições
+Somente completar a etapa 13 quando ambos existirem e forem válidos
+4) Gating: manter, mas garantir que RegisterPHAndPiecesIntent funcione mesmo com slots faltando
+O gating já bloqueia ProcessCommandIntent na etapa 13 (bom). Garanta que:
+Quando a intent esperada chegar com slots incompletos, o backend não devolva apenas “diga a frase completa”; deve entrar no modo ElicitSlot até completar.
+5) Ajuste de UX das mensagens
+Substituir o texto atual repetitivo por fluxo de duas perguntas:
+Primeiro pH
+Depois peças
+Isso reduz falhas de reconhecimento e melhora taxa de sucesso.
+6) Corrigir chamadas inválidas GET /api/batches/0
+Há log de GET /api/batches/0 404. Corrigir o código que está gerando id 0 (provável default) para:
+Não chamar endpoint com id 0, ou
+Retornar 204/empty sem log de erro (evitar ruído), ou
+Ajustar o chamador para usar o batch ativo real.
+7) Testes
+Adicionar testes (ou logs de verificação) para estes cenários na etapa 13:
+“pH cinco vírgula quatro” + “seis peças” (em duas respostas)
+“pH cinco ponto quatro e seis peças” (uma fala)
+“cinquenta e quatro e seis peças” (uma fala) → deve interpretar pH=5.4 e pieces=6
+Entregar commit com mudanças no handler Alexa (routes/controller), serviço de batch (validação/persistência), e quaisquer utilitários de normalização.

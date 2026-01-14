@@ -30,7 +30,7 @@ export function useCompletedBatches() {
   });
 }
 
-export function useBatch(id: number) {
+export function useBatch(id: number, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: [api.batches.get.path, id],
     queryFn: async () => {
@@ -40,6 +40,7 @@ export function useBatch(id: number) {
       return api.batches.get.responses[200].parse(await res.json());
     },
     refetchInterval: 2000, // Frequent updates for active production
+    enabled: options?.enabled !== false && id > 0, // Disable for invalid IDs
   });
 }
 

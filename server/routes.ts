@@ -531,6 +531,75 @@ export async function registerRoutes(
     return response;
   }
   
+  // Build Alexa Dialog.ElicitSlot response for slot elicitation
+  function buildAlexaElicitSlotResponse(
+    slotToElicit: string,
+    intentName: string,
+    speechText: string,
+    repromptText?: string,
+    currentSlots?: Record<string, any>
+  ) {
+    const response: any = {
+      version: "1.0",
+      response: {
+        outputSpeech: {
+          type: "PlainText",
+          text: speechText
+        },
+        shouldEndSession: false,
+        directives: [
+          {
+            type: "Dialog.ElicitSlot",
+            slotToElicit: slotToElicit,
+            updatedIntent: {
+              name: intentName,
+              confirmationStatus: "NONE",
+              slots: {}
+            }
+          }
+        ],
+        reprompt: {
+          outputSpeech: {
+            type: "PlainText",
+            text: repromptText || speechText
+          }
+        }
+      }
+    };
+    
+    // Copy existing slot values to preserve state
+    if (currentSlots) {
+      for (const [key, value] of Object.entries(currentSlots)) {
+        response.response.directives[0].updatedIntent.slots[key] = {
+          name: key,
+          value: value?.value,
+          confirmationStatus: "NONE"
+        };
+      }
+    }
+    
+    return response;
+  }
+  
+  // Normalize pH value: 54 -> 5.4, 62 -> 6.2, etc.
+  function normalizePHValue(rawValue: string | number): number | null {
+    let num = typeof rawValue === 'string' ? parseFloat(rawValue) : rawValue;
+    if (isNaN(num)) return null;
+    
+    // If it's an integer between 40 and 80, divide by 10
+    // This handles cases like "54" spoken as "cinquenta e quatro" for pH 5.4
+    if (Number.isInteger(num) && num >= 40 && num <= 80) {
+      num = num / 10;
+    }
+    
+    // Validate pH range (4.0 to 7.5 is typical for cheese making)
+    if (num < 4.0 || num > 7.5) {
+      return null;
+    }
+    
+    return Math.round(num * 10) / 10; // Round to 1 decimal place
+  }
+  
   // Import LLM-based command interpreter
   const { interpretCommand } = await import("./interpreter.js");
   
@@ -1154,6 +1223,7 @@ export async function registerRoutes(
         }
         
         // --- RegisterPHAndPiecesIntent: Structured pH and pieces registration (Stage 13) ---
+        // Uses Dialog.ElicitSlot for step-by-step collection: first pH, then pieces
         if (intentName === "RegisterPHAndPiecesIntent") {
           console.log("RegisterPHAndPiecesIntent received:", JSON.stringify(slots, null, 2));
           
@@ -1176,75 +1246,88 @@ export async function registerRoutes(
             ));
           }
           
-          // Extract pH value from AMAZON.NUMBER slot
+          // Extract pH value from slot with normalization (54 -> 5.4)
           const phSlot = slots.ph_value?.value || slots.phValue?.value;
-          // Extract pieces quantity from AMAZON.NUMBER slot
           const piecesSlot = slots.pieces_quantity?.value || slots.piecesQuantity?.value || slots.pieces?.value;
-          
-          let phValue: number | undefined;
-          let piecesQuantity: number | undefined;
-          
-          if (phSlot) {
-            const parsed = parseFloat(phSlot);
-            if (!isNaN(parsed) && parsed >= 1 && parsed <= 14) {
-              phValue = parsed;
-            }
-          }
-          
-          if (piecesSlot) {
-            const parsed = parseInt(piecesSlot, 10);
-            if (!isNaN(parsed) && parsed > 0) {
-              piecesQuantity = parsed;
-            }
-          }
           
           // Check what's already registered in measurements
           const measurements = (activeBatch.measurements as Record<string, any>) || {};
           const existingPh = measurements["initial_ph"];
           const existingPieces = measurements["pieces_quantity"];
           
-          // Build response based on what was provided and what's still needed
-          const results: string[] = [];
-          const stillNeeded: string[] = [];
-          
-          if (phValue !== undefined) {
-            measurements["initial_ph"] = phValue;
-            results.push(`pH ${phValue} registrado`);
-          } else if (existingPh === undefined) {
-            stillNeeded.push("o pH");
+          // Normalize pH value
+          let phValue: number | undefined;
+          let phError: string | undefined;
+          if (phSlot) {
+            const normalized = normalizePHValue(phSlot);
+            if (normalized !== null) {
+              phValue = normalized;
+            } else {
+              // Invalid pH value - need to elicit again
+              phError = "pH inválido";
+            }
           }
           
-          if (piecesQuantity !== undefined) {
-            measurements["pieces_quantity"] = piecesQuantity;
-            results.push(`${piecesQuantity} peças registradas`);
-          } else if (existingPieces === undefined) {
-            stillNeeded.push("a quantidade de peças");
+          // Parse pieces quantity
+          let piecesQuantity: number | undefined;
+          if (piecesSlot && piecesSlot !== "?") {
+            const parsed = parseInt(piecesSlot, 10);
+            if (!isNaN(parsed) && parsed > 0) {
+              piecesQuantity = parsed;
+            }
           }
           
-          // Update batch if we got new values
-          if (results.length > 0) {
-            await storage.updateBatch(activeBatch.id, { measurements });
-            console.log(`[Stage 13] Registered: ${results.join(', ')}`);
-          }
-          
-          // Build response
-          if (stillNeeded.length > 0) {
-            const responseText = results.length > 0 
-              ? `${results.join(' e ')}. Ainda falta informar ${stillNeeded.join(' e ')}.`
-              : `Por favor, informe ${stillNeeded.join(' e ')}. Diga: 'pH cinco ponto quatro e seis peças'.`;
-            return res.status(200).json(buildAlexaResponse(
-              responseText,
-              false,
-              `Informe ${stillNeeded.join(' e ')}.`
+          // Step 1: If pH is missing or invalid, elicit pH slot
+          if (phValue === undefined && existingPh === undefined) {
+            const prompt = phError 
+              ? `${phError}. Qual é o pH inicial? Diga, por exemplo: 'cinco vírgula quatro'.`
+              : "Qual é o pH inicial? Diga, por exemplo: 'cinco vírgula quatro'.";
+            return res.status(200).json(buildAlexaElicitSlotResponse(
+              "ph_value",
+              "RegisterPHAndPiecesIntent",
+              prompt,
+              "Qual é o pH inicial?",
+              slots
             ));
           }
           
-          // Both values registered - check if we also have existing values
+          // Step 2: If pieces is missing, elicit pieces slot
+          if (piecesQuantity === undefined && existingPieces === undefined) {
+            // First save pH if we got it
+            if (phValue !== undefined && existingPh === undefined) {
+              measurements["initial_ph"] = phValue;
+              await storage.updateBatch(activeBatch.id, { measurements });
+              console.log(`[Stage 13] pH ${phValue} registrado. Aguardando quantidade de peças.`);
+            }
+            
+            const prompt = phValue !== undefined 
+              ? `pH ${phValue} registrado. Quantas peças foram enformadas?`
+              : "Quantas peças foram enformadas?";
+            return res.status(200).json(buildAlexaElicitSlotResponse(
+              "pieces_quantity",
+              "RegisterPHAndPiecesIntent",
+              prompt,
+              "Quantas peças foram enformadas?",
+              slots
+            ));
+          }
+          
+          // Step 3: Both values present - save and confirm
           const finalPh = phValue ?? existingPh;
           const finalPieces = piecesQuantity ?? existingPieces;
           
+          // Save new values
+          if (phValue !== undefined) {
+            measurements["initial_ph"] = phValue;
+          }
+          if (piecesQuantity !== undefined) {
+            measurements["pieces_quantity"] = piecesQuantity;
+          }
+          await storage.updateBatch(activeBatch.id, { measurements });
+          console.log(`[Stage 13] Completo: pH ${finalPh}, ${finalPieces} peças`);
+          
           return res.status(200).json(buildAlexaResponse(
-            `${results.join(' e ')}. Etapa 13 completa. Diga 'avançar' para continuar.`,
+            `Registrado: pH ${finalPh} e ${finalPieces} peças. Etapa 13 completa. Diga 'avançar' para continuar.`,
             false,
             "Diga 'avançar' para continuar."
           ));

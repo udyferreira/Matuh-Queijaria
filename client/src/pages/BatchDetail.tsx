@@ -61,8 +61,11 @@ const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secon
 export default function BatchDetail() {
   const [, params] = useRoute("/batch/:id");
   const [, navigate] = useLocation();
-  const id = parseInt(params?.id || "0");
-  const { data: batch, isLoading } = useBatch(id);
+  const parsedId = params?.id ? parseInt(params.id) : 0;
+  const id = parsedId > 0 ? parsedId : 0;
+  
+  // Query disabled for id <= 0, preventing GET /api/batches/0
+  const { data: batch, isLoading } = useBatch(id, { enabled: id > 0 });
   const { mutate: advance, isPending: isAdvancing } = useAdvanceStage();
   const { mutate: logInput, isPending: isLogging } = useLogMeasurement();
   const { mutate: logCanonical, isPending: isLoggingCanonical } = useLogCanonicalInput();
@@ -78,6 +81,12 @@ export default function BatchDetail() {
   const [pauseReason, setPauseReason] = useState("");
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [showPauseDialog, setShowPauseDialog] = useState(false);
+  
+  // Redirect to home if invalid id (after all hooks are called)
+  if (id === 0) {
+    navigate("/");
+    return null;
+  }
 
   if (isLoading || !batch) {
     return (
