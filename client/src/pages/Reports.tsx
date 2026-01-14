@@ -62,6 +62,13 @@ function formatValue(key: string, value: number | string): string {
   if (key === "timestamp") {
     return new Date(value).toLocaleString("pt-BR");
   }
+  if (key === "loop_exit_reason") {
+    const reasonMap: Record<string, string> = {
+      "ph_reached": "pH ideal atingido",
+      "time_limit": "Tempo limite atingido"
+    };
+    return reasonMap[String(value)] || String(value);
+  }
   if (typeof value === "number") {
     return value.toString();
   }
@@ -174,7 +181,7 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
       
       {(expanded || printRef) && (
         <CardContent data-testid={`content-batch-report-${batch.id}`}>
-          {stageIds.length === 0 ? (
+          {stageIds.length === 0 && !batch.chamber2EntryDate ? (
             <p className="text-muted-foreground text-center py-4">
               Nenhuma medição registrada para este lote.
             </p>
@@ -208,6 +215,34 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
                   </div>
                 );
               })}
+              
+              {batch.chamber2EntryDate && (
+                <div className="border-l-2 border-primary/30 pl-4 print:border-gray-400">
+                  <h4 className="font-semibold text-sm mb-2">
+                    Etapa 19: {STAGE_NAMES[19]}
+                  </h4>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex justify-between items-center bg-secondary/30 rounded-md px-3 py-2 text-sm print:bg-gray-100">
+                      <span className="text-muted-foreground print:text-gray-600">
+                        Data de Entrada na Câmara 2
+                      </span>
+                      <span className="font-medium">
+                        {new Date(batch.chamber2EntryDate).toLocaleDateString("pt-BR")}
+                      </span>
+                    </div>
+                    {batch.maturationEndDate && (
+                      <div className="flex justify-between items-center bg-secondary/30 rounded-md px-3 py-2 text-sm print:bg-gray-100">
+                        <span className="text-muted-foreground print:text-gray-600">
+                          Fim da Maturação (90 dias)
+                        </span>
+                        <span className="font-medium">
+                          {new Date(batch.maturationEndDate).toLocaleDateString("pt-BR")}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>

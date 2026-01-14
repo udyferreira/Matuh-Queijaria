@@ -637,7 +637,7 @@ export default function BatchDetail() {
                     history.forEach((entry) => {
                       let label: string;
                       
-                      if (entry.key === 'ph_value') {
+                      if (entry.key === 'ph_value' || entry.key === 'ph_measurement') {
                         phByStage[entry.stageId] = (phByStage[entry.stageId] || 0) + 1;
                         const count = phByStage[entry.stageId];
                         label = count === 1 
@@ -647,7 +647,17 @@ export default function BatchDetail() {
                         label = `Etapa ${entry.stageId} - ${labelMap[entry.key] || entry.key.replace(/_/g, ' ')}`;
                       }
                       
-                      items.push({ label, value: String(entry.value) });
+                      // Traduzir valores específicos
+                      let displayValue = String(entry.value);
+                      if (entry.key === 'loop_exit_reason') {
+                        const reasonMap: Record<string, string> = {
+                          "ph_reached": "pH ideal atingido",
+                          "time_limit": "Tempo limite atingido"
+                        };
+                        displayValue = reasonMap[displayValue] || displayValue;
+                      }
+                      
+                      items.push({ label, value: displayValue });
                     });
                   } else {
                     // Fallback para dados sem histórico
