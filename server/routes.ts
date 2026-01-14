@@ -1222,43 +1222,30 @@ export async function registerRoutes(
           ));
         }
         
-        // --- RegisterPHAndPiecesIntent: Structured pH and pieces registration (Stage 13) ---
-        // Uses Dialog.ElicitSlot for step-by-step collection: first pH, then pieces
-        // CRITICAL: Every branch must return a valid Alexa response - never empty {}
+        // --- RegisterPHAndPiecesIntent: Stage-aware pH registration ---
+        // Stage 13: pH + pieces (multi-turn dialog)
+        // Stage 15: pH only (loop control with turning cycles)
+        // CRITICAL: Decision based on stageId, NOT intent name alone
         if (intentName === "RegisterPHAndPiecesIntent") {
           console.log("RegisterPHAndPiecesIntent received:", JSON.stringify(slots, null, 2));
           
           const activeBatch = await batchService.getActiveBatch();
           if (!activeBatch) {
             return res.status(200).json(buildAlexaResponse(
-              "Não há lote ativo para registrar pH e quantidade de peças.",
+              "Não há lote ativo para registrar pH.",
               false,
               "O que mais posso ajudar?"
             ));
           }
           
-          // Check if we're at the correct stage (13)
-          const currentStage = recipeManager.getStage(activeBatch.currentStageId);
-          if (activeBatch.currentStageId !== 13) {
-            return res.status(200).json(buildAlexaResponse(
-              `Esta etapa não requer pH e quantidade de peças. Estamos na etapa ${activeBatch.currentStageId}: ${currentStage?.name || 'em andamento'}.`,
-              false,
-              "O que mais posso ajudar?"
-            ));
-          }
+          const stageId = activeBatch.currentStageId;
+          const currentStage = recipeManager.getStage(stageId);
           
           // Extract pH value from slot with normalization (54 -> 5.4)
           const phSlot = slots.ph_value?.value || slots.phValue?.value;
           const piecesSlot = slots.pieces_quantity?.value || slots.piecesQuantity?.value || slots.pieces?.value;
           
-          console.log(`[Stage 13] Slots received - pH: ${phSlot}, pieces: ${piecesSlot}`);
-          
-          // Check what's already registered in measurements
-          const measurements = (activeBatch.measurements as Record<string, any>) || {};
-          const existingPh = measurements["initial_ph"];
-          const existingPieces = measurements["pieces_quantity"];
-          
-          console.log(`[Stage 13] Existing values - pH: ${existingPh}, pieces: ${existingPieces}`);
+          console.log(`[Stage ${stageId}] Slots received - pH: ${phSlot}, pieces: ${piecesSlot}`);
           
           // Normalize pH value
           let phValue: number | undefined;
@@ -1272,93 +1259,202 @@ export async function registerRoutes(
             }
           }
           
-          // Parse pieces quantity
-          let piecesQuantity: number | undefined;
-          if (piecesSlot && piecesSlot !== "?") {
-            const parsed = parseInt(piecesSlot, 10);
-            if (!isNaN(parsed) && parsed > 0) {
-              piecesQuantity = parsed;
-            }
-          }
-          
-          console.log(`[Stage 13] Parsed values - pH: ${phValue}, pieces: ${piecesQuantity}`);
-          
-          // Determine the final pH to use (prefer new value over existing)
-          const effectivePh = phValue ?? existingPh;
-          const effectivePieces = piecesQuantity ?? existingPieces;
-          
-          // Step 1: If we have no pH at all, elicit it
-          if (effectivePh === undefined) {
-            const prompt = phError 
-              ? `${phError}. Qual é o pH inicial? Diga, por exemplo: 'cinco vírgula quatro'.`
-              : "Qual é o pH inicial? Diga, por exemplo: 'cinco vírgula quatro'.";
-            console.log(`[Stage 13] Eliciting pH`);
-            return res.status(200).json(buildAlexaElicitSlotResponse(
-              "ph_value",
-              "RegisterPHAndPiecesIntent",
-              prompt,
-              "Qual é o pH inicial?",
-              slots
-            ));
-          }
-          
-          // Step 2: If we have pH but no pieces, save pH and elicit pieces
-          if (effectivePieces === undefined) {
-            // Always save the current pH value (may be new or existing)
-            if (phValue !== undefined) {
-              measurements["initial_ph"] = phValue;
-              await storage.updateBatch(activeBatch.id, { measurements });
-              console.log(`[Stage 13] pH ${phValue} saved. Eliciting pieces.`);
+          // ============================================
+          // STAGE 13: pH inicial + quantidade de peças
+          // ============================================
+          if (stageId === 13) {
+            console.log(`[Stage 13] Processing pH and pieces registration`);
+            
+            const measurements = (activeBatch.measurements as Record<string, any>) || {};
+            const existingPh = measurements["initial_ph"];
+            const existingPieces = measurements["pieces_quantity"];
+            
+            console.log(`[Stage 13] Existing values - pH: ${existingPh}, pieces: ${existingPieces}`);
+            
+            // Parse pieces quantity
+            let piecesQuantity: number | undefined;
+            if (piecesSlot && piecesSlot !== "?") {
+              const parsed = parseInt(piecesSlot, 10);
+              if (!isNaN(parsed) && parsed > 0) {
+                piecesQuantity = parsed;
+              }
             }
             
-            const savedPh = phValue ?? existingPh;
-            // IMPORTANT: Prompt must match intent model samples: "{pieces_quantity} peças" or "são {pieces_quantity} peças"
-            const prompt = `pH ${savedPh} registrado. Quantas peças foram enformadas? Diga, por exemplo: seis peças.`;
-            return res.status(200).json(buildAlexaElicitSlotResponse(
-              "pieces_quantity",
-              "RegisterPHAndPiecesIntent",
-              prompt,
-              "Quantas peças? Diga, por exemplo: seis peças.",
-              slots
+            console.log(`[Stage 13] Parsed values - pH: ${phValue}, pieces: ${piecesQuantity}`);
+            
+            // Determine effective values (prefer new over existing)
+            const effectivePh = phValue ?? existingPh;
+            const effectivePieces = piecesQuantity ?? existingPieces;
+            
+            // Step 1: If we have no pH at all, elicit it
+            if (effectivePh === undefined) {
+              const prompt = phError 
+                ? `${phError}. Qual é o pH inicial? Diga, por exemplo: 'cinco vírgula quatro'.`
+                : "Qual é o pH inicial? Diga, por exemplo: 'cinco vírgula quatro'.";
+              console.log(`[Stage 13] Eliciting pH`);
+              return res.status(200).json(buildAlexaElicitSlotResponse(
+                "ph_value",
+                "RegisterPHAndPiecesIntent",
+                prompt,
+                "Qual é o pH inicial?",
+                slots
+              ));
+            }
+            
+            // Step 2: If we have pH but no pieces, save pH and elicit pieces
+            if (effectivePieces === undefined) {
+              if (phValue !== undefined) {
+                measurements["initial_ph"] = phValue;
+                await storage.updateBatch(activeBatch.id, { measurements });
+                console.log(`[Stage 13] pH ${phValue} saved. Eliciting pieces.`);
+              }
+              
+              const savedPh = phValue ?? existingPh;
+              const prompt = `pH ${savedPh} registrado. Quantas peças foram enformadas? Diga, por exemplo: seis peças.`;
+              return res.status(200).json(buildAlexaElicitSlotResponse(
+                "pieces_quantity",
+                "RegisterPHAndPiecesIntent",
+                prompt,
+                "Quantas peças? Diga, por exemplo: seis peças.",
+                slots
+              ));
+            }
+            
+            // Step 3: Both values present - save and confirm
+            if (phValue !== undefined) {
+              measurements["initial_ph"] = phValue;
+            }
+            if (piecesQuantity !== undefined) {
+              measurements["pieces_quantity"] = piecesQuantity;
+            }
+            
+            // Add to history for tracking
+            const history = measurements._history || [];
+            if (phValue !== undefined) {
+              history.push({
+                key: "initial_ph",
+                value: phValue,
+                stageId: 13,
+                timestamp: new Date().toISOString()
+              });
+            }
+            if (piecesQuantity !== undefined) {
+              history.push({
+                key: "pieces_quantity",
+                value: piecesQuantity,
+                stageId: 13,
+                timestamp: new Date().toISOString()
+              });
+            }
+            measurements._history = history;
+            
+            await storage.updateBatch(activeBatch.id, { measurements });
+            console.log(`[Stage 13] Complete: pH ${effectivePh}, ${effectivePieces} pieces saved.`);
+            
+            return res.status(200).json(buildAlexaResponse(
+              `pH ${effectivePh} e ${effectivePieces} peças registrados. Etapa concluída. Diga 'avançar' para continuar.`,
+              false,
+              "Diga 'avançar' para continuar."
             ));
           }
           
-          // Step 3: Both values present - save and confirm
-          // Save/update values
-          if (phValue !== undefined) {
-            measurements["initial_ph"] = phValue;
-          }
-          if (piecesQuantity !== undefined) {
-            measurements["pieces_quantity"] = piecesQuantity;
-          }
-          
-          // Add to history for tracking
-          const history = measurements._history || [];
-          if (phValue !== undefined) {
-            history.push({
-              key: "initial_ph",
+          // ============================================
+          // STAGE 15: Loop de viradas - só pH (ignora peças)
+          // ============================================
+          if (stageId === 15) {
+            console.log(`[Stage 15] Processing pH for turning loop`);
+            
+            const measurements = (activeBatch.measurements as Record<string, any>) || {};
+            
+            // Step 1: If no pH provided, elicit it
+            if (phValue === undefined) {
+              const prompt = phError 
+                ? `${phError}. Informe o pH atual dos queijos. Diga, por exemplo: 'pH cinco ponto dois'.`
+                : "Informe o pH atual dos queijos. Diga, por exemplo: 'pH cinco ponto dois'.";
+              console.log(`[Stage 15] Eliciting pH`);
+              return res.status(200).json(buildAlexaElicitSlotResponse(
+                "ph_value",
+                "RegisterPHAndPiecesIntent",
+                prompt,
+                "Qual o pH atual?",
+                slots
+              ));
+            }
+            
+            // Initialize pH measurements array if needed
+            if (!measurements.ph_measurements) {
+              measurements.ph_measurements = [];
+            }
+            
+            // CRITICAL: Set ph_value for advanceBatch loop exit condition check
+            measurements.ph_value = phValue;
+            
+            // Add pH to measurements history
+            measurements.ph_measurements.push({
               value: phValue,
-              stageId: 13,
               timestamp: new Date().toISOString()
             });
-          }
-          if (piecesQuantity !== undefined) {
+            
+            // Track in _history
+            const history = measurements._history || [];
             history.push({
-              key: "pieces_quantity",
-              value: piecesQuantity,
-              stageId: 13,
+              key: "ph_measurement",
+              value: phValue,
+              stageId: 15,
               timestamp: new Date().toISOString()
             });
+            measurements._history = history;
+            
+            // Increment turning cycles count
+            const currentTurningCycles = activeBatch.turningCyclesCount || 0;
+            const newTurningCycles = currentTurningCycles + 1;
+            
+            console.log(`[Stage 15] pH ${phValue} recorded. Turning cycles: ${newTurningCycles}`);
+            
+            // Check loop exit condition: pH <= 5.2
+            const TARGET_PH = 5.2;
+            
+            if (phValue <= TARGET_PH) {
+              // pH reached target - exit loop and advance to next stage
+              await storage.updateBatch(activeBatch.id, { 
+                measurements,
+                turningCyclesCount: newTurningCycles
+              });
+              
+              // Advance to next stage
+              const advanceResult = await batchService.advanceBatch(activeBatch.id);
+              
+              console.log(`[Stage 15] pH ${phValue} <= ${TARGET_PH}. Loop complete. Advancing to stage ${advanceResult.nextStage?.id || 16}.`);
+              
+              return res.status(200).json(buildAlexaResponse(
+                `pH ${phValue} registrado. Valor ideal atingido! Queijos virados ${newTurningCycles} vezes. Avançando para a próxima etapa.`,
+                false,
+                "O que mais posso ajudar?"
+              ));
+            } else {
+              // pH still above target - continue loop
+              await storage.updateBatch(activeBatch.id, { 
+                measurements,
+                turningCyclesCount: newTurningCycles
+              });
+              
+              console.log(`[Stage 15] pH ${phValue} > ${TARGET_PH}. Continue monitoring.`);
+              
+              return res.status(200).json(buildAlexaResponse(
+                `pH ${phValue} registrado. Queijos virados ${newTurningCycles} vez${newTurningCycles > 1 ? 'es' : ''}. Continue monitorando ou informe novo pH.`,
+                false,
+                "Informe o próximo pH ou diga 'status' para ver o progresso."
+              ));
+            }
           }
-          measurements._history = history;
           
-          await storage.updateBatch(activeBatch.id, { measurements });
-          console.log(`[Stage 13] Complete: pH ${effectivePh}, ${effectivePieces} pieces saved.`);
-          
+          // ============================================
+          // OTHER STAGES: Intent not valid here
+          // ============================================
           return res.status(200).json(buildAlexaResponse(
-            `pH ${effectivePh} e ${effectivePieces} peças registrados. Etapa concluída. Diga 'avançar' para continuar.`,
+            `Esta etapa não aceita registro de pH. Estamos na etapa ${stageId}: ${currentStage?.name || 'em andamento'}.`,
             false,
-            "Diga 'avançar' para continuar."
+            "O que mais posso ajudar?"
           ));
         }
         

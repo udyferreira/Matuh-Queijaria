@@ -219,9 +219,13 @@ stages:
       - "virar_queijos"
       - "medir_ph"
       - "registrar_ph"
+    operator_input_required:
+      - ph_value
     stored_values:
       - ph_measurements[]
       - turning_cycles_count
+    expected_intent: "RegisterPHAndPiecesIntent"
+    input_prompt: "Informe o pH atual dos queijos dizendo: 'pH cinco ponto dois'."
     llm_guidance: >
       Se o pH atingir 5,2 antes de completar 2 horas,
       o loop pode ser encerrado imediatamente.

@@ -1,0 +1,71 @@
+🔧 PROMPT ÚNICO PARA O REPLIT — CORREÇÃO DA ETAPA 15
+Copie exatamente como está e cole no Replit.
+🧩 PROMPT
+Contexto:
+Já existem os intents Alexa corretos (RegisterPHAndPiecesIntent, LogTimeIntent).
+Não criar novos intents.
+Não alterar o interaction model da Alexa.
+O problema está exclusivamente no backend (interpreter.ts + lógica por etapa).
+🎯 OBJETIVO
+Corrigir a Etapa 15 (Virar queijos e medir pH – loop controlado) para que:
+Aceite corretamente pH via RegisterPHAndPiecesIntent
+Não exija pieces_quantity
+Não confunda com a Etapa 13
+Controle corretamente o loop de 2 horas e o contador de viradas
+Avance automaticamente se pH <= 5.2
+✅ MUDANÇAS OBRIGATÓRIAS
+1️⃣ Parar de decidir comportamento pelo intent
+❌ Remover qualquer lógica do tipo:
+if (intentName === "RegisterPHAndPiecesIntent") {
+  // assume etapa 13
+}
+✅ Substituir por lógica baseada exclusivamente no stage atual:
+const stageId = batch.currentStageId;
+2️⃣ Lógica correta para RegisterPHAndPiecesIntent
+Implementar switch por etapa:
+case 13:
+  // pH + pieces
+  break;
+
+case 15:
+  // pH apenas
+  break;
+3️⃣ Comportamento correto da ETAPA 15
+Ao receber RegisterPHAndPiecesIntent:
+Ler apenas:
+const phRaw = slots.ph_value?.value;
+Ignorar completamente:
+slots.pieces_quantity
+Converter:
+const ph = Number(phRaw) / 10;
+4️⃣ Fluxo da etapa 15
+Se pH ainda não medido:
+"Informe o pH atual dos queijos."
+Se pH > 5.2:
+Registrar pH no histórico
+Incrementar turningCyclesCount
+Reiniciar timer de até 2 horas
+Responder:
+"pH {valor} registrado. Queijos virados {N} vez(es). 
+Continue monitorando ou informe novo pH."
+Se pH <= 5.2:
+Registrar pH
+Encerrar loop
+Avançar automaticamente para a próxima etapa
+Responder:
+"pH {valor} registrado. Valor ideal atingido. 
+Avançando para a próxima etapa."
+5️⃣ Remover qualquer mensagem inválida
+❌ Nunca responder na etapa 15:
+"Esta etapa não requer pH e quantidade de peças"
+Isso só é válido para etapas ≠ 13 e ≠ 15.
+6️⃣ Atualizar recipe.yml (se necessário)
+Garantir que a etapa 15 tenha:
+expected_intent: RegisterPHAndPiecesIntent
+E NÃO tenha:
+required_inputs: pieces_quantity
+📌 RESUMO DO FIX
+✅ O intent está correto
+❌ A lógica do backend está acoplada à etapa errada
+✅ Etapa 15 usa pH, mas não usa peças
+✅ A decisão deve ser feita por stageId, nunca pelo intent isolado
