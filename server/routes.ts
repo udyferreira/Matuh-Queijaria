@@ -766,7 +766,7 @@ export async function registerRoutes(
       
       case "status": {
         if (!activeBatch) {
-          return { speech: "Não há lote ativo no momento. Diga 'iniciar lote' para começar.", shouldEndSession: false };
+          return { speech: "Não há lote ativo no momento. Diga 'iniciar lote com 50 litros' para começar.", shouldEndSession: false };
         }
         const status = await batchService.getBatchStatus(activeBatch.id);
         if (!status) {
@@ -878,7 +878,7 @@ export async function registerRoutes(
         if (!result.success) {
           return { speech: result.error || "Erro ao pausar lote.", shouldEndSession: false };
         }
-        return { speech: "Lote pausado. Diga 'retomar' quando quiser continuar.", shouldEndSession: false };
+        return { speech: "Lote pausado. Diga 'quero retomar' quando quiser continuar.", shouldEndSession: false };
       }
       
       case "resume": {
@@ -998,7 +998,7 @@ export async function registerRoutes(
       // --- LaunchRequest: Skill opening ---
       if (requestType === "LaunchRequest") {
         return res.status(200).json(buildAlexaResponse(
-          "Bem-vindo à Matuh Queijaria! Diga um comando como 'status' ou 'iniciar lote com 50 litros'.",
+          "Bem-vindo à Matuh Queijaria! Diga 'qual é o status' ou 'iniciar lote com 50 litros'.",
           false,
           "Diga 'ajuda' para ver os comandos."
         ));
@@ -1321,9 +1321,9 @@ export async function registerRoutes(
             console.log(`[Stage 13] Complete: pH ${effectivePh}, ${effectivePieces} pieces saved via batchService.`);
             
             return res.status(200).json(buildAlexaResponse(
-              `pH ${effectivePh} e ${effectivePieces} peças registrados. Etapa concluída. Diga 'avançar' para continuar.`,
+              `pH ${effectivePh} e ${effectivePieces} peças registrados. Etapa concluída. Diga 'avançar etapa' para continuar.`,
               false,
-              "Diga 'avançar' para continuar."
+              "Diga 'avançar etapa' para continuar."
             ));
           }
           
@@ -1380,7 +1380,7 @@ export async function registerRoutes(
               return res.status(200).json(buildAlexaResponse(
                 `pH ${phValue} registrado. Queijos virados ${turningCycles} vez${turningCycles > 1 ? 'es' : ''}. Continue monitorando ou informe novo pH.`,
                 false,
-                "Informe o próximo pH ou diga 'status' para ver o progresso."
+                "Informe o próximo pH ou diga 'qual é o status' para ver o progresso."
               ));
             }
           }
@@ -1467,9 +1467,9 @@ export async function registerRoutes(
           const formattedDate = `${parseInt(dateParts[2])} de ${getMonthName(parseInt(dateParts[1]))}`;
           
           return res.status(200).json(buildAlexaResponse(
-            `Data de entrada na câmara 2 registrada: ${formattedDate}. A maturação de 90 dias terminará em ${parseInt(maturationEndDate.split('-')[2])} de ${getMonthName(parseInt(maturationEndDate.split('-')[1]))}. Diga 'avançar' para continuar.`,
+            `Data de entrada na câmara 2 registrada: ${formattedDate}. A maturação de 90 dias terminará em ${parseInt(maturationEndDate.split('-')[2])} de ${getMonthName(parseInt(maturationEndDate.split('-')[1]))}. Diga 'avançar etapa' para continuar.`,
             false,
-            "Diga 'avançar' para continuar."
+            "Diga 'avançar etapa' para continuar."
           ));
         }
         
@@ -1515,7 +1515,7 @@ export async function registerRoutes(
             return res.status(200).json(buildAlexaResponse(
               "Entendi! Pode dar mais detalhes? Por exemplo: 'qual o status', 'quero avançar', ou 'preciso de ajuda'.",
               false,
-              "Diga um comando completo como 'qual o status' ou 'quero avançar'."
+              "Diga um comando completo como 'qual é o status' ou 'avançar etapa'."
             ));
           }
           

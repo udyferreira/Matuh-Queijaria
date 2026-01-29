@@ -301,41 +301,56 @@ export class RecipeManager {
   }
   
   // Generate friendly messages based on stage and missing inputs
+  // Messages aligned with Alexa interactionModel samples
   getFriendlyInputMessages(stageId: number, missingInputs: string[]): string {
     const messages: string[] = [];
     
     for (const input of missingInputs) {
       switch (input) {
         case 'flocculation_time':
-          messages.push("Registre o horário de floculação. Diga: 'hora da floculação às [horário]'");
+          // LogTimeIntent: "hora da {time_type} às {time}"
+          messages.push("Registre o horário de floculação. Diga: 'hora da floculação às 15:20'");
           break;
         case 'cut_point_time':
-          messages.push("Registre o horário do ponto de corte. Diga: 'hora do corte às [horário]'");
+          // LogTimeIntent: "hora do {time_type} às {time}"
+          messages.push("Registre o horário do ponto de corte. Diga: 'hora do corte às 14:39'");
           break;
         case 'ph_value':
           if (stageId === 13) {
-            messages.push("Registre o pH inicial e a quantidade de peças");
+            // RegisterPHAndPiecesIntent: "o pH é {ph_value} e são {pieces_quantity} peças"
+            // Combined prompt for Stage 13 - covers both ph_value and pieces_quantity
+            messages.push("Registre o pH inicial e a quantidade de peças. Diga: 'o pH é 5 ponto 2 e são 12 peças'");
           } else {
-            messages.push("Registre o pH atual");
+            // RegisterPHAndPiecesIntent: "o pH é {ph_value}"
+            messages.push("Registre o pH atual. Diga: 'o pH é 5 ponto 2'");
           }
           break;
         case 'pieces_quantity':
-          messages.push("Registre a quantidade de peças");
+          // Skip if Stage 13 (already covered by ph_value case above)
+          if (stageId !== 13) {
+            // RegisterPHAndPiecesIntent: "são {pieces_quantity} peças"
+            messages.push("Registre a quantidade de peças. Diga: 'são 12 peças'");
+          }
           break;
         case 'press_start_time':
-          messages.push("Registre o horário de início da prensa. Diga: 'hora da prensa às [horário]'");
+          // LogTimeIntent: "hora da {time_type} às {time}"
+          messages.push("Registre o horário de início da prensa. Diga: 'hora da prensa às 16:10'");
           break;
         case 'chamber_2_entry_date':
-          messages.push("Registre a data de entrada na Câmara 2");
+          // RegisterChamberEntryDateIntent: "coloquei na câmara dois {entry_date}" or "entrada na câmara dois {entry_date}"
+          messages.push("Registre a data de entrada na Câmara 2. Diga: 'coloquei na câmara dois hoje' ou 'entrada na câmara dois dia 8 de janeiro'");
           break;
         case 'milk_volume_l':
-          messages.push("Informe o volume de leite em litros");
+          // ProcessCommandIntent: "iniciar {utterance}"
+          messages.push("Informe o volume de leite. Diga: 'iniciar lote com 120 litros'");
           break;
         case 'milk_temperature_c':
-          messages.push("Informe a temperatura do leite");
+          // ProcessCommandIntent: "registrar {utterance}"
+          messages.push("Informe a temperatura do leite. Diga: 'registrar temperatura do leite 32 graus'");
           break;
         case 'milk_ph':
-          messages.push("Informe o pH do leite");
+          // ProcessCommandIntent: "registrar {utterance}"
+          messages.push("Informe o pH do leite. Diga: 'registrar pH do leite 6 ponto 6'");
           break;
         default:
           messages.push(`Registre: ${input}`);
@@ -346,19 +361,24 @@ export class RecipeManager {
   }
   
   // Get the intent hint for a missing input
+  // Intent names must match exactly the Alexa interactionModel
   getIntentHintForInput(stageId: number, inputKey: string): string {
     switch (inputKey) {
       case 'flocculation_time':
+        // TIME_TYPE slot values: floculação, floculacao
         return 'LogTimeIntent com timeType=floculação';
       case 'cut_point_time':
+        // TIME_TYPE slot values: corte (synonym: ponto de corte)
         return 'LogTimeIntent com timeType=corte';
       case 'press_start_time':
+        // TIME_TYPE slot values: prensa
         return 'LogTimeIntent com timeType=prensa';
       case 'ph_value':
       case 'pieces_quantity':
         return 'RegisterPHAndPiecesIntent';
       case 'chamber_2_entry_date':
-        return 'RegisterChamber2EntryDateIntent';
+        // Fixed: correct intent name from interactionModel
+        return 'RegisterChamberEntryDateIntent';
       default:
         return 'ProcessCommandIntent';
     }

@@ -1,0 +1,75 @@
+Objetivo: alinhar TODAS as mensagens de voz do backend ao interactionModel atual da Alexa (JSON fornecido), evitando instruções que não disparem intents.
+
+Contexto importante do interactionModel:
+- A maior parte dos comandos usa ProcessCommandIntent e exige obrigatoriamente o slot {utterance}. Portanto, NÃO podemos orientar o usuário a falar comandos “soltos” como “status”, “avançar”, “pausar”, “instruções”, etc.
+- Para inputs estruturados, devemos orientar usando os intents existentes:
+  - RegisterPHAndPiecesIntent (pH/peças)
+  - LogTimeIntent (horários com TIME_TYPE)
+  - RegisterChamberEntryDateIntent (data de entrada na câmara)
+
+Tarefas:
+
+1) Ajustar RecipeManager.getFriendlyInputMessages (arquivo /mnt/data/recipe.ts) para sempre retornar mensagens com EXEMPLOS DE FALA que batem nos samples do interactionModel.
+
+Regras de exemplo por input:
+- flocculation_time:
+  manter, mas garantir frase compatível com LogTimeIntent:
+  "Registre o horário de floculação. Diga: 'hora da floculação às 15:20'"
+
+- cut_point_time:
+  "Registre o horário do ponto de corte. Diga: 'hora do corte às 14:39'"
+
+- press_start_time:
+  "Registre o horário de início da prensa. Diga: 'hora da prensa às 16:10'"
+
+- ph_value:
+  *Se stageId === 13* (pH inicial + peças):
+    "Registre o pH inicial e a quantidade de peças. Diga: 'o pH é 5 ponto 2 e são 12 peças'"
+  *Caso contrário*:
+    "Registre o pH atual. Diga: 'o pH é 5 ponto 2'"
+
+- pieces_quantity:
+  "Registre a quantidade de peças. Diga: 'são 12 peças'"
+
+- chamber_2_entry_date:
+  Atualmente está genérico. Trocar para orientar o intent RegisterChamberEntryDateIntent com exemplos:
+  "Registre a data de entrada na Câmara 2. Diga: 'coloquei na câmara dois 2026-01-08'"
+
+- milk_volume_l:
+  como não existe intent estruturado para volume, orientar usando ProcessCommandIntent samples:
+  usar exemplo que encaixa em "iniciar {utterance}" ou "começar {utterance}":
+  "Informe o volume de leite. Diga: 'iniciar lote com 120 litros'"
+
+- milk_temperature_c:
+  orientar com ProcessCommandIntent sample "registrar {utterance}":
+  "Informe a temperatura do leite. Diga: 'registrar temperatura do leite 32 graus'"
+
+- milk_ph:
+  orientar com ProcessCommandIntent sample "registrar {utterance}":
+  "Informe o pH do leite. Diga: 'registrar pH do leite 6 ponto 6'"
+
+2) Corrigir RecipeManager.getIntentHintForInput (em /mnt/data/recipe.ts):
+- Trocar retorno incorreto 'RegisterChamber2EntryDateIntent' para o nome real do interactionModel:
+  'RegisterChamberEntryDateIntent'
+- Manter 'RegisterPHAndPiecesIntent' e 'LogTimeIntent'.
+- Para o LogTimeIntent, alinhar timeType sugerido aos valores do slot TIME_TYPE:
+  - flocculation_time -> 'floculação' (ou 'floculacao')
+  - cut_point_time -> 'corte'
+  - press_start_time -> 'prensa'
+
+3) Fazer uma varredura no backend por qualquer texto de ajuda/instrução que diga para falar comandos “soltos” (ex.: “Diga status”, “Diga avançar”, “Diga pausar”, “Diga instruções”).
+Substituir por frases que realmente casam com samples do JSON:
+- Status:
+  usar "Diga: 'qual é o status'" OU "Diga: 'me diz a etapa'"
+- Avançar:
+  usar "Diga: 'avançar etapa'"
+- Pausar/retomar:
+  usar "Diga: 'quero pausar'" e "Diga: 'quero retomar'"
+- Para instruções gerais:
+  preferir o built-in AMAZON.HelpIntent: "Diga: 'ajuda'"
+
+4) Não alterar o interactionModel da Alexa nesta tarefa. O objetivo é adaptar o backend ao modelo atual.
+
+Entregáveis:
+- Commit com alterações em recipe.ts e em quaisquer outros arquivos onde existam mensagens de voz desalinhadas.
+- Inclua testes simples (ou logs) demonstrando as mensagens geradas para missingInputs contendo: ph_value, pieces_quantity, chamber_2_entry_date, milk_volume_l.

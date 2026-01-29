@@ -1,0 +1,171 @@
+{
+    "interactionModel": {
+        "languageModel": {
+            "invocationName": "matuh queijaria",
+            "intents": [
+                {
+                    "name": "AMAZON.CancelIntent",
+                    "samples": []
+                },
+                {
+                    "name": "AMAZON.HelpIntent",
+                    "samples": []
+                },
+                {
+                    "name": "AMAZON.StopIntent",
+                    "samples": []
+                },
+                {
+                    "name": "ProcessCommandIntent",
+                    "slots": [
+                        {
+                            "name": "utterance",
+                            "type": "AMAZON.SearchQuery"
+                        }
+                    ],
+                    "samples": [
+                        "quanto de {utterance}",
+                        "qual o {utterance}",
+                        "qual é o {utterance}",
+                        "quero ver {utterance}",
+                        "me diz o {utterance}",
+                        "preciso de {utterance}",
+                        "me ajuda com {utterance}",
+                        "registrar {utterance}",
+                        "iniciar {utterance}",
+                        "começar {utterance}",
+                        "status {utterance}",
+                        "{utterance} etapa",
+                        "{utterance} a etapa",
+                        "quero {utterance}",
+                        "comecar {utterance}",
+                        "ajuda {utterance}",
+                        "terminei esta etapa {utterance}",
+                        "avançar {utterance}",
+                        "qual foi {utterance}",
+                        "me lembra {utterance}",
+                        "diga {utterance}"
+                    ]
+                },
+                {
+                    "name": "AMAZON.NavigateHomeIntent",
+                    "samples": []
+                },
+                {
+                    "name": "LogTimeIntent",
+                    "slots": [
+                        {
+                            "name": "time_type",
+                            "type": "TIME_TYPE"
+                        },
+                        {
+                            "name": "time",
+                            "type": "AMAZON.TIME"
+                        }
+                    ],
+                    "samples": [
+                        "{time_type} foi {time}",
+                        "registrar {time_type} {time}",
+                        "{time_type} {time}",
+                        "{time_type} às {time}",
+                        "do {time_type} {time}",
+                        "do {time_type} às {time}",
+                        "hora do {time_type} {time}",
+                        "hora do {time_type} às {time}",
+                        "hora da {time_type} {time}",
+                        "hora da {time_type} às {time}"
+                    ]
+                },
+                {
+                    "name": "RegisterPHAndPiecesIntent",
+                    "slots": [
+                        {
+                            "name": "ph_value",
+                            "type": "AMAZON.NUMBER"
+                        },
+                        {
+                            "name": "pieces_quantity",
+                            "type": "AMAZON.NUMBER"
+                        }
+                    ],
+                    "samples": [
+                        "registrar pH {ph_value} com {pieces_quantity} peças",
+                        "o pH é {ph_value} e são {pieces_quantity} peças",
+                        "pH {ph_value} e {pieces_quantity} peças",
+                        "pH {ph_value}",
+                        "o pH é {ph_value}",
+                        "{pieces_quantity} peças",
+                        "são {pieces_quantity} peças"
+                    ]
+                },
+                {
+                    "name": "RegisterChamberEntryDateIntent",
+                    "slots": [
+                        {
+                            "name": "entry_date",
+                            "type": "AMAZON.DATE"
+                        }
+                    ],
+                    "samples": [
+                        "acabei de colocar na camara {entry_date}",
+                        "já coloquei na câmara {entry_date}",
+                        "ja coloquei na camara {entry_date}",
+                        "coloquei na câmara {entry_date}",
+                        "coloquei na camara {entry_date}",
+                        "entrada na camara {entry_date}",
+                        "entrada na câmara {entry_date}",
+                        "colocar na câmara {entry_date}",
+                        "colocar na camara {entry_date}",
+                        "transferir para a câmara {entry_date}",
+                        "transferir para a camara {entry_date}",
+                        "entrada na câmara dois {entry_date}",
+                        "entrada na camara dois {entry_date}",
+                        "colocar na câmara dois {entry_date}",
+                        "colocar na camara dois {entry_date}",
+                        "transferir para a câmara dois {entry_date}",
+                        "transferir para a camara dois {entry_date}",
+                        "data de entrada na câmara {entry_date}",
+                        "data de entrada na camara {entry_date}",
+                        "data de entrada na câmara dois {entry_date}",
+                        "data de entrada na camara dois {entry_date}"
+                    ]
+                }
+            ],
+            "types": [
+                {
+                    "name": "TIME_TYPE",
+                    "values": [
+                        {
+                            "name": {
+                                "value": "prensa"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "floculacao"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "moldagem"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "corte",
+                                "synonyms": [
+                                    "ponto de corte"
+                                ]
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "floculação"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}
