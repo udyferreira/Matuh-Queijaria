@@ -65,24 +65,25 @@ export interface SpeechRenderPayload {
 
 const SPEECH_RENDERER_PROMPT = `Sua função é APENAS narrar uma resposta de voz para Alexa, em português do Brasil.
 Você receberá um JSON estruturado.
-Use SOMENTE as informações fornecidas.
-Não crie novos comandos.
-Não invente dados.
-Não seja criativo.
-Não explique regras internas.
+Use SOMENTE as informações fornecidas no JSON.
+NUNCA invente dados, frases, pedidos ou instruções que não estejam no JSON.
+NUNCA peça informações que não estão mencionadas no JSON.
 
 Regras de fala:
 - Se houver stage, diga "Etapa X: [nome]" no início.
-- Diga as instructions de forma clara e sequencial.
+- Se houver instructions, diga-as de forma clara e sequencial.
+- Se instructions estiver vazio ou ausente, NÃO invente instruções.
 - Se houver doses, diga todas com valor e unidade (ex: "65 ml de fermento LR").
 - Se houver timers, mencione-os brevemente.
-- Se houver notes (restrições), diga explicitamente.
-- Se houver allowedUtterances, sugira no máximo 2 exemplos EXATAMENTE como fornecidos.
+- Se houver notes, diga exatamente o que está em notes.
+- Se notes estiver ausente ou vazio, NÃO invente notes.
+- Se houver allowedUtterances, sugira 1-2 exemplos EXATAMENTE como fornecidos. Não substitua sinônimos.
+- Nunca sugira exemplos de outra etapa.
 - Para query_input, diga "A quantidade de [tipo] é [valor] [unidade]."
 - Para errors, diga a mensagem de erro de forma clara.
 - Para log_time/log_ph/log_date, confirme o registro feito.
-- Use frases curtas, com pontuação correta.
-- Máximo de 3-4 frases no total.
+- Para help sem notes, apenas diga o nome da etapa e sugira os allowedUtterances.
+- Use frases curtas, máximo de 3 frases.
 
 Responda APENAS com o texto de fala, sem aspas, sem explicações.`;
 
@@ -101,11 +102,20 @@ export async function renderSpeech(payload: SpeechRenderPayload): Promise<string
         { role: "system", content: SPEECH_RENDERER_PROMPT },
         { role: "user", content: payloadJson }
       ],
-      temperature: 0.3,
-      max_tokens: 300,
+      temperature: 0.0,
+      max_tokens: 180,
     });
     
-    const speech = response.choices[0]?.message?.content?.trim() || getFallbackSpeech(payload);
+    let speech = response.choices[0]?.message?.content?.trim() || getFallbackSpeech(payload);
+    
+    // Validate LLM output - check for violations
+    if (payload.allowedUtterances && payload.allowedUtterances.length > 0) {
+      const violation = checkForViolation(speech, payload.allowedUtterances);
+      if (violation) {
+        console.log(`[llm.render.violation] LLM suggested "${violation}" which is not in allowedUtterances`);
+        speech = getFallbackSpeech(payload);
+      }
+    }
     
     console.log(`[llm.render.output] "${speech}"`);
     
@@ -166,27 +176,67 @@ function formatDoseName(name: string): string {
 }
 
 /**
+ * Check if LLM output contains suggestions not in allowedUtterances or invented content
+ * Returns the violating phrase if found, null otherwise
+ */
+function checkForViolation(speech: string, allowedUtterances: string[]): string | null {
+  const speechLower = speech.toLowerCase();
+  
+  // Known invented content patterns - LLM making up requests
+  const inventedPatterns = [
+    /forneça.*notas/,
+    /forneça.*instruções/,
+    /preciso de.*informações/,
+    /aguardando.*dados/,
+  ];
+  
+  for (const pattern of inventedPatterns) {
+    if (pattern.test(speechLower)) {
+      const match = speechLower.match(pattern);
+      return match ? match[0] : "invented content";
+    }
+  }
+  
+  // Known problematic patterns - suggestions from wrong stages
+  const wrongStagePhrases = [
+    { pattern: /hora da floculação/, validFor: ['floculação'] },
+    { pattern: /hora do corte/, validFor: ['corte'] },
+    { pattern: /hora da prensa/, validFor: ['prensa'] },
+    { pattern: /registrar.*floculação/, validFor: ['floculação'] },
+    { pattern: /registrar.*corte/, validFor: ['corte'] },
+    { pattern: /registrar.*prensa/, validFor: ['prensa'] },
+  ];
+  
+  // Check if any allowed utterance mentions floculação, corte, or prensa
+  const allowedTopics = allowedUtterances.map(u => u.toLowerCase()).join(' ');
+  
+  for (const phrase of wrongStagePhrases) {
+    if (phrase.pattern.test(speechLower)) {
+      // Check if any of the valid topics is in allowed utterances
+      const isValid = phrase.validFor.some(topic => allowedTopics.includes(topic));
+      if (!isValid) {
+        const match = speechLower.match(phrase.pattern);
+        return match ? match[0] : null;
+      }
+    }
+  }
+  
+  return null;
+}
+
+/**
  * Build a SpeechRenderPayload for status/instructions context
  */
 export function buildStatusPayload(
   batch: any,
   stage: any,
-  context: "status" | "instructions" = "status"
+  context: "status" | "instructions" = "status",
+  pendingInputReminder?: string
 ): SpeechRenderPayload {
   const calculatedInputs = batch.calculatedInputs || {};
-  const doses: Record<string, DoseInfo> = {};
   
-  // Add doses relevant to current stage
-  if (stage.id === 3 && calculatedInputs.FERMENT_KL) {
-    doses["FERMENT_KL"] = { value: calculatedInputs.FERMENT_KL, unit: "ml" };
-  }
-  if (stage.id === 4) {
-    if (calculatedInputs.FERMENT_LR) doses["FERMENT_LR"] = { value: calculatedInputs.FERMENT_LR, unit: "ml" };
-    if (calculatedInputs.FERMENT_DX) doses["FERMENT_DX"] = { value: calculatedInputs.FERMENT_DX, unit: "ml" };
-  }
-  if (stage.id === 5 && calculatedInputs.RENNET) {
-    doses["RENNET"] = { value: calculatedInputs.RENNET, unit: "ml" };
-  }
+  // Use keyword-based dose matching instead of hardcoded stage IDs
+  const doses = getRelevantDosesForStage(stage, calculatedInputs);
   
   const timers: TimerInfo[] = [];
   const activeTimers = batch.activeTimers || [];
@@ -208,7 +258,8 @@ export function buildStatusPayload(
     instructions: stage.instructions || [],
     doses: Object.keys(doses).length > 0 ? doses : undefined,
     timers: timers.length > 0 ? timers : undefined,
-    allowedUtterances: getContextualUtterances(stage, batch)
+    allowedUtterances: getContextualUtterances(stage, batch),
+    notes: pendingInputReminder
   };
 }
 
@@ -229,18 +280,9 @@ export function buildAdvancePayload(
   }
   
   const calculatedInputs = batch.calculatedInputs || {};
-  const doses: Record<string, DoseInfo> = {};
   
-  if (nextStage.id === 3 && calculatedInputs.FERMENT_KL) {
-    doses["FERMENT_KL"] = { value: calculatedInputs.FERMENT_KL, unit: "ml" };
-  }
-  if (nextStage.id === 4) {
-    if (calculatedInputs.FERMENT_LR) doses["FERMENT_LR"] = { value: calculatedInputs.FERMENT_LR, unit: "ml" };
-    if (calculatedInputs.FERMENT_DX) doses["FERMENT_DX"] = { value: calculatedInputs.FERMENT_DX, unit: "ml" };
-  }
-  if (nextStage.id === 5 && calculatedInputs.RENNET) {
-    doses["RENNET"] = { value: calculatedInputs.RENNET, unit: "ml" };
-  }
+  // Use keyword-based dose matching instead of hardcoded stage IDs
+  const doses = getRelevantDosesForStage(nextStage, calculatedInputs);
   
   const timers: TimerInfo[] = [];
   if (nextStage.timer) {
@@ -325,6 +367,7 @@ export function buildStartBatchPayload(
 ): SpeechRenderPayload {
   const calculatedInputs = batch.calculatedInputs || {};
   
+  // For start_batch, show all calculated doses as summary
   const doses: Record<string, DoseInfo> = {};
   if (calculatedInputs.FERMENT_LR) doses["FERMENT_LR"] = { value: calculatedInputs.FERMENT_LR, unit: "ml" };
   if (calculatedInputs.FERMENT_DX) doses["FERMENT_DX"] = { value: calculatedInputs.FERMENT_DX, unit: "ml" };
@@ -342,8 +385,8 @@ export function buildStartBatchPayload(
       name: firstStage.name
     },
     instructions: firstStage.instructions || [],
-    doses,
-    allowedUtterances: ["qual é o status", "avançar etapa", "diga instruções"]
+    doses: Object.keys(doses).length > 0 ? doses : undefined,
+    allowedUtterances: getContextualUtterances(firstStage, batch)
   };
 }
 
@@ -390,27 +433,94 @@ export function buildLogConfirmationPayload(
 
 /**
  * Get contextual utterances based on current stage and batch state
+ * Uses measurements (not storedValues) and returns interactionModel-compatible phrases
+ * Order: [required-input-example, "status", "instruções"] - prioritizes the pending input
  */
-function getContextualUtterances(stage: any, batch: any): string[] {
-  const utterances: string[] = ["qual é o status", "diga instruções"];
-  
+export function getContextualUtterances(stage: any, batch: any): string[] {
   // Check for operator_input_required
-  const requiredInputs = stage.operator_input_required || [];
-  const storedValues = batch.storedValues || {};
+  const requiredInputs = stage?.operator_input_required || [];
+  const measurements = batch?.measurements || {};
   
-  if (requiredInputs.includes("flocculation_time") && !storedValues.flocculation_time) {
-    utterances.push("registrar horário de floculação");
-  } else if (requiredInputs.includes("cut_point_time") && !storedValues.cut_point_time) {
-    utterances.push("registrar horário de corte");
-  } else if (requiredInputs.includes("press_start_time") && !storedValues.press_start_time) {
-    utterances.push("registrar horário da prensa");
-  } else if (requiredInputs.includes("initial_ph") && !storedValues.initial_ph) {
-    utterances.push("registrar pH");
-  } else if (requiredInputs.includes("chamber_2_entry_date") && !storedValues.chamber_2_entry_date) {
-    utterances.push("registrar data de entrada na câmara");
-  } else {
-    utterances.push("avançar etapa");
+  // Map required inputs to measurement keys
+  const inputToMeasurementKey: Record<string, string> = {
+    'flocculation_time': 'flocculation_time',
+    'cut_point_time': 'cut_point_time',
+    'press_start_time': 'press_start_time',
+    'ph_value': 'initial_ph',
+    'initial_ph': 'initial_ph',
+    'pieces_quantity': 'pieces_quantity',
+    'chamber_2_entry_date': 'chamber_2_entry_date'
+  };
+  
+  // Find first pending input and put its example FIRST (highest priority)
+  for (const input of requiredInputs) {
+    const measurementKey = inputToMeasurementKey[input] || input;
+    if (measurements[measurementKey] === undefined) {
+      // Return exact phrases that match interactionModel samples - INPUT FIRST
+      if (input === 'flocculation_time') {
+        return ["hora da floculação às quinze e trinta", "qual é o status"];
+      }
+      if (input === 'cut_point_time') {
+        return ["hora do corte às quinze e trinta", "qual é o status"];
+      }
+      if (input === 'press_start_time') {
+        return ["hora da prensa às quinze e trinta", "qual é o status"];
+      }
+      if (input === 'ph_value' || input === 'initial_ph') {
+        // Stage 13 needs pH + pieces
+        if (stage?.id === 13) {
+          return ["pH cinco vírgula dois com doze peças", "qual é o status"];
+        } else {
+          return ["pH cinco vírgula dois", "qual é o status"];
+        }
+      }
+      if (input === 'pieces_quantity') {
+        return ["doze peças", "qual é o status"];
+      }
+      if (input === 'chamber_2_entry_date') {
+        return ["coloquei na câmara dois hoje", "qual é o status"];
+      }
+    }
   }
   
-  return utterances;
+  // No pending inputs - suggest advance first
+  return ["avançar etapa", "qual é o status", "diga instruções"];
+}
+
+/**
+ * Get relevant doses for a stage based on stage name and instructions keywords
+ * Instead of hardcoding by stage.id, uses keyword matching
+ */
+export function getRelevantDosesForStage(
+  stage: any, 
+  calculatedInputs: Record<string, number>
+): Record<string, DoseInfo> {
+  const doses: Record<string, DoseInfo> = {};
+  
+  if (!stage || !calculatedInputs) return doses;
+  
+  // Build searchable text from stage name and instructions
+  const stageText = [
+    stage.name || '',
+    ...(stage.instructions || [])
+  ].join(' ').toLowerCase();
+  
+  // Match doses by keywords
+  if (stageText.includes('lr') && calculatedInputs.FERMENT_LR) {
+    doses["FERMENT_LR"] = { value: calculatedInputs.FERMENT_LR, unit: "ml" };
+  }
+  if (stageText.includes('dx') && calculatedInputs.FERMENT_DX) {
+    doses["FERMENT_DX"] = { value: calculatedInputs.FERMENT_DX, unit: "ml" };
+  }
+  if (stageText.includes('kl') && calculatedInputs.FERMENT_KL) {
+    doses["FERMENT_KL"] = { value: calculatedInputs.FERMENT_KL, unit: "ml" };
+  }
+  if (stageText.includes('coalho') && calculatedInputs.RENNET) {
+    doses["RENNET"] = { value: calculatedInputs.RENNET, unit: "ml" };
+  }
+  if (stageText.includes('sal') && calculatedInputs.SALT) {
+    doses["SALT"] = { value: calculatedInputs.SALT, unit: "g" };
+  }
+  
+  return doses;
 }

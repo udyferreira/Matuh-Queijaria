@@ -1,0 +1,131 @@
+Precisamos corrigir o problema do sistema “se perder” (instruções erradas e exemplos de fala de outra etapa) mantendo o princípio: LLM apenas narra, backend decide.
+
+Arquivos anexos: /mnt/data/interpreter.ts, /mnt/data/recipe.ts, /mnt/data/batchService.ts, /mnt/data/speechRenderer.ts
+
+========================
+A) Corrigir a origem (payload determinístico) — NÃO é o LLM
+========================
+
+1) GATING: permitir STATUS/INSTRUCTIONS/HELP mesmo quando a etapa exige LogTimeIntent
+Hoje: [GATING] Blocked intent ProcessCommandIntent at stage 6. Expected: LogTimeIntent
+Isso faz “qual o status” virar uma instrução de registrar floculação.
+
+Ajuste:
+- No middleware/handler de gating (onde imprime “[GATING] Blocked…”), alterar a regra:
+  - Se a etapa exige LogTimeIntent/PH/DATE, ainda assim permitir intents:
+    - status, instructions, help
+  - Para essas intents, responder com:
+    - a etapa atual + instruções/doses (se aplicável)
+    - + um lembrete curto do input obrigatório faltante (“Falta registrar o horário da floculação…”)
+  - Continuar bloqueando advance quando input obrigatório estiver faltando.
+
+Implementação:
+- Ao detectar missingInputs pelo recipeManager.validateAdvance (que já retorna reason com mensagem amigável), não faça short-circuit para status/instructions/help; apenas acrescente notes no payload.
+
+2) speechRenderer.ts: getContextualUtterances está lendo o lugar errado (storedValues)
+No batch real, os valores ficam em batch.measurements (ex: measurements.flocculation_time = "22:18").
+Hoje getContextualUtterances usa batch.storedValues e por isso sugere “registrar horário de corte” e outras frases genéricas.
+
+Ajuste em /mnt/data/speechRenderer.ts:
+- Substituir storedValues por measurements:
+  const measurements = batch.measurements || {}
+- Mapear corretamente as chaves:
+  flocculation_time, cut_point_time, press_start_time, initial_ph, ph_value, pieces_quantity, chamber2EntryDate etc
+- Só sugerir a fala de registro quando o measurement correspondente NÃO existir.
+
+E MUITO IMPORTANTE: allowedUtterances precisam ser frases QUE DISPARAM o interactionModel.
+Substituir sugestões genéricas como:
+  "registrar horário de floculação"
+por frases exatamente compatíveis com o LogTimeIntent samples, por exemplo:
+  - flocculation_time: "hora da floculação às 15:30"
+  - cut_point_time: "hora do corte às 15:30"
+  - press_start_time: "hora da prensa às 15:30"
+Para pH (RegisterPHAndPiecesIntent), sugerir:
+  - "pH 5 ponto 2"
+  - e na etapa 13, “pH 5 ponto 2 com 12 peças”
+Para data de câmara (RegisterChamberEntryDateIntent), sugerir:
+  - "coloquei na câmara dois hoje"
+
+Regra: allowedUtterances deve conter no máximo 3 itens e SEMPRE incluir:
+  "qual é o status" e "diga instruções"
+e o terceiro item depende do missing input (ou “avançar etapa” se nada estiver faltando).
+
+3) speechRenderer.ts: doses relevantes por etapa não podem ser hardcoded por stage.id
+Hoje buildStatusPayload/buildAdvancePayload adicionam doses por stage.id (3,4,5) e isso está errado/incompleto.
+Corrigir de forma determinística por keywords:
+- Criar função getRelevantDosesForStage(stage, calculatedInputs):
+  - Monte stageText = (stage.name + " " + instructions.join(" ")).toLowerCase()
+  - Se contém "lr" -> incluir FERMENT_LR (ml)
+  - Se contém "dx" -> incluir FERMENT_DX (ml)
+  - Se contém "kl" -> incluir FERMENT_KL (ml)
+  - Se contém "coalho" -> incluir RENNET (ml)
+- Usar essa função tanto em buildStatusPayload quanto em buildAdvancePayload quanto em buildStartBatchPayload.
+- Garantir que etapa 5 (“KL e coalho”) fale os DOIS.
+
+4) LogTimeIntent: exemplo errado quando o horário não foi informado
+No log: para time_type = “ponto de corte”, a resposta sugeriu exemplo de floculação:
+  “Por exemplo: 'hora da floculação às quinze e trinta'.”
+
+Ajuste no handler do LogTimeIntent (no webhook):
+- Se slot time estiver ausente:
+  - identificar o tipo correto (floculação/corte/prensa) a partir do slot time_type (resolutions)
+  - responder com exemplo correspondente:
+    - floculação -> "hora da floculação às 15:30"
+    - corte -> "hora do corte às 15:30"
+    - prensa -> "hora da prensa às 15:30"
+- E o reprompt deve perguntar a mesma coisa (“Qual foi a hora do corte?” etc.)
+
+Opcional (robustez):
+- Se o usuário disser “foi agora”, responder pedindo o horário e sugerir “diga o horário aproximado”.
+
+========================
+B) Travar o LLM para não “improvisar”
+========================
+
+5) speechRenderer.ts: reduzir criatividade e forçar aderência
+Ajustes:
+- temperature: 0.0 (não 0.3)
+- max_tokens: 180
+- Adicionar regra no prompt:
+  - “Se payload.allowedUtterances existir, use SOMENTE essas frases como sugestões. Não substitua sinônimos.”
+  - “Nunca sugira exemplos de outra etapa.”
+  - “Se instructions estiver vazio, diga apenas o nome da etapa e o próximo input obrigatório (notes), sem inventar instruções.”
+
+6) Se o LLM retornar algo fora do esperado, usar fallback determinístico
+Adicionar validação simples pós-LLM:
+- Se allowedUtterances foi fornecido e a resposta contém uma frase de exemplo que NÃO esteja em allowedUtterances:
+  - logar “[llm.render.violation]”
+  - retornar fallback determinístico (getFallbackSpeech(payload))
+Isso impede “vazamento” de fala de outra etapa.
+
+========================
+C) Logging para troubleshooting (essencial)
+========================
+
+7) Logs estruturados por request
+Adicionar logs (um por request):
+- stageId atual
+- intent Alexa recebido
+- interpreted intent (se ProcessCommandIntent)
+- missingInputs do validateAdvance (se houver)
+- allowedUtterances final gerado
+- notes final gerado
+- doses incluídas (keys)
+- [llm.render.input] e [llm.render.output]
+- Se disparar fallback por violação, logar motivo.
+
+Exemplo:
+[ctx] stage=7 alexaIntent=LogTimeIntent time_type=corte time=undefined missingInput=cut_point_time
+[allowedUtterances]=["qual é o status","diga instruções","hora do corte às 15:30"]
+[llm.render.output]=...
+
+========================
+Critérios de aceite
+========================
+
+- “qual o status” em etapa que exige LogTime NÃO deve perder a etapa; deve responder:
+  “Etapa X: ...” + lembrete do que falta registrar.
+- “ponto de corte foi agora” deve pedir horário e dar exemplo correto: “hora do corte às 15:30”.
+- Sugestões de fala (allowedUtterances) devem sempre ser compatíveis com o interactionModel e com a etapa.
+- Etapa 5 deve falar KL e coalho com doses.
+- Se o LLM sugerir frase fora de allowedUtterances, deve cair no fallback e logar violação.

@@ -721,7 +721,8 @@ export async function registerRoutes(
   // LLM only interprets, backend decides and executes
   // IMPORTANT: Uses batchService for ALL operations to ensure consistency with REST API
   async function executeIntent(
-    command: Awaited<ReturnType<typeof interpretCommand>>
+    command: Awaited<ReturnType<typeof interpretCommand>>,
+    pendingInputReminder?: string
   ): Promise<{ speech: string; shouldEndSession: boolean }> {
     
     // Get active batch for context
@@ -781,7 +782,7 @@ export async function registerRoutes(
           return { speech: "Erro ao obter status.", shouldEndSession: false };
         }
         const stage = recipeManager.getStage(status.currentStageId);
-        const payload = speechRenderer.buildStatusPayload(activeBatch, stage, "status");
+        const payload = speechRenderer.buildStatusPayload(activeBatch, stage, "status", pendingInputReminder);
         const speech = await speechRenderer.renderSpeech(payload);
         return { speech, shouldEndSession: false };
       }
@@ -913,9 +914,11 @@ export async function registerRoutes(
         if (!stage) {
           return { speech: "Etapa não encontrada.", shouldEndSession: false };
         }
-        const payload = speechRenderer.buildStatusPayload(activeBatch, stage, "instructions");
+        const payload = speechRenderer.buildStatusPayload(activeBatch, stage, "instructions", pendingInputReminder);
         if (stage.llm_guidance) {
-          payload.notes = `Dica: ${stage.llm_guidance}`;
+          payload.notes = payload.notes 
+            ? `${payload.notes} Dica: ${stage.llm_guidance}` 
+            : `Dica: ${stage.llm_guidance}`;
         }
         const speech = await speechRenderer.renderSpeech(payload);
         return { speech, shouldEndSession: false };
@@ -1048,10 +1051,11 @@ export async function registerRoutes(
         }
         
         // === STAGE-AWARE INTENT GATING ===
-        // If stage has pending required inputs, block all intents except:
-        // - The expected intent for the stage
-        // - AMAZON.HelpIntent and AMAZON.StopIntent (handled above)
+        // If stage has pending required inputs, block ADVANCE but allow status/instructions/help
+        // These read-only intents get a notes reminder about the pending input
         const activeBatchForGating = await batchService.getActiveBatch();
+        let pendingInputReminder: string | undefined;
+        
         if (activeBatchForGating) {
           const stageLock = recipeManager.getStageInputLock(activeBatchForGating.currentStageId);
           
@@ -1077,20 +1081,44 @@ export async function registerRoutes(
             
             const inputsSatisfied = pendingInputs.length === 0;
             
+            // Build friendly reminder about pending input
+            if (!inputsSatisfied && pendingInputs.length > 0) {
+              const inputLabels: Record<string, string> = {
+                'flocculation_time': 'registrar horário de floculação',
+                'cut_point_time': 'registrar horário do ponto de corte',
+                'press_start_time': 'registrar horário da prensa',
+                'ph_value': 'registrar pH',
+                'initial_ph': 'registrar pH',
+                'pieces_quantity': 'registrar quantidade de peças',
+                'chamber_2_entry_date': 'registrar data de entrada na câmara 2'
+              };
+              pendingInputReminder = `Falta ${inputLabels[pendingInputs[0]] || pendingInputs[0]}.`;
+              
+              console.log(`[GATING] stage=${activeBatchForGating.currentStageId} intent=${intentName} pendingInputs=${pendingInputs.join(',')} expected=${stageLock.expectedIntent}`);
+            }
+            
             // If inputs NOT satisfied and intent is NOT the expected one
             if (!inputsSatisfied && intentName !== stageLock.expectedIntent) {
-              // Allow only specific intents that don't modify state
-              const allowedIntents = ['AMAZON.HelpIntent', 'AMAZON.StopIntent', 'AMAZON.CancelIntent'];
+              // Allow read-only intents: HelpIntent, StopIntent, CancelIntent
+              const systemIntents = ['AMAZON.HelpIntent', 'AMAZON.StopIntent', 'AMAZON.CancelIntent'];
               
-              // Also allow status query via ProcessCommandIntent 
-              // But NOT ProcessCommandIntent for anything else
-              if (!allowedIntents.includes(intentName || '')) {
+              // ProcessCommandIntent is allowed for status/instructions/help queries
+              // We'll let it through but add pendingInputReminder to the payload
+              if (intentName === 'ProcessCommandIntent') {
+                // Let it through - we'll add notes with the reminder below
+                console.log(`[GATING] Allowing ProcessCommandIntent for read-only query at stage ${activeBatchForGating.currentStageId}`);
+              } else if (!systemIntents.includes(intentName || '')) {
+                // Block other intents
                 console.log(`[GATING] Blocked intent ${intentName} at stage ${activeBatchForGating.currentStageId}. Expected: ${stageLock.expectedIntent}`);
-                return res.status(200).json(buildAlexaResponse(
+                const stage = recipeManager.getStage(activeBatchForGating.currentStageId);
+                const payload = speechRenderer.buildErrorPayload(
                   stageLock.inputPrompt || `Esta etapa requer input específico.`,
-                  false,
-                  `Use o comando apropriado para esta etapa.`
-                ));
+                  stage
+                );
+                payload.notes = pendingInputReminder;
+                payload.allowedUtterances = speechRenderer.getContextualUtterances(stage, activeBatchForGating);
+                const speech = await speechRenderer.renderSpeech(payload);
+                return res.status(200).json(buildAlexaResponse(speech, false, `Use o comando apropriado para esta etapa.`));
               }
             }
           }
@@ -1187,11 +1215,19 @@ export async function registerRoutes(
             }
           }
           
-          // If no valid time, ask for it
+          // If no valid time, ask for it with correct example for the time type
           if (!timeValue) {
             const typeLabel = getTimeTypeLabel(timeType);
+            // Provide correct example based on time type
+            const examples: Record<string, string> = {
+              'flocculation': 'hora da floculação às quinze e trinta',
+              'cut_point': 'hora do corte às quinze e trinta',
+              'press_start': 'hora da prensa às quinze e trinta'
+            };
+            const example = examples[timeType || ''] || 'hora da floculação às quinze e trinta';
+            console.log(`[LogTimeIntent] Missing time for ${timeType}, suggesting example: ${example}`);
             return res.status(200).json(buildAlexaResponse(
-              `Por favor, diga o horário ${typeLabel}. Por exemplo: 'hora da floculação às quinze e trinta'.`,
+              `Por favor, diga o horário ${typeLabel}. Por exemplo: '${example}'.`,
               false,
               `Qual foi a hora ${typeLabel}?`
             ));
@@ -1528,7 +1564,8 @@ export async function registerRoutes(
           // LLM interprets the command, backend executes
           const command = await interpretCommand(textToInterpret);
           console.log("LLM interpreted command:", JSON.stringify(command));
-          const result = await executeIntent(command) as any;
+          // Pass pendingInputReminder from GATING to status/instructions handlers
+          const result = await executeIntent(command, pendingInputReminder) as any;
           
           return res.status(200).json(buildAlexaResponse(
             result.speech,
