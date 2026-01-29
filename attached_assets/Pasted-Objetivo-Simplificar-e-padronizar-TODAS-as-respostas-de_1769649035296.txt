@@ -1,0 +1,181 @@
+Objetivo:
+Simplificar e padronizar TODAS as respostas de voz da skill “Matuh Queijaria”, delegando ao LLM APENAS a narração textual (speech), enquanto o backend permanece totalmente determinístico e responsável por regras, validações e cálculos.
+
+Princípio central:
+- O backend decide TUDO (etapa, doses, validações, comandos válidos).
+- O LLM apenas transforma dados estruturados em uma fala clara, objetiva e precisa.
+- O LLM NÃO pode:
+  - decidir o que fazer
+  - escolher quantidades
+  - criar novos comandos
+  - inventar exemplos fora do interactionModel
+
+------------------------------------------------------------
+1) NOVA RESPONSABILIDADE DO LLM: “Speech Renderer”
+------------------------------------------------------------
+
+Criar (ou adaptar) um uso único do LLM para renderização de fala, com as seguintes regras:
+
+- Entrada do LLM: JSON ESTRUTURADO (sem texto livre)
+- Saída do LLM: UM texto curto, em PT-BR, adequado para Alexa
+
+O LLM deve seguir estas instruções FIXAS:
+- Não seja criativo
+- Não invente informações
+- Não omita dados recebidos
+- Não altere unidades, números ou nomes
+- Use frases curtas e claras
+- Use exatamente os comandos e exemplos permitidos
+
+------------------------------------------------------------
+2) FORMATO PADRÃO DE INPUT PARA O LLM
+------------------------------------------------------------
+
+Sempre que o backend precisar responder ao usuário (status, instructions, advance, query_input, missingInputs, help), montar um objeto JSON e passar ao LLM.
+
+Formato base:
+
+{
+  "context": "status | instructions | advance | help | query_input | error",
+  "stage": {
+    "id": 4,
+    "name": "Adicionar fermentos LR e DX"
+  },
+  "instructions": [
+    "Adicionar fermentos LR e DX",
+    "Mexer bem e marcar 30 minutos"
+  ],
+  "doses": {
+    "FERMENT_LR": { "value": 65, "unit": "ml" },
+    "FERMENT_DX": { "value": 65, "unit": "ml" }
+  },
+  "timers": [
+    { "description": "30 minutos", "blocking": true }
+  ],
+  "allowedUtterances": [
+    "qual é o status",
+    "diga instruções",
+    "avançar etapa"
+  ],
+  "notes": "Etapa não aceita registro de pH"
+}
+
+O backend decide:
+- quais doses entram
+- quais instruções entram
+- quais utterances são válidas no contexto
+- se a etapa aceita pH, tempo, data etc.
+
+------------------------------------------------------------
+3) PROMPT FIXO DO LLM (Speech Renderer)
+------------------------------------------------------------
+
+O LLM deve receber SEMPRE este prompt fixo (ou equivalente):
+
+“Sua função é apenas narrar uma resposta de voz para Alexa, em português do Brasil.
+Você receberá um JSON estruturado.
+Use SOMENTE as informações fornecidas.
+Não crie novos comandos.
+Não invente dados.
+Não seja criativo.
+Não explique regras internas.
+
+Regras de fala:
+- Diga a etapa no início.
+- Diga as instruções de forma clara e sequencial.
+- Se houver doses, diga todas com valor e unidade.
+- Se houver timers, mencione-os brevemente.
+- Se houver restrições (ex.: não aceita pH), diga explicitamente.
+- Se houver allowedUtterances, sugira no máximo 2 exemplos exatamente como fornecidos.
+- Use frases curtas, com pontuação correta.”
+
+------------------------------------------------------------
+4) O QUE CONTINUA NO BACKEND (NÃO USAR LLM)
+------------------------------------------------------------
+
+Manter 100% determinístico no backend:
+
+- Interpreter:
+  - mapeamento de intents (status, instructions, advance, query_input, start_batch etc.)
+  - regex / substring para detectar comandos (“o que devo fazer”, “lote com X litros”)
+  - normalização de pH (66 → 6.6)
+- Validações por etapa:
+  - se aceita pH
+  - se aceita tempo
+  - se aceita data de câmara
+- Cálculo de doses (LR/DX/KL/coalho)
+- Seleção de quais doses entram em cada etapa
+- Seleção das allowedUtterances válidas naquele momento
+- HelpIntent (conteúdo estruturado, não textual)
+
+------------------------------------------------------------
+5) AJUSTES ESPECÍFICOS BASEADOS NOS PROBLEMAS ATUAIS
+------------------------------------------------------------
+
+5.1 STATUS / INSTRUCTIONS
+- Ao responder status ou instructions:
+  - Backend monta JSON com stage + instructions + doses aplicáveis
+  - LLM apenas verbaliza
+
+Resultado esperado:
+“Etapa 4: Adicionar fermentos LR e DX.
+Use 65 ml de fermento LR e 65 ml de DX.
+Mexa bem e marque 30 minutos.
+Você pode dizer ‘avançar etapa’.”
+
+5.2 QUERY_INPUT (quanto de fermento)
+- Backend resolve:
+  - tipo do insumo
+  - valor
+  - unidade (ml)
+- LLM apenas verbaliza:
+  “A quantidade de fermento LR é 65 ml.”
+
+5.3 HELP
+- Backend define lista fixa de frases válidas (compatíveis com interactionModel):
+  ex:
+  [
+    "qual é o status",
+    "diga instruções",
+    "avançar etapa"
+  ]
+- LLM apenas organiza a fala:
+  “Você pode dizer: qual é o status, diga instruções ou avançar etapa.”
+
+5.4 ERROS / COMANDOS INVÁLIDOS
+- Backend define a causa (ex.: etapa não aceita pH)
+- LLM verbaliza:
+  “Esta etapa não aceita registro de pH. Estamos na etapa 4: Adicionar fermentos LR e DX.”
+
+------------------------------------------------------------
+6) LOGGING (para troubleshooting)
+------------------------------------------------------------
+
+Adicionar log estruturado antes e depois do LLM:
+
+ANTES:
+- intent interpretado
+- stageId
+- JSON enviado ao LLM
+
+DEPOIS:
+- texto retornado pelo LLM
+
+Exemplo:
+[llm.render.input] stage=4 context=instructions payload={...}
+[llm.render.output] "Etapa 4: ..."
+
+------------------------------------------------------------
+7) CRITÉRIOS DE ACEITAÇÃO
+------------------------------------------------------------
+
+- Nenhuma resposta do backend concatena texto manualmente.
+- Nenhuma resposta fala unidades erradas.
+- “status”, “instruções” e “avançar” sempre dizem doses quando aplicável.
+- LLM nunca decide regras, apenas narra.
+- Todas as sugestões de fala batem com o interactionModel atual.
+
+Entregáveis:
+- Refatoração dos handlers para gerar JSON estruturado e chamar o LLM apenas para speech.
+- Remoção de concatenação manual de texto onde aplicável.
+- Logs claros do input/output do LLM.

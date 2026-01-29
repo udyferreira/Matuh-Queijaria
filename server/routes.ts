@@ -7,6 +7,7 @@ import { recipeManager, getTimerDurationMinutes, getIntervalDurationMinutes, TES
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import * as batchService from "./batchService";
+import * as speechRenderer from "./speechRenderer";
 import { z } from "zod";
 import { randomBytes } from "crypto";
 
@@ -754,30 +755,34 @@ export async function registerRoutes(
         });
         
         if (!result.success) {
-          return { speech: result.error || "Erro ao iniciar lote.", shouldEndSession: false };
+          const payload = speechRenderer.buildErrorPayload(result.error || "Erro ao iniciar lote.");
+          const speech = await speechRenderer.renderSpeech(payload);
+          return { speech, shouldEndSession: false };
         }
         
-        const inputs = result.batch.calculatedInputs;
-        return {
-          speech: `Lote iniciado com ${milkVolume} litros de leite a ${milkTemperature} graus e pH ${milkPh}. Você vai precisar de: ${inputs.FERMENT_LR} mililitros de fermento LR, ${inputs.FERMENT_DX} de DX, ${inputs.FERMENT_KL} de KL, e ${inputs.RENNET} de coalho. Aqueça o leite a 32 graus para começar.`,
-          shouldEndSession: false
-        };
+        const firstStage = recipeManager.getStage(1);
+        const payload = speechRenderer.buildStartBatchPayload(result.batch, firstStage);
+        const speech = await speechRenderer.renderSpeech(payload);
+        return { speech, shouldEndSession: false };
       }
       
       case "status": {
         if (!activeBatch) {
-          return { speech: "Não há lote ativo no momento. Para iniciar um novo lote, diga: 'iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5'.", shouldEndSession: false };
+          const payload = speechRenderer.buildErrorPayload(
+            "Não há lote ativo no momento.",
+            undefined
+          );
+          payload.allowedUtterances = ["iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5"];
+          const speech = await speechRenderer.renderSpeech(payload);
+          return { speech, shouldEndSession: false };
         }
         const status = await batchService.getBatchStatus(activeBatch.id);
         if (!status) {
           return { speech: "Erro ao obter status.", shouldEndSession: false };
         }
-        let speech = `Etapa ${status.currentStageId}: ${status.stageName || 'em andamento'}.`;
-        const activeTimer = status.activeTimers.find(t => !t.isComplete);
-        if (activeTimer) {
-          const remaining = Math.ceil(activeTimer.remainingSeconds / 60);
-          speech += ` Faltam ${remaining} minutos no timer.`;
-        }
+        const stage = recipeManager.getStage(status.currentStageId);
+        const payload = speechRenderer.buildStatusPayload(activeBatch, stage, "status");
+        const speech = await speechRenderer.renderSpeech(payload);
         return { speech, shouldEndSession: false };
       }
       
@@ -786,25 +791,27 @@ export async function registerRoutes(
           return { speech: "Não há lote ativo para avançar.", shouldEndSession: false };
         }
         
-        // FIXED: Now uses batchService which creates timers correctly
         const result = await batchService.advanceBatch(activeBatch.id);
         
         if (!result.success) {
-          return { speech: result.error || "Não é possível avançar agora.", shouldEndSession: false };
+          const stage = recipeManager.getStage(activeBatch.currentStageId);
+          const payload = speechRenderer.buildErrorPayload(result.error || "Não é possível avançar agora.", stage);
+          const speech = await speechRenderer.renderSpeech(payload);
+          return { speech, shouldEndSession: false };
         }
         
         if (result.completed) {
-          return { speech: "Parabéns! Receita concluída com sucesso!", shouldEndSession: false };
+          const payload = speechRenderer.buildAdvancePayload(activeBatch, null, true);
+          const speech = await speechRenderer.renderSpeech(payload);
+          return { speech, shouldEndSession: false };
         }
         
-        // Use buildStageSpeech for detailed stage guidance with quantities
         const updatedBatch = result.batch || activeBatch;
-        const stageSpeech = batchService.buildStageSpeech(updatedBatch, result.nextStage?.id || 0);
+        const nextStage = recipeManager.getStage(result.nextStage?.id || 0);
+        const payload = speechRenderer.buildAdvancePayload(updatedBatch, nextStage, false);
+        const speech = await speechRenderer.renderSpeech(payload);
         
-        return { 
-          speech: stageSpeech, 
-          shouldEndSession: false 
-        };
+        return { speech, shouldEndSession: false };
       }
       
       case "log_time": {
@@ -903,14 +910,15 @@ export async function registerRoutes(
           return { speech: "Não há lote ativo.", shouldEndSession: false };
         }
         const stage = recipeManager.getStage(activeBatch.currentStageId);
-        if (stage?.instructions && stage.instructions.length > 0) {
-          let speech = stage.instructions.join('. ');
-          if (stage.llm_guidance) {
-            speech += ` Dica: ${stage.llm_guidance}`;
-          }
-          return { speech, shouldEndSession: false };
+        if (!stage) {
+          return { speech: "Etapa não encontrada.", shouldEndSession: false };
         }
-        return { speech: stage?.name || "Prossiga com a produção.", shouldEndSession: false };
+        const payload = speechRenderer.buildStatusPayload(activeBatch, stage, "instructions");
+        if (stage.llm_guidance) {
+          payload.notes = `Dica: ${stage.llm_guidance}`;
+        }
+        const speech = await speechRenderer.renderSpeech(payload);
+        return { speech, shouldEndSession: false };
       }
       
       case "timer": {
@@ -953,30 +961,27 @@ export async function registerRoutes(
           return { speech: "Os insumos ainda não foram calculados para este lote.", shouldEndSession: false };
         }
         
-        const inputNames: Record<string, string> = {
-          "FERMENT_LR": "fermento LR",
-          "FERMENT_DX": "fermento DX",
-          "FERMENT_KL": "fermento KL",
-          "RENNET": "coalho"
-        };
-        
         const value = calculatedInputs[inputType];
         if (value === undefined) {
+          const inputNames: Record<string, string> = {
+            "FERMENT_LR": "fermento LR",
+            "FERMENT_DX": "fermento DX",
+            "FERMENT_KL": "fermento KL",
+            "RENNET": "coalho"
+          };
           return { speech: `O insumo ${inputNames[inputType] || inputType} não foi encontrado.`, shouldEndSession: false };
         }
         
-        const unit = inputType === "RENNET" ? "ml" : "gramas";
-        return { 
-          speech: `A quantidade de ${inputNames[inputType]} é ${value} ${unit}.`, 
-          shouldEndSession: false 
-        };
+        const payload = speechRenderer.buildQueryInputPayload(inputType, value);
+        const speech = await speechRenderer.renderSpeech(payload);
+        return { speech, shouldEndSession: false };
       }
       
       case "help": {
-        return {
-          speech: "Você pode dizer: status, avançar, registra pH cinco ponto dois, hora da floculação dez e trinta, pausar, retomar, ou instruções. Para iniciar um novo lote, diga: 'iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5'.",
-          shouldEndSession: false
-        };
+        const stage = activeBatch ? recipeManager.getStage(activeBatch.currentStageId) : undefined;
+        const payload = speechRenderer.buildHelpPayload(stage, activeBatch);
+        const speech = await speechRenderer.renderSpeech(payload);
+        return { speech, shouldEndSession: false };
       }
       
       case "goodbye": {
@@ -1001,11 +1006,9 @@ export async function registerRoutes(
       
       // --- LaunchRequest: Skill opening ---
       if (requestType === "LaunchRequest") {
-        return res.status(200).json(buildAlexaResponse(
-          "Bem-vindo à Matuh Queijaria! Diga 'qual é o status' ou 'iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5'.",
-          false,
-          "Diga 'ajuda' para ver os comandos."
-        ));
+        const payload = speechRenderer.buildLaunchPayload();
+        const speech = await speechRenderer.renderSpeech(payload);
+        return res.status(200).json(buildAlexaResponse(speech, false, "Diga 'ajuda' para ver os comandos."));
       }
       
       // --- SessionEndedRequest: Skill closing ---
@@ -1030,19 +1033,18 @@ export async function registerRoutes(
         }
         
         if (intentName === "AMAZON.HelpIntent") {
-          return res.status(200).json(buildAlexaResponse(
-            "Você pode dizer: status, avançar, registra pH, hora da floculação, pausar, retomar, ou instruções. O que deseja?",
-            false,
-            "Diga um comando."
-          ));
+          const activeBatch = await batchService.getActiveBatch();
+          const stage = activeBatch ? recipeManager.getStage(activeBatch.currentStageId) : undefined;
+          const payload = speechRenderer.buildHelpPayload(stage, activeBatch);
+          const speech = await speechRenderer.renderSpeech(payload);
+          return res.status(200).json(buildAlexaResponse(speech, false, "Diga um comando."));
         }
         
         if (intentName === "AMAZON.FallbackIntent") {
-          return res.status(200).json(buildAlexaResponse(
-            "Não entendi. Diga 'ajuda' para ver os comandos.",
-            false,
-            "Diga 'ajuda' para ver os comandos."
-          ));
+          const payload = speechRenderer.buildErrorPayload("Não entendi o comando.");
+          payload.allowedUtterances = ["ajuda"];
+          const speech = await speechRenderer.renderSpeech(payload);
+          return res.status(200).json(buildAlexaResponse(speech, false, "Diga 'ajuda' para ver os comandos."));
         }
         
         // === STAGE-AWARE INTENT GATING ===
