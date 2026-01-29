@@ -1,0 +1,163 @@
+Objetivo geral:
+Ajustar o backend da skill “Matuh Queijaria” para:
+1) alinhar completamente as mensagens de voz às capacidades reais do interactionModel da Alexa;
+2) corrigir falhas identificadas em teste (start_batch, pH, avanço de etapas);
+3) padronizar a UX de início de lote exigindo SEMPRE volume, temperatura e pH na mesma fala.
+
+Contexto técnico:
+- O interactionModel usa majoritariamente ProcessCommandIntent com slot {utterance}.
+- O slot {utterance} REMOVE o verbo do sample (ex.: “iniciar {utterance}” chega como “lote com X litros”).
+- O fluxo canônico exige, no stage 1, os três inputs obrigatórios:
+  - milk_volume_l
+  - milk_temperature_c
+  - milk_ph
+- Exemplos incompletos causam erro e retrabalho do operador.
+
+----------------------------------------------------------------
+(1) START_BATCH – reconhecer “lote com X litros” e exigir as 3 infos
+----------------------------------------------------------------
+
+Problema observado:
+- “iniciar lote com 130 litros” chega como utterance="lote com 130 litros".
+- O interpreter não reconhece isso como start_batch.
+- Só funciona quando o usuário diz “iniciar NOVO lote…”.
+
+Ajustes obrigatórios em /mnt/data/interpreter.ts:
+
+1.1 Reconhecimento explícito de start_batch
+- Adicionar regra de alta prioridade (antes de query_input):
+  - Se utterance bater com regex:
+    /(?:novo\s+)?lote\s+com\s+(\d+)\s+litros?/i
+    então:
+      intent = "start_batch"
+      entities.volume = <numero>
+      confidence ≈ 0.95
+- Essa regra deve funcionar tanto para:
+  - “lote com 130 litros”
+  - “novo lote com 130 litros”
+
+1.2 Atualizar SYSTEM_PROMPT / exemplos do LLM
+Adicionar exemplos claros:
+- "lote com 130 litros" → start_batch
+- "novo lote com 130 litros" → start_batch
+
+----------------------------------------------------------------
+(2) INÍCIO DE LOTE – mensagens SEMPRE com volume + temperatura + pH
+----------------------------------------------------------------
+
+Regra de UX OBRIGATÓRIA:
+- NENHUMA mensagem do backend pode sugerir início de lote com apenas litragem.
+- TODAS as mensagens devem orientar UMA FRASE COMPLETA contendo:
+  volume + temperatura + pH.
+
+Ajustes obrigatórios em todas as respostas do backend:
+
+2.1 Substituir qualquer texto como:
+- “Diga ‘iniciar lote com 50 litros’”
+- “Para começar, diga...”
+
+Por sempre:
+- “Para iniciar um novo lote, diga:
+  ‘iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5’.”
+
+2.2 Quando NÃO houver lote ativo (status inicial):
+Resposta deve ser:
+- “Não há lote ativo no momento.
+   Para iniciar um novo lote, diga:
+   ‘iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5’.”
+
+2.3 Quando houver missingInputs no stage 1:
+Mesmo que só falte um campo, orientar a frase completa, destacando o que falta:
+
+- Só veio volume:
+  “Faltam temperatura e pH do leite.
+   Diga: ‘iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5’.”
+
+- Veio volume + temperatura:
+  “Falta o pH do leite.
+   Diga: ‘iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5’.”
+
+- Veio volume + pH:
+  “Falta a temperatura do leite.
+   Diga: ‘iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5’.”
+
+2.4 Padronização de fala:
+- Preferir sempre:
+  “pH 6 ponto 5”
+- Evitar “pH 6.5” para reduzir erro de ASR.
+
+----------------------------------------------------------------
+(3) NORMALIZAÇÃO DE pH – corrigir PH66 → 6.6
+----------------------------------------------------------------
+
+Problema observado:
+- Fala “pH seis ponto seis” virou “PH66” e foi persistido como 66.
+
+Ajuste obrigatório no pipeline de persistência (centralizado):
+
+3.1 Regra de normalização:
+- Se o valor for > 14 e < 100
+- E o contexto for pH (milk_ph ou ph_value)
+- Então converter para n / 10:
+  - 66 → 6.6
+  - 52 → 5.2
+
+3.2 Regra opcional (robustez):
+- Se vier valor >= 100 e < 1000:
+  - Converter para n / 100 (ex.: 660 → 6.60)
+
+3.3 Aplicar a normalização em:
+- start_batch (milk_ph)
+- RegisterPHAndPiecesIntent (ph_value)
+
+3.4 Garantir que o valor persistido seja float (não inteiro).
+
+----------------------------------------------------------------
+(4) AVANÇO DE ETAPA – repetir instruções e quantidades calculadas
+----------------------------------------------------------------
+
+Problema observado:
+- Ao avançar para etapa 4 (LR/DX), o backend falou apenas o nome da etapa.
+
+Ajustes obrigatórios:
+
+4.1 Ao avançar etapa, a resposta deve conter:
+- Nome da etapa
+- Instruções do YAML (resumidas)
+- Quantidades calculadas, quando aplicável
+
+Exemplo desejado (etapa 4):
+“Avançando para etapa 4: Adicionar fermentos LR e DX.
+ Use 65 ml de fermento LR e 65 ml de DX.
+ Mexa bem e marque 30 minutos.”
+
+4.2 Fonte das quantidades:
+- batch.calculatedInputs:
+  - FERMENT_LR
+  - FERMENT_DX
+  - FERMENT_KL
+  - RENNET
+
+4.3 Implementar função utilitária (ex.: buildStageSpeech(batch, stage)) que:
+1) Fala nome da etapa
+2) Acrescenta instructions do YAML
+3) Acrescenta bloco de doses quando detectar fermentos/coagulante
+
+----------------------------------------------------------------
+(5) Checklist final de validação
+----------------------------------------------------------------
+
+Após as mudanças, validar:
+
+- “iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5” → OK
+- “iniciar lote com 130 litros, temperatura 32 graus, pH 6 ponto 5” → OK
+- “lote com 130 litros, temperatura 32 graus, pH 6 ponto 5” → OK
+- “pH seis ponto seis” → persistir 6.6
+- Avançar para etapa 4 → repetir LR/DX calculados
+
+Entregáveis:
+- Commit com alterações em interpreter.ts, handlers de resposta, e pipeline de persistência.
+- Log de teste mostrando:
+  - PH66 → 6.6
+  - “lote com 130 litros” → start_batch
+  - Resposta de avanço com doses.

@@ -741,7 +741,7 @@ export async function registerRoutes(
         
         if (missing.length > 0) {
           return {
-            speech: `Para iniciar o lote, preciso saber: ${missing.join(", ")}. Por exemplo: "iniciar lote com 80 litros, temperatura 32 graus, pH 6.5".`,
+            speech: `Para iniciar o lote, faltam: ${missing.join(", ")}. Diga: 'iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5'.`,
             shouldEndSession: false
           };
         }
@@ -766,7 +766,7 @@ export async function registerRoutes(
       
       case "status": {
         if (!activeBatch) {
-          return { speech: "Não há lote ativo no momento. Diga 'iniciar lote com 50 litros' para começar.", shouldEndSession: false };
+          return { speech: "Não há lote ativo no momento. Para iniciar um novo lote, diga: 'iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5'.", shouldEndSession: false };
         }
         const status = await batchService.getBatchStatus(activeBatch.id);
         if (!status) {
@@ -797,8 +797,12 @@ export async function registerRoutes(
           return { speech: "Parabéns! Receita concluída com sucesso!", shouldEndSession: false };
         }
         
+        // Use buildStageSpeech for detailed stage guidance with quantities
+        const updatedBatch = result.batch || activeBatch;
+        const stageSpeech = batchService.buildStageSpeech(updatedBatch, result.nextStage?.id || 0);
+        
         return { 
-          speech: `Avançando para etapa ${result.nextStage?.id}: ${result.nextStage?.name}.`, 
+          speech: stageSpeech, 
           shouldEndSession: false 
         };
       }
@@ -970,7 +974,7 @@ export async function registerRoutes(
       
       case "help": {
         return {
-          speech: "Você pode dizer: status, avançar, registra pH cinco ponto dois, hora da floculação dez e trinta, pausar, retomar, ou instruções. Para iniciar um lote, diga: iniciar lote com 80 litros, temperatura 32 graus, pH 6.5.",
+          speech: "Você pode dizer: status, avançar, registra pH cinco ponto dois, hora da floculação dez e trinta, pausar, retomar, ou instruções. Para iniciar um novo lote, diga: 'iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5'.",
           shouldEndSession: false
         };
       }
@@ -998,7 +1002,7 @@ export async function registerRoutes(
       // --- LaunchRequest: Skill opening ---
       if (requestType === "LaunchRequest") {
         return res.status(200).json(buildAlexaResponse(
-          "Bem-vindo à Matuh Queijaria! Diga 'qual é o status' ou 'iniciar lote com 50 litros'.",
+          "Bem-vindo à Matuh Queijaria! Diga 'qual é o status' ou 'iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5'.",
           false,
           "Diga 'ajuda' para ver os comandos."
         ));

@@ -6,24 +6,40 @@ import { randomBytes } from "crypto";
 const generateId = () => randomBytes(8).toString('hex');
 
 /**
- * Normalize pH value: 54 -> 5.4, 62 -> 6.2, etc.
+ * Normalize pH value: 54 -> 5.4, 62 -> 6.2, 66 -> 6.6, etc.
  * Handles cases like "54" spoken as "cinquenta e quatro" for pH 5.4
+ * Also handles PH66 → 6.6 ASR errors
  */
 export function normalizePHValue(rawValue: string | number): number | null {
-  let num = typeof rawValue === 'string' ? parseFloat(rawValue) : rawValue;
+  // Handle string cleanup (e.g., "PH66" -> 66)
+  let valueStr = String(rawValue).toUpperCase().replace(/[PH\s]/g, '');
+  let num = parseFloat(valueStr);
   if (isNaN(num)) return null;
   
-  // If it's an integer between 40 and 80, divide by 10
-  if (Number.isInteger(num) && num >= 40 && num <= 80) {
+  // If value >= 100 and < 1000, divide by 100 (e.g., 660 -> 6.60)
+  if (num >= 100 && num < 1000) {
+    num = num / 100;
+    console.log(`[normalizePH] ${rawValue} -> ${num} (divided by 100)`);
+  }
+  // If value > 14 and < 100 (clearly not a valid pH), divide by 10
+  // This handles: 66 -> 6.6, 54 -> 5.4, 52 -> 5.2
+  else if (num > 14 && num < 100) {
     num = num / 10;
+    console.log(`[normalizePH] ${rawValue} -> ${num} (divided by 10)`);
+  }
+  // Also handle integers in 40-80 range (redundant with above but explicit)
+  else if (Number.isInteger(num) && num >= 40 && num <= 80) {
+    num = num / 10;
+    console.log(`[normalizePH] ${rawValue} -> ${num} (integer 40-80 divided by 10)`);
   }
   
   // Validate pH range (4.0 to 7.5 is typical for cheese making)
   if (num < 4.0 || num > 7.5) {
+    console.log(`[normalizePH] ${rawValue} -> ${num} is outside valid range 4.0-7.5`);
     return null;
   }
   
-  return Math.round(num * 10) / 10; // Round to 1 decimal place
+  return Math.round(num * 100) / 100; // Round to 2 decimal places for precision
 }
 
 export interface StartBatchParams {
@@ -619,4 +635,62 @@ export async function resumeBatch(batchId: number) {
   });
   
   return { success: true };
+}
+
+/**
+ * Build speech for a stage including instructions and calculated quantities
+ * Used when advancing to provide complete guidance
+ */
+export function buildStageSpeech(batch: any, stageId: number): string {
+  const stage = recipeManager.getStage(stageId);
+  if (!stage) return `Etapa ${stageId} não encontrada.`;
+  
+  const parts: string[] = [];
+  
+  // Stage name
+  parts.push(`Etapa ${stageId}: ${stage.name}.`);
+  
+  // Add calculated quantities for stages that use them
+  const calculatedInputs = batch.calculatedInputs || {};
+  
+  // Stage 3: Fermento KL
+  if (stageId === 3 && calculatedInputs.FERMENT_KL) {
+    parts.push(`Use ${calculatedInputs.FERMENT_KL} ml de fermento KL.`);
+  }
+  
+  // Stage 4: Fermentos LR e DX
+  if (stageId === 4) {
+    const lr = calculatedInputs.FERMENT_LR;
+    const dx = calculatedInputs.FERMENT_DX;
+    if (lr && dx) {
+      parts.push(`Use ${lr} ml de fermento LR e ${dx} ml de DX.`);
+    }
+  }
+  
+  // Stage 5: Coalho (Rennet)
+  if (stageId === 5 && calculatedInputs.RENNET) {
+    parts.push(`Use ${calculatedInputs.RENNET} ml de coalho.`);
+  }
+  
+  // Add instructions (first 2 if long)
+  if (stage.instructions && stage.instructions.length > 0) {
+    const instructionText = stage.instructions.slice(0, 2).join(' ');
+    parts.push(instructionText);
+  }
+  
+  // Add timer info if present
+  if (stage.timer) {
+    const durationMinutes = getTimerDurationMinutes(stage);
+    if (durationMinutes > 0) {
+      if (TEST_MODE) {
+        parts.push(`Timer de ${durationMinutes} minuto(s) iniciado (modo teste).`);
+      } else if (stage.timer.duration_hours) {
+        parts.push(`Timer de ${stage.timer.duration_hours} hora(s) iniciado.`);
+      } else {
+        parts.push(`Timer de ${durationMinutes} minutos iniciado.`);
+      }
+    }
+  }
+  
+  return parts.join(' ');
 }

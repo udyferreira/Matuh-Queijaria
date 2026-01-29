@@ -136,7 +136,12 @@ QUERY_INPUT (consulta insumos) - PRIORIDADE ALTA:
 
 OUTROS:
 "avançar" → {"intent":"advance","confidence":0.95,"entities":{}}
-"iniciar lote com 120 litros" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":120}}
+
+START_BATCH (início de lote - SEMPRE exige volume, temperatura, pH na mesma fala):
+NOTA: O operador DEVE informar volume + temperatura + pH na mesma frase. Extraia TODAS as entidades mencionadas.
+"lote com 130 litros temperatura 32 graus pH 6 ponto 5" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":130,"milk_temperature":32,"ph_value":6.5}}
+"novo lote com 80 litros temperatura 35 graus pH 6.5" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":80,"milk_temperature":35,"ph_value":6.5}}
+"lote com 130 litros" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":130}} (incompleto - backend pedirá os dados faltantes)
 
 Retorne APENAS o JSON, sem markdown, explicações ou texto adicional.`;
 }
@@ -243,6 +248,42 @@ const INPUT_TYPE_MAP: Record<string, InterpretedCommand["entities"]["input_type"
 // Palavras que indicam consulta de quantidade/valor
 const QUERY_INDICATORS = /\b(quanto|qual|quantidade|proporção|proporcao|dose|me diga|deste lote|qual é|qual e|quanto de|quanto do)\b/i;
 
+// High-priority pattern for start_batch
+// Matches: "lote com X litros", "novo lote com X litros"
+// Also extracts temperature and pH if present
+// pH can be: "6.5", "6,5", "6 ponto 5", "6 vírgula 5"
+const START_BATCH_PATTERN = /(?:novo\s+)?lote\s+com\s+(\d+)\s*litros?(?:.*?temperatura\s*(\d+)\s*graus?)?(?:.*?(?:ph|p\s*h)\s*(\d+\s*(?:ponto|virgula|vírgula)\s*\d+|\d+[.,]\d+|\d+))?/i;
+
+function tryStartBatchFallback(text: string): InterpretedCommand | null {
+  const normalized = text.toLowerCase().trim();
+  const match = normalized.match(START_BATCH_PATTERN);
+  
+  if (match) {
+    const volume = parseInt(match[1], 10);
+    const entities: InterpretedCommand["entities"] = { volume };
+    
+    if (match[2]) {
+      entities.milk_temperature = parseInt(match[2], 10);
+    }
+    
+    if (match[3]) {
+      // Parse pH value - handle "6 ponto 5", "6 vírgula 5", "6.5", "6,5"
+      let phStr = match[3].replace(/\s*(ponto|virgula|vírgula)\s*/gi, '.');
+      phStr = phStr.replace(',', '.');
+      entities.ph_value = parseFloat(phStr);
+    }
+    
+    console.log(`Start batch detected: volume=${volume}, temp=${entities.milk_temperature}, pH=${entities.ph_value} (from "${normalized}")`);
+    return {
+      intent: "start_batch",
+      confidence: 0.95,
+      entities
+    };
+  }
+  
+  return null;
+}
+
 function tryQueryInputFallback(text: string): InterpretedCommand | null {
   const normalized = text.toLowerCase().trim();
   
@@ -271,8 +312,15 @@ function tryQueryInputFallback(text: string): InterpretedCommand | null {
 function trySimpleFallback(text: string): InterpretedCommand | null {
   const normalized = text.toLowerCase().trim();
   
-  // 0. PRIMEIRO: Verificar query_input para consultas de insumos
-  // (prioridade máxima para evitar que vá para unknown)
+  // 0. PRIORIDADE MÁXIMA: start_batch para "lote com X litros"
+  // Isso é crítico porque o slot {utterance} remove o verbo "iniciar"
+  const startBatchResult = tryStartBatchFallback(normalized);
+  if (startBatchResult) {
+    return startBatchResult;
+  }
+  
+  // 1. Verificar query_input para consultas de insumos
+  // (prioridade alta para evitar que vá para unknown)
   const queryInputResult = tryQueryInputFallback(normalized);
   if (queryInputResult) {
     return queryInputResult;

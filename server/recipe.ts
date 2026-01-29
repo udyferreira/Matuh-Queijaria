@@ -341,16 +341,13 @@ export class RecipeManager {
           messages.push("Registre a data de entrada na Câmara 2. Diga: 'coloquei na câmara dois hoje' ou 'entrada na câmara dois dia 8 de janeiro'");
           break;
         case 'milk_volume_l':
-          // ProcessCommandIntent: "iniciar {utterance}"
-          messages.push("Informe o volume de leite. Diga: 'iniciar lote com 120 litros'");
-          break;
         case 'milk_temperature_c':
-          // ProcessCommandIntent: "registrar {utterance}"
-          messages.push("Informe a temperatura do leite. Diga: 'registrar temperatura do leite 32 graus'");
-          break;
         case 'milk_ph':
-          // ProcessCommandIntent: "registrar {utterance}"
-          messages.push("Informe o pH do leite. Diga: 'registrar pH do leite 6 ponto 6'");
+          // All three are required together - provide single combined message
+          // Only add once (when we see any of them)
+          if (!messages.some(m => m.includes('iniciar novo lote'))) {
+            messages.push("Para iniciar um novo lote, diga: 'iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5'");
+          }
           break;
         default:
           messages.push(`Registre: ${input}`);
