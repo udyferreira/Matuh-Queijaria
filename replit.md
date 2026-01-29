@@ -76,6 +76,15 @@ Preferred communication style: Simple, everyday language.
 - Always returns HTTP 200 (errors communicated via speech)
 - Handles LaunchRequest, IntentRequest, SessionEndedRequest
 
+**Speech Renderer Architecture** (`server/speechRenderer.ts`):
+- Backend builds structured `SpeechRenderPayload` JSON with all data
+- LLM (gpt-4o-mini) ONLY renders JSON to natural speech - never decides, calculates, or invents
+- Contexts: status, instructions, advance, help, query_input, error, start_batch, log_time/ph/date
+- Payload includes: stage, instructions, doses (value+unit), timers, allowedUtterances, notes
+- Builder functions: buildStatusPayload, buildAdvancePayload, buildQueryInputPayload, buildHelpPayload, buildErrorPayload, buildStartBatchPayload, buildLogConfirmationPayload, buildLaunchPayload
+- Structured logging: `[llm.render.input]` and `[llm.render.output]` for troubleshooting
+- Fallback speech generation when LLM fails
+
 **Stage-Aware Intent Gating (REGRA MESTRA)**:
 - Se etapa tem `operator_input_required` pendente, bloqueia TODOS os intents exceto:
   - O `expected_intent` da etapa
