@@ -101,10 +101,20 @@ Preferred communication style: Simple, everyday language.
 - **RegisterPHAndPiecesIntent** (etapa 13): Registro de pH e quantidade de peças
   - Slots: ph_value (AMAZON.NUMBER), pieces_quantity (AMAZON.NUMBER)
   - Só aceito na etapa 13, rejeitado em outras
+  - **Intent Misroute Guard**: Se ALL slots vazios/"?", retorna ajuda contextual para etapa atual
 - **RegisterChamberEntryDateIntent** (etapa 19): Registro de data de entrada na câmara 2
   - Slot: entry_date (AMAZON.DATE)
   - Só aceito na etapa 19, rejeitado em outras
   - Calcula automaticamente maturationEndDate (90 dias)
+  - **Intent Misroute Guard**: Se entry_date vazio/"?", retorna ajuda contextual para etapa atual
+
+**pH Value Normalization** (`normalizePHValue` em batchService.ts):
+- ASR voice patterns: "55"→5.5, "66"→6.6 (divide by 10 if >14 and <100)
+- Comma decimal: "6,5"→6.5
+- Spaced/hyphen: "5 5"→5.5, "6-5"→6.5
+- Range validation: 3.5-8.0
+- Applied in: startBatch (milk_ph), RegisterPHAndPiecesIntent (ph_value)
+- Zod schema in shared/routes.ts also transforms before validation
 
 **ProcessCommandIntent**: Para comandos gerais (status, avançar, ajuda)
   - Bloqueado quando etapa tem inputs pendentes

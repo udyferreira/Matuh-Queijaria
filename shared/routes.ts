@@ -47,7 +47,13 @@ export const api = {
       input: z.object({
         milkVolumeL: z.number().min(10).max(200),
         milkTemperatureC: z.number().min(0).max(50),
-        milkPh: z.number().min(0).max(14),
+        // Accept spoken pH values like 66 (→6.6), 55 (→5.5) before validation
+        milkPh: z.number().min(0).max(100).transform((val) => {
+          if (val > 14 && val < 100) return val / 10;
+          return val;
+        }).refine((val) => val >= 3.5 && val <= 8.0, {
+          message: "pH must be between 3.5 and 8.0"
+        }),
         recipeId: z.string().optional().default("QUEIJO_NETE"),
       }),
       responses: {
