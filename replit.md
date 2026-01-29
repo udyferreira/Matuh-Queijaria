@@ -86,10 +86,12 @@ Preferred communication style: Simple, everyday language.
 - Fallback speech generation when LLM fails
 
 **Stage-Aware Intent Gating (REGRA MESTRA)**:
-- Se etapa tem `operator_input_required` pendente, bloqueia TODOS os intents exceto:
-  - O `expected_intent` da etapa
-  - AMAZON.HelpIntent, AMAZON.StopIntent, AMAZON.CancelIntent
-- ProcessCommandIntent e LLM bloqueados quando há inputs pendentes
+- Se etapa tem `operator_input_required` pendente:
+  - Bloqueia intents que mudam estado (advance, timers)
+  - Permite read-only intents (status, instructions, help) com pendingInputReminder injetado
+  - O `expected_intent` da etapa sempre permitido
+  - AMAZON.HelpIntent, AMAZON.StopIntent, AMAZON.CancelIntent sempre permitidos
+- Logging estruturado: `[GATING] stage=X intent=Y pendingInputs=Z expected=W`
 
 **Intents Estruturados por Etapa**:
 - **LogTimeIntent** (etapas 6, 7, 14): Registro de horários via AMAZON.TIME
