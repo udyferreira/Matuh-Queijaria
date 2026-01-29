@@ -8,13 +8,49 @@ const generateId = () => randomBytes(8).toString('hex');
 /**
  * Normalize pH value: 54 -> 5.4, 62 -> 6.2, 66 -> 6.6, etc.
  * Handles cases like "54" spoken as "cinquenta e quatro" for pH 5.4
- * Also handles PH66 → 6.6 ASR errors
+ * Also handles PH66 → 6.6 ASR errors, "5 5" → 5.5, "6-5" → 6.5, "6,5" → 6.5
+ * 
+ * Rules:
+ * - If raw is number and raw > 14 and raw < 100 => raw/10 (55=>5.5, 66=>6.6)
+ * - If raw is string: remove "pH", spaces, replace vírgula with dot
+ * - Handle patterns: "5 5" => 5.5, "6-5" => 6.5, "52" => 5.2
+ * - Validate range: 3.5 to 8.0 (typical for cheese making)
  */
 export function normalizePHValue(rawValue: string | number): number | null {
-  // Handle string cleanup (e.g., "PH66" -> 66)
-  let valueStr = String(rawValue).toUpperCase().replace(/[PH\s]/g, '');
+  if (rawValue === undefined || rawValue === null || rawValue === '?' || rawValue === '') {
+    return null;
+  }
+  
+  let valueStr = String(rawValue)
+    .toUpperCase()
+    .replace(/PH/g, '')           // Remove "PH" prefix
+    .replace(/\s+/g, ' ')         // Normalize whitespace
+    .trim();
+  
+  // Handle comma as decimal separator (Portuguese): "5,5" -> "5.5"
+  valueStr = valueStr.replace(',', '.');
+  
+  // Handle patterns like "5 5" or "6 5" (space between digits) -> 5.5, 6.5
+  const spacedPattern = /^(\d)\s+(\d)$/;
+  const spacedMatch = valueStr.match(spacedPattern);
+  if (spacedMatch) {
+    valueStr = `${spacedMatch[1]}.${spacedMatch[2]}`;
+    console.log(`[normalizePH] "${rawValue}" matched spaced pattern -> ${valueStr}`);
+  }
+  
+  // Handle patterns like "6-5" (hyphen between digits) -> 6.5
+  const hyphenPattern = /^(\d)-(\d)$/;
+  const hyphenMatch = valueStr.match(hyphenPattern);
+  if (hyphenMatch) {
+    valueStr = `${hyphenMatch[1]}.${hyphenMatch[2]}`;
+    console.log(`[normalizePH] "${rawValue}" matched hyphen pattern -> ${valueStr}`);
+  }
+  
   let num = parseFloat(valueStr);
-  if (isNaN(num)) return null;
+  if (isNaN(num)) {
+    console.log(`[normalizePH] "${rawValue}" -> NaN after parsing "${valueStr}"`);
+    return null;
+  }
   
   // If value >= 100 and < 1000, divide by 100 (e.g., 660 -> 6.60)
   if (num >= 100 && num < 1000) {
@@ -22,24 +58,21 @@ export function normalizePHValue(rawValue: string | number): number | null {
     console.log(`[normalizePH] ${rawValue} -> ${num} (divided by 100)`);
   }
   // If value > 14 and < 100 (clearly not a valid pH), divide by 10
-  // This handles: 66 -> 6.6, 54 -> 5.4, 52 -> 5.2
+  // This handles: 66 -> 6.6, 55 -> 5.5, 52 -> 5.2
   else if (num > 14 && num < 100) {
     num = num / 10;
     console.log(`[normalizePH] ${rawValue} -> ${num} (divided by 10)`);
   }
-  // Also handle integers in 40-80 range (redundant with above but explicit)
-  else if (Number.isInteger(num) && num >= 40 && num <= 80) {
-    num = num / 10;
-    console.log(`[normalizePH] ${rawValue} -> ${num} (integer 40-80 divided by 10)`);
-  }
   
-  // Validate pH range (4.0 to 7.5 is typical for cheese making)
-  if (num < 4.0 || num > 7.5) {
-    console.log(`[normalizePH] ${rawValue} -> ${num} is outside valid range 4.0-7.5`);
+  // Validate pH range (3.5 to 8.0 is acceptable for cheese making)
+  if (num < 3.5 || num > 8.0) {
+    console.log(`[normalizePH] ${rawValue} -> ${num} is outside valid range 3.5-8.0`);
     return null;
   }
   
-  return Math.round(num * 100) / 100; // Round to 2 decimal places for precision
+  const result = Math.round(num * 100) / 100; // Round to 2 decimal places
+  console.log(`[normalizePH] "${rawValue}" -> ${result}`);
+  return result;
 }
 
 export interface StartBatchParams {
@@ -67,10 +100,13 @@ export interface AdvanceBatchResult {
 }
 
 export async function startBatch(params: StartBatchParams): Promise<StartBatchResult> {
-  const { milkVolumeL, milkTemperatureC, milkPh, recipeId: rawRecipeId = "QUEIJO_NETE" } = params;
+  const { milkVolumeL, milkTemperatureC, milkPh: rawMilkPh, recipeId: rawRecipeId = "QUEIJO_NETE" } = params;
   
   // Normalize recipeId to uppercase for CHEESE_TYPES lookup
   const recipeId = rawRecipeId.toUpperCase();
+  
+  // Normalize milk pH (handles values like 66 → 6.6, 55 → 5.5)
+  const milkPh = normalizePHValue(rawMilkPh);
   
   const missingFields: string[] = [];
   if (milkVolumeL === undefined || milkVolumeL === null) missingFields.push("volume");

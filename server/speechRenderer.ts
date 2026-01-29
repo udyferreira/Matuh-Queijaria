@@ -265,6 +265,7 @@ export function buildStatusPayload(
 
 /**
  * Build a SpeechRenderPayload for advance context
+ * IMPORTANT: Never include NaN values in timers; if duration is undefined, omit timer
  */
 export function buildAdvancePayload(
   batch: any,
@@ -284,13 +285,36 @@ export function buildAdvancePayload(
   // Use keyword-based dose matching instead of hardcoded stage IDs
   const doses = getRelevantDosesForStage(nextStage, calculatedInputs);
   
+  // Build timers only if duration is valid (not undefined/NaN)
   const timers: TimerInfo[] = [];
   if (nextStage.timer) {
-    const durationMinutes = nextStage.timer.duration_minutes || (nextStage.timer.duration_hours * 60);
-    timers.push({
-      description: `${durationMinutes} minutos`,
-      blocking: nextStage.timer.blocking || false
-    });
+    const durationMinutes = nextStage.timer.duration_minutes;
+    const durationHours = nextStage.timer.duration_hours;
+    
+    // Calculate total minutes only if we have valid values
+    let totalMinutes: number | undefined;
+    if (typeof durationMinutes === 'number' && !isNaN(durationMinutes)) {
+      totalMinutes = durationMinutes;
+    } else if (typeof durationHours === 'number' && !isNaN(durationHours)) {
+      totalMinutes = durationHours * 60;
+    }
+    
+    // Only add timer if we have a valid duration
+    if (totalMinutes !== undefined && !isNaN(totalMinutes) && totalMinutes > 0) {
+      timers.push({
+        description: totalMinutes >= 60 
+          ? `${Math.floor(totalMinutes / 60)} hora${Math.floor(totalMinutes / 60) > 1 ? 's' : ''} e ${totalMinutes % 60} minutos`
+          : `${totalMinutes} minutos`,
+        blocking: nextStage.timer.blocking || false
+      });
+    }
+  }
+  
+  // Build instructions - if stage has no instructions, provide a helpful fallback
+  let instructions = nextStage.instructions || [];
+  if (instructions.length === 0 && nextStage.name) {
+    // Fallback: use the stage name as minimal guidance
+    instructions = [`Prossiga com ${nextStage.name.toLowerCase()}.`];
   }
   
   return {
@@ -299,7 +323,7 @@ export function buildAdvancePayload(
       id: nextStage.id,
       name: nextStage.name
     },
-    instructions: nextStage.instructions || [],
+    instructions,
     doses: Object.keys(doses).length > 0 ? doses : undefined,
     timers: timers.length > 0 ? timers : undefined,
     allowedUtterances: getContextualUtterances(nextStage, batch)

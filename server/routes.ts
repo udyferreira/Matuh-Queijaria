@@ -1029,6 +1029,14 @@ export async function registerRoutes(
         const intent = alexaRequest?.request?.intent;
         const intentName = intent?.name;
         const slots = intent?.slots || {};
+        const dialogState = alexaRequest?.request?.dialogState || 'N/A';
+        
+        // Get current stage for logging
+        const activeBatchForLog = await batchService.getActiveBatch();
+        const stageForLog = activeBatchForLog?.currentStageId || 'no-batch';
+        
+        // Structured log for all Alexa intent requests
+        console.log(`[ALEXA_REQ] intent=${intentName} stage=${stageForLog} dialogState=${dialogState} slots=${JSON.stringify(Object.fromEntries(Object.entries(slots).map(([k, v]: [string, any]) => [k, v?.value || '?'])))}`);
         
         // Handle Amazon built-in intents
         if (intentName === "AMAZON.CancelIntent" || intentName === "AMAZON.StopIntent") {
@@ -1258,6 +1266,51 @@ export async function registerRoutes(
         if (intentName === "RegisterPHAndPiecesIntent") {
           console.log("RegisterPHAndPiecesIntent received:", JSON.stringify(slots, null, 2));
           
+          // Extract pH value from slot with normalization (54 -> 5.4)
+          const phSlot = slots.ph_value?.value || slots.phValue?.value;
+          const piecesSlot = slots.pieces_quantity?.value || slots.piecesQuantity?.value || slots.pieces?.value;
+          
+          // === INTENT MISROUTE GUARD ===
+          // If BOTH ph_value AND pieces_quantity are absent/undefined/"?", this is likely a misroute
+          // User probably said "avançar etapa" or "status" but Alexa sent wrong intent
+          const phEmpty = !phSlot || phSlot === '?';
+          const piecesEmpty = !piecesSlot || piecesSlot === '?';
+          
+          if (phEmpty && piecesEmpty) {
+            const activeBatch = await batchService.getActiveBatch();
+            const stageId = activeBatch?.currentStageId || 0;
+            const currentStage = recipeManager.getStage(stageId);
+            
+            console.log(`[MISROUTE] intent=RegisterPHAndPiecesIntent stage=${stageId} missingSlots=ph_value,pieces_quantity dialogState=${alexaRequest?.request?.dialogState || 'N/A'}`);
+            
+            // Build contextual help based on current stage's pending inputs
+            let helpMessage: string;
+            if (activeBatch && currentStage) {
+              const measurements = (activeBatch.measurements as Record<string, any>) || {};
+              const requiredInputs = currentStage.operator_input_required || [];
+              
+              // Check what's actually needed at this stage
+              if (stageId === 13 && measurements["initial_ph"] === undefined) {
+                helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Para registrar o pH, diga: "pH cinco vírgula dois com doze peças". Ou diga "qual é o status" para ver o progresso.`;
+              } else if (stageId === 15) {
+                helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Para informar o pH, diga: "pH cinco vírgula dois". Ou diga "qual é o status".`;
+              } else {
+                // Stage doesn't require pH - suggest what IS valid
+                const utterances = speechRenderer.getContextualUtterances(currentStage, activeBatch);
+                const examples = utterances.slice(0, 2).map(u => `"${u}"`).join(' ou ');
+                helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Você pode dizer ${examples}.`;
+              }
+            } else {
+              helpMessage = "Não há lote ativo. Diga 'qual é o status' para verificar.";
+            }
+            
+            return res.status(200).json(buildAlexaResponse(
+              helpMessage,
+              false,
+              "O que mais posso ajudar?"
+            ));
+          }
+          
           const activeBatch = await batchService.getActiveBatch();
           if (!activeBatch) {
             return res.status(200).json(buildAlexaResponse(
@@ -1269,10 +1322,6 @@ export async function registerRoutes(
           
           const stageId = activeBatch.currentStageId;
           const currentStage = recipeManager.getStage(stageId);
-          
-          // Extract pH value from slot with normalization (54 -> 5.4)
-          const phSlot = slots.ph_value?.value || slots.phValue?.value;
-          const piecesSlot = slots.pieces_quantity?.value || slots.piecesQuantity?.value || slots.pieces?.value;
           
           console.log(`[Stage ${stageId}] Slots received - pH: ${phSlot}, pieces: ${piecesSlot}`);
           
@@ -1441,6 +1490,43 @@ export async function registerRoutes(
         if (intentName === "RegisterChamberEntryDateIntent") {
           console.log("RegisterChamberEntryDateIntent received:", JSON.stringify(slots, null, 2));
           
+          // Extract date from AMAZON.DATE slot
+          // AMAZON.DATE returns formats like: "2026-01-15", "2026-01", "2026-W03", "2026-01-15" for specific dates
+          const dateSlot = slots.entry_date?.value || slots.entryDate?.value || slots.date?.value;
+          
+          // === INTENT MISROUTE GUARD ===
+          // If entry_date is absent/undefined/"?", this is likely a misroute
+          const dateEmpty = !dateSlot || dateSlot === '?';
+          
+          if (dateEmpty) {
+            const activeBatch = await batchService.getActiveBatch();
+            const stageId = activeBatch?.currentStageId || 0;
+            const currentStage = recipeManager.getStage(stageId);
+            
+            console.log(`[MISROUTE] intent=RegisterChamberEntryDateIntent stage=${stageId} missingSlots=entry_date dialogState=${alexaRequest?.request?.dialogState || 'N/A'}`);
+            
+            // Build contextual help based on current stage
+            let helpMessage: string;
+            if (activeBatch && currentStage) {
+              if (stageId === 19) {
+                helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Para registrar a data, diga: "coloquei na câmara dois hoje". Ou diga "qual é o status".`;
+              } else {
+                // Stage doesn't require date - suggest what IS valid
+                const utterances = speechRenderer.getContextualUtterances(currentStage, activeBatch);
+                const examples = utterances.slice(0, 2).map(u => `"${u}"`).join(' ou ');
+                helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Você pode dizer ${examples}.`;
+              }
+            } else {
+              helpMessage = "Não há lote ativo. Diga 'qual é o status' para verificar.";
+            }
+            
+            return res.status(200).json(buildAlexaResponse(
+              helpMessage,
+              false,
+              "O que mais posso ajudar?"
+            ));
+          }
+          
           const activeBatch = await batchService.getActiveBatch();
           if (!activeBatch) {
             return res.status(200).json(buildAlexaResponse(
@@ -1453,17 +1539,14 @@ export async function registerRoutes(
           // Check if we're at the correct stage (19)
           const currentStage = recipeManager.getStage(activeBatch.currentStageId);
           if (activeBatch.currentStageId !== 19) {
+            const utterances = speechRenderer.getContextualUtterances(currentStage, activeBatch);
+            const examples = utterances.slice(0, 2).map(u => `"${u}"`).join(' ou ');
             return res.status(200).json(buildAlexaResponse(
-              `Esta etapa não requer data de entrada na câmara. Estamos na etapa ${activeBatch.currentStageId}: ${currentStage?.name || 'em andamento'}.`,
+              `Estamos na etapa ${activeBatch.currentStageId}: ${currentStage?.name || 'em andamento'}. Você pode dizer ${examples}.`,
               false,
               "O que mais posso ajudar?"
             ));
           }
-          
-          // Extract date from AMAZON.DATE slot
-          // AMAZON.DATE returns formats like: "2026-01-15", "2026-01", "2026-W03", "2026-01-15" for specific dates
-          // Special values: "XXXX-WXX-WE" for weekend, "today", "tomorrow", "yesterday"
-          const dateSlot = slots.entry_date?.value || slots.entryDate?.value || slots.date?.value;
           
           let dateValue: string | null = null;
           

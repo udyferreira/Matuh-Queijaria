@@ -1,0 +1,116 @@
+Você implementou mudanças, mas ainda está falhando em 3 pontos críticos observados nos logs. Quero correção com foco em CAUSA RAIZ, sem “inventar” comportamento.
+
+CONTEXTO (evidências do log):
+1) Em várias etapas (7, 8, 11), o backend está respondendo “Esta etapa não aceita registro de pH...” mesmo quando o usuário falou “avançar etapa / próxima etapa”.
+   - Log mostra: `RegisterPHAndPiecesIntent received` com slots vazios e, em seguida, resposta de “não aceita pH” em etapas que não são de pH.
+   - Isso indica MISROUTING do Alexa NLU (intent errado chegando), e o backend hoje trata isso como se o usuário tivesse realmente tentado registrar pH.
+   - Resultado: UX quebra e “avançar” vira erro falso.
+
+2) O speech do ADVANCE está pobre/errado:
+   - Ex.: “Etapa 8 ... Sugiro ... avançar etapa/qual é o status” (não narra instrução real da etapa).
+   - Em etapa 10 aparece timer “NaN minutos” no payload (bug de formatação/definição de timer).
+
+3) pH falado como “p. h. cinquenta e cinco” vira “?” e depois inválido.
+   - Além disso, pH do leite gravou “66” (deveria ser ~6.5/6.6). Precisa normalizar 55→5.5, 52→5.2, 65→6.5 etc.
+
+ARQUIVOS relevantes anexados: interpreter.ts, recipe.ts, batchService.ts, speechRenderer.ts, routes.ts.
+Você deve procurar também o arquivo onde está o webhook Alexa (ex.: server.ts/app.ts/alexa.ts) e aplicar as correções nele.
+
+OBJETIVO: manter a regra “LLM NÃO DECIDE, só NARRA”, mas com segurança: o backend fornece conteúdo determinístico (stage, ação esperada, exemplos corretos) e o LLM apenas reescreve de forma natural SEM alterar significado. Se o LLM sair do contrato, usar fallback determinístico.
+
+TAREFAS (faça exatamente):
+
+A) Corrigir MISROUTING de intents (causa do “não aceita pH” ao pedir avançar)
+1. No handler do webhook Alexa (onde roteia intents), implemente um “Intent Misroute Guard”:
+   - Se intent = RegisterPHAndPiecesIntent e (ph_value ausente/undefined/"?" E pieces_quantity ausente/undefined) ENTÃO:
+       a) NÃO trate como tentativa de registrar pH.
+       b) Interprete como comando genérico do usuário (provável “avançar”, “status”, “instruções”, “ajuda”).
+       c) Responda com mensagem orientando o que é esperado NA ETAPA ATUAL:
+           - Se a etapa atual exige algum input pendente (ex.: cut_point_time), diga explicitamente o que falta e dê o EXEMPLO correto (“hora do corte às quinze e trinta”).
+           - Caso não haja input pendente, ofereça as 2–3 opções válidas (status/instruções/avançar) sem acusar pH.
+   - Se intent = RegisterChamberEntryDateIntent e entry_date ausente/undefined:
+       a) Tratar como misroute e cair na mesma lógica acima (não responder “não requer data”).
+   - Se intent = LogTimeIntent e slot time ausente:
+       - Continuar eliciting, mas GARANTIR que o exemplo use o tipo correto (floculação vs corte vs prensa), sem repetir “hora da floculação” para corte.
+2. Logue esse desvio claramente:
+   - `[MISROUTE] intent=<nome> stage=<id> missingSlots=<...> -> fallback=process_command_like`
+   - Inclua também `request.dialogState` e `sessionAttributes` relevantes para entender se havia elicitation em andamento.
+
+B) Consertar o conteúdo determinístico que alimenta a fala (para o LLM não “inventar”)
+1. Em speechRenderer.ts:
+   - BUG: `getContextualUtterances` usa `batch.storedValues`, mas o batch real tem `measurements`.
+     -> Troque para `batch.measurements` (e/ou `batch.measurements._history` se necessário) e pare de supor `storedValues`.
+   - Garanta que, para cada etapa, o payload de `renderSpeech(context=advance)` contenha:
+     - `stage.id`, `stage.name`
+     - `instructions`: texto real da etapa (vindo da receita), nunca vazio quando a receita tiver instruções
+     - `timers`: apenas quando houver duração válida; se durationMinutes/durationHours forem undefined/NaN, OMITIR timer (nunca “NaN minutos”)
+     - `requiredInputsPending`: lista explícita de inputs pendentes (strings canônicas)
+     - `exampleUtterances`: 1–2 exemplos PRIORITÁRIOS e corretos para a etapa (ex.: para cut_point_time, “hora do corte às quinze e trinta”)
+2. Em recipe.ts:
+   - Reutilize `getFriendlyInputMessages` para gerar exemplos, mas também exponha um método que retorne:
+     - `getStageInstructions(stageId)` (texto/instruções reais da receita)
+     - `getStagePrimaryExamples(stageId, missingInputs)` (exemplos determinísticos e corretos)
+3. No fluxo de ADVANCE:
+   - Se `instructions` vier vazio por algum motivo, faça fallback para um template determinístico do tipo:
+     “Etapa X: <nome>. Diga ‘diga instruções’ para ouvir o que fazer, ou ‘avançar etapa’ quando concluir.”
+   - Mas o alvo é: puxar instruções reais da receita e falar 1 frase objetiva do que fazer.
+
+C) Normalização robusta de pH (fala “cinquenta e cinco” => 5.5)
+1. Crie um util `parsePh(raw: string | number): number | undefined` (em um arquivo comum ou no handler).
+   Regras:
+   - Se raw for number e raw > 14 e raw < 100 => retornar raw/10 (55=>5.5, 66=>6.6).
+   - Se raw for string:
+       a) remova “pH”, espaços, etc.
+       b) troque vírgula por ponto
+       c) se contém ponto e parseFloat ok: usar
+       d) se for somente dígitos e length==2: x.y (ex.: "52" => 5.2)
+       e) se for "6 5" / "6-5" / "6 5": tentar inferir 6.5
+   - Validar faixa típica: 3.0 a 8.5 (configurável). Fora disso => undefined.
+2. Aplique parsePh em:
+   - início do lote (milk_ph)
+   - etapa 13 (pH inicial)
+   - etapas de loop de pH (ph_value)
+3. Ajuste armazenamento: use chaves canônicas consistentes (evite “initial_ph” em um lugar e “ph_value” em outro, a menos que isso esteja explícito na receita).
+   - Se a receita quer “ph_value”, grave “ph_value” sempre.
+   - Se etapa 13 precisa de campo diferente, alinhe o keyMapping e o handler para não divergir.
+
+D) Contrato seguro para o LLM (narrador, não decisor)
+1. O backend deve montar um OBJETO determinístico (source-of-truth) e passar ao LLM apenas para “polir”:
+   Exemplo de payload para LLM:
+   {
+     "stageId": 10,
+     "stageName": "...",
+     "mustSay": [
+       "Etapa 10: ...",
+       "Aguarde o timer terminar. Faltam 1 minuto."
+     ],
+     "examples": ["..."],
+     "forbidden": ["inventar instruções", "mudar etapa", "mudar tempos", "mudar exemplos"]
+   }
+2. O LLM deve retornar JSON estrito:
+   { "speech": "...", "reprompt": "..." }
+3. Pós-validação no backend:
+   - speech DEVE conter exatamente “Etapa <id>: <nome>”
+   - Se houver `mustSay`, speech deve conter todas as frases (substring match)
+   - Se houver `examples`, speech deve conter ao menos 1 exemplo idêntico
+   - Se falhar: logar `[LLM_INVALID]` com motivo e usar fallback determinístico.
+
+E) Ajustes de logging para troubleshooting rápido
+- Padronize logs:
+  - `[ALEXA_REQ] intent=... stage=... dialogState=... slots=... utterance?=...`
+  - `[GATING] ...`
+  - `[MISROUTE] ...`
+  - `[RENDER_PAYLOAD] context=... payload=...` (sem dados sensíveis)
+  - `[LLM_RENDER] input=... output=...`
+  - `[LLM_INVALID] reason=... fallback=...`
+
+CRITÉRIOS DE ACEITE (testes manuais):
+1) Em etapa 7 (ponto de corte), se eu falar “avançar etapa” ou “próxima etapa” e o Alexa mandar intent errado com slots vazios, a resposta DEVE orientar “hora do corte...” (não “não aceita pH”).
+2) Em etapa 10, nunca pode aparecer “NaN minutos”. Se não tiver duração válida, não mencionar timer; se tiver, mencionar corretamente.
+3) “p. h. cinquenta e cinco” deve ser interpretado como 5.5 (e “cinquenta e dois” como 5.2), sem gravar “66” quando o usuário disser “6 ponto 5”.
+4) No ADVANCE, a fala deve trazer UMA instrução real da etapa (quando existir na receita), e não só “sugiro comandos”.
+
+Implemente as mudanças, rode/atualize testes e me mostre:
+- diff dos principais trechos alterados
+- exemplos de logs nos 3 cenários acima
+- confirmação de onde estava o bug de `storedValues` e do “NaN minutos”.
