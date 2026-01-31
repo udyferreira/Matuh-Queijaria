@@ -1,0 +1,114 @@
+Objetivo: destravar os intents LogTimeIntent e RegisterPHAndPiecesIntent quando a Alexa não preenche slots (vem "?" ou undefined), capturando input em texto livre e parseando no backend. O LLM NÃO decide nada, só narra.
+
+Contexto do bug (logs reais):
+- LogTimeIntent chega com slots {"time_type":"floculação","time":"?"} mesmo quando usuário fala "hora da floculação as vinte e três zero nove".
+- RegisterPHAndPiecesIntent chega com ph_value="?" e pieces_quantity undefined mesmo quando usuário fala "p. h. cinquenta e seis e doze peças".
+Resultado: usuário fica preso, porque o backend depende de slot preenchido.
+
+Arquivos no projeto: /mnt/data/routes.ts, /mnt/data/batchService.ts, /mnt/data/interpreter.ts, /mnt/data/recipe.ts, /mnt/data/speechRenderer.ts
+
+------------------------------------------------------------
+1) ALTERAR O MODELO DE INTERAÇÃO (se existir no repo; se não existir, criar /interactionModel.json e documentar o patch)
+------------------------------------------------------------
+Adicionar slots "raw" (AMAZON.SearchQuery) para capturar fala inteira/parte crítica.
+
+A) LogTimeIntent
+- manter time_type (custom).
+- manter time (AMAZON.TIME) se já existir, MAS adicionar time_raw (AMAZON.SearchQuery).
+- samples (exemplos):
+  - "hora da {time_type} {time_raw}"
+  - "hora da {time_type} às {time_raw}"
+  - "{time_type} {time_raw}"
+  - "registrar {time_type} {time_raw}"
+
+B) RegisterPHAndPiecesIntent
+- manter ph_value e pieces_quantity se já existem, MAS adicionar:
+  - ph_raw (AMAZON.SearchQuery)
+  - pieces_raw (AMAZON.SearchQuery)
+- samples:
+  - "pH {ph_raw} com {pieces_raw} peças"
+  - "o pH é {ph_raw} e são {pieces_raw} peças"
+  - "pH {ph_raw} e {pieces_raw} peças"
+
+Importante: não remover nada existente; é uma extensão para casos onde AMAZON.TIME/NUMBER falham.
+
+Se o repo não contém interaction model, pelo menos:
+- criar um arquivo PATCH_INTERACTION_MODEL.md com o JSON sugerido e instruções para colar no Alexa Developer Console.
+
+------------------------------------------------------------
+2) BACKEND: PARSE ROBUSTO DE HORÁRIO E PH/PEÇAS MESMO SEM SLOT
+------------------------------------------------------------
+
+2.1) routes.ts — LogTimeIntent
+Hoje você só aceita slots.time.value. Ajustar para:
+- tentar extrair "time" primeiro:
+  - const t = slot("time") se vier preenchido e válido -> ok
+- senão, usar time_raw:
+  - const raw = slot("time_raw") || "" (string)
+  - parseTimeFromRaw(raw):
+      aceitar:
+      - "23:09", "23 09", "23 zero 9", "vinte e três zero nove", "vinte e três e nove"
+      - também aceitar "11 e 05", "onze e cinco"
+  - se parse falhar: elicit com exemplo correto (baseado no type), mas o exemplo deve ser compatível com o NOVO sample: "hora da floculação 23 e 09" (evitar "quinze e trinta" sempre).
+
+Implementar parseTimeFromRaw com heurísticas:
+- procurar padrão \b(\d{1,2})[: ](\d{2})\b
+- procurar dois números 0-23 e 0-59 no texto
+- suportar palavras PT-BR básicas (zero..vinte, trinta, quarenta, cinquenta, "e") para formar HH e MM
+  (escopo curto: 0-59 já resolve)
+
+2.2) routes.ts — RegisterPHAndPiecesIntent
+Hoje você chama batchService.normalizePHValue(rawValue) mas rawValue está "?" ou undefined.
+Ajustar fluxo:
+- coletar candidatos em ordem:
+  - phCandidate = slot("ph_value") se != "?" e definido
+  - senão phCandidate = slot("ph_raw")
+  - senão (fallback) tentar extrair do utterance se existir em request (se não existir, ignore)
+- piecesCandidate = slot("pieces_quantity") se definido
+  - senão piecesCandidate = slot("pieces_raw")
+
+- Implementar parsePieces(piecesCandidate):
+  - aceitar "12", "doze", "vinte e quatro" (pelo menos 1..40)
+- Implementar parsePH(phCandidate):
+  - usar batchService.normalizePHValue quando houver número
+  - se vier texto por extenso, converter "cinquenta e seis" -> 56 e então normalizar -> 5.6
+  - aceitar "cinco vírgula seis", "5,6", "5 ponto 6", "cinco ponto seis"
+
+Observação: normalizePHValue em batchService.ts já faz 56->5.6 e 660->6.6; o que falta é chegar um rawCandidate válido em vez de "?".
+
+2.3) batchService.ts — manter normalizePHValue e adicionar utilitários
+- Criar funções utilitárias (export) para:
+  - wordsToNumberPtBr(text): number | null (limitado 0..100 é suficiente)
+  - extractNumbersPtBr(text): number[] (retornar lista de números candidatos)
+  - parseTimeFromRaw(raw): "HH:MM" | null
+Essas funções devem ser determinísticas e testáveis.
+
+------------------------------------------------------------
+3) GATING: NUNCA DEIXAR "advance" PASSAR QUANDO HÁ INPUT OBRIGATÓRIO PENDENTE
+------------------------------------------------------------
+Você já “libera ProcessCommandIntent para read-only”, mas o problema é que o interpreter transforma "proxima" em {"intent":"advance"}.
+Regra:
+- Se pendingInputs.length > 0:
+  - permitir somente intents read-only explícitos: status/help/instructions/query_input
+  - bloquear advance/pause/resume/cancel etc (qualquer intent mutável)
+Implementar checagem DEPOIS do interpreter (porque "proxima" é ProcessCommandIntent mas vira advance).
+Se bloquear:
+- responder com erro determinístico + exemplo do comando correto DA ETAPA (sem LLM inventar):
+  - para etapa 13: "Registre o pH e peças dizendo: 'pH 5 ponto 6 com 12 peças'."
+
+------------------------------------------------------------
+4) SPEECH RENDERER / LLM: USAR LLM SÓ PARA “NARRAR” UM JSON FIXO
+------------------------------------------------------------
+Manter LLM, mas alterar o contrato:
+- Backend monta um objeto "speechPlan" 100% determinístico:
+  {
+    "stageId": 13,
+    "stageName": "...",
+    "say": ["...frases curtas..."],
+    "examples": ["pH 5 ponto 6 com 12 peças", "qual é o status"],
+    "reprompt": "..."
+  }
+- O LLM recebe esse speechPlan e só pode:
+  - juntar em português natural SEM mudar números, comandos, exemplos, ordem lógica
+  - proibição: inventar novas ações/comandos/valores
+- Adicionar validação pós-
