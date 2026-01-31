@@ -1252,8 +1252,25 @@ export async function registerRoutes(
           }
           
           const typeLabel = getTimeTypeLabel(timeType);
+          const confirmationMsg = `Hora ${typeLabel} registrada às ${timeValue}.`;
+          
+          // Auto-advance after successful time registration
+          const advanceResult = await batchService.advanceBatch(activeBatch.id);
+          if (advanceResult.success && advanceResult.nextStage) {
+            const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
+            const updatedBatch = await batchService.getBatch(activeBatch.id);
+            console.log(`[LogTimeIntent] Auto-advancing to stage ${advanceResult.nextStage.id}.`);
+            
+            if (nextStage && updatedBatch) {
+              const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
+              const speech = await speechRenderer.renderSpeech(payload);
+              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?"));
+            }
+          }
+          
+          // Fallback if advance failed or no next stage
           return res.status(200).json(buildAlexaResponse(
-            `Hora ${typeLabel} registrada às ${timeValue}.`,
+            confirmationMsg,
             false,
             "O que mais posso ajudar?"
           ));
@@ -1411,8 +1428,25 @@ export async function registerRoutes(
             
             console.log(`[Stage 13] Complete: pH ${effectivePh}, ${effectivePieces} pieces saved via batchService.`);
             
+            const confirmationMsg = `pH ${effectivePh} e ${effectivePieces} peças registrados.`;
+            
+            // Auto-advance to next stage and vocalize it
+            const advanceResult = await batchService.advanceBatch(activeBatch.id);
+            if (advanceResult.success && advanceResult.nextStage) {
+              const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
+              const updatedBatch = await batchService.getBatch(activeBatch.id);
+              console.log(`[Stage 13] Auto-advancing to stage ${advanceResult.nextStage.id}.`);
+              
+              if (nextStage && updatedBatch) {
+                const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
+                const speech = await speechRenderer.renderSpeech(payload);
+                return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?"));
+              }
+            }
+            
+            // Fallback if advance failed - confirm registration only
             return res.status(200).json(buildAlexaResponse(
-              `pH ${effectivePh} e ${effectivePieces} peças registrados. Etapa concluída. Diga 'avançar etapa' para continuar.`,
+              `${confirmationMsg} Diga 'avançar etapa' para continuar.`,
               false,
               "Diga 'avançar etapa' para continuar."
             ));
@@ -1455,14 +1489,27 @@ export async function registerRoutes(
             console.log(`[Stage 15] pH ${phValue} recorded. Turning cycles: ${turningCycles}`);
             
             if (result.shouldExitLoop) {
-              // pH reached target - advance to next stage
-              const advanceResult = await batchService.advanceBatch(activeBatch.id);
-              console.log(`[Stage 15] pH ${phValue} reached target. Loop complete. Advancing to stage ${advanceResult.nextStage?.id || 16}.`);
+              // pH reached target - advance to next stage and vocalize it
+              const confirmationMsg = `pH ${phValue} registrado. Valor ideal atingido! Queijos virados ${turningCycles} vezes.`;
               
+              const advanceResult = await batchService.advanceBatch(activeBatch.id);
+              if (advanceResult.success && advanceResult.nextStage) {
+                const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
+                const updatedBatch = await batchService.getBatch(activeBatch.id);
+                console.log(`[Stage 15] pH ${phValue} reached target. Loop complete. Auto-advancing to stage ${advanceResult.nextStage.id}.`);
+                
+                if (nextStage && updatedBatch) {
+                  const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
+                  const speech = await speechRenderer.renderSpeech(payload);
+                  return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?"));
+                }
+              }
+              
+              // Fallback if advance failed
               return res.status(200).json(buildAlexaResponse(
-                `pH ${phValue} registrado. Valor ideal atingido! Queijos virados ${turningCycles} vezes. Avançando para a próxima etapa.`,
+                `${confirmationMsg} Diga 'avançar etapa' para continuar.`,
                 false,
-                "O que mais posso ajudar?"
+                "Diga 'avançar etapa' para continuar."
               ));
             } else {
               // pH still above target - continue loop
@@ -1590,9 +1637,28 @@ export async function registerRoutes(
           // Format date for speech
           const dateParts = dateValue.split('-');
           const formattedDate = `${parseInt(dateParts[2])} de ${getMonthName(parseInt(dateParts[1]))}`;
+          const matDateParts = maturationEndDate.split('-');
+          const formattedMatDate = `${parseInt(matDateParts[2])} de ${getMonthName(parseInt(matDateParts[1]))}`;
           
+          const confirmationMsg = `Data de entrada na câmara 2 registrada: ${formattedDate}. A maturação de 90 dias terminará em ${formattedMatDate}.`;
+          
+          // Auto-advance to next stage and vocalize it
+          const advanceResult = await batchService.advanceBatch(activeBatch.id);
+          if (advanceResult.success && advanceResult.nextStage) {
+            const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
+            const updatedBatch = await batchService.getBatch(activeBatch.id);
+            console.log(`[Stage 19] Auto-advancing to stage ${advanceResult.nextStage.id}.`);
+            
+            if (nextStage && updatedBatch) {
+              const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
+              const speech = await speechRenderer.renderSpeech(payload);
+              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?"));
+            }
+          }
+          
+          // Fallback
           return res.status(200).json(buildAlexaResponse(
-            `Data de entrada na câmara 2 registrada: ${formattedDate}. A maturação de 90 dias terminará em ${parseInt(maturationEndDate.split('-')[2])} de ${getMonthName(parseInt(maturationEndDate.split('-')[1]))}. Diga 'avançar etapa' para continuar.`,
+            `${confirmationMsg} Diga 'avançar etapa' para continuar.`,
             false,
             "Diga 'avançar etapa' para continuar."
           ));

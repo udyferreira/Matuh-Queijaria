@@ -350,6 +350,10 @@ export async function getActiveBatch() {
   return batches[0] || null;
 }
 
+export async function getBatch(batchId: number) {
+  return storage.getBatch(batchId);
+}
+
 export async function getBatchStatus(batchId: number) {
   const batch = await storage.getBatch(batchId);
   if (!batch) return null;

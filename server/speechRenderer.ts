@@ -17,6 +17,7 @@ export type SpeechContext =
   | "status" 
   | "instructions" 
   | "advance" 
+  | "auto_advance"
   | "help" 
   | "query_input" 
   | "error" 
@@ -61,6 +62,7 @@ export interface SpeechRenderPayload {
     type: string;
     value: string | number;
   };
+  confirmation?: string;
 }
 
 const SPEECH_RENDERER_PROMPT = `Sua função é APENAS narrar uma resposta de voz para Alexa, em português do Brasil.
@@ -83,7 +85,8 @@ Regras de fala:
 - Para errors, diga a mensagem de erro de forma clara.
 - Para log_time/log_ph/log_date, confirme o registro feito.
 - Para help sem notes, apenas diga o nome da etapa e sugira os allowedUtterances.
-- Use frases curtas, máximo de 3 frases.
+- Para auto_advance: primeiro diga "confirmation", depois "Etapa X: [nome]" e suas instruções. Combine numa narrativa fluida.
+- Use frases curtas, máximo de 4 frases para auto_advance, 3 para outros.
 
 Responda APENAS com o texto de fala, sem aspas, sem explicações.`;
 
@@ -132,6 +135,11 @@ export async function renderSpeech(payload: SpeechRenderPayload): Promise<string
  */
 function getFallbackSpeech(payload: SpeechRenderPayload): string {
   const parts: string[] = [];
+  
+  // For auto_advance context, include confirmation first
+  if (payload.confirmation) {
+    parts.push(payload.confirmation);
+  }
   
   if (payload.stage) {
     parts.push(`Etapa ${payload.stage.id}: ${payload.stage.name}.`);
@@ -452,6 +460,61 @@ export function buildLogConfirmationPayload(
       value
     },
     notes: additionalInfo
+  };
+}
+
+/**
+ * Build a SpeechRenderPayload for auto-advance context
+ * Used when an operator input is completed and the batch should automatically advance
+ * Combines: confirmation of what was saved + next stage info + instructions
+ */
+export function buildAutoAdvancePayload(
+  confirmationMessage: string,
+  batch: any,
+  nextStage: any
+): SpeechRenderPayload {
+  const calculatedInputs = batch.calculatedInputs || {};
+  
+  const doses = getRelevantDosesForStage(nextStage, calculatedInputs);
+  
+  const timers: TimerInfo[] = [];
+  if (nextStage.timer) {
+    const durationMinutes = nextStage.timer.duration_minutes;
+    const durationHours = nextStage.timer.duration_hours;
+    
+    let totalMinutes: number | undefined;
+    if (typeof durationMinutes === 'number' && !isNaN(durationMinutes)) {
+      totalMinutes = durationMinutes;
+    } else if (typeof durationHours === 'number' && !isNaN(durationHours)) {
+      totalMinutes = durationHours * 60;
+    }
+    
+    if (totalMinutes !== undefined && !isNaN(totalMinutes) && totalMinutes > 0) {
+      timers.push({
+        description: totalMinutes >= 60 
+          ? `${Math.floor(totalMinutes / 60)} hora${Math.floor(totalMinutes / 60) > 1 ? 's' : ''} e ${totalMinutes % 60} minutos`
+          : `${totalMinutes} minutos`,
+        blocking: nextStage.timer.blocking || false
+      });
+    }
+  }
+  
+  let instructions = nextStage.instructions || [];
+  if (instructions.length === 0 && nextStage.name) {
+    instructions = [`Prossiga com ${nextStage.name.toLowerCase()}.`];
+  }
+  
+  return {
+    context: "auto_advance",
+    confirmation: confirmationMessage,
+    stage: {
+      id: nextStage.id,
+      name: nextStage.name
+    },
+    instructions,
+    doses: Object.keys(doses).length > 0 ? doses : undefined,
+    timers: timers.length > 0 ? timers : undefined,
+    allowedUtterances: getContextualUtterances(nextStage, batch)
   };
 }
 
