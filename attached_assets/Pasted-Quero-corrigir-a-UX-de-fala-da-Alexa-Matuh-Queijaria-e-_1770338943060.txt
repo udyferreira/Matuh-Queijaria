@@ -1,0 +1,75 @@
+Quero corrigir a UX de fala da Alexa (Matuh Queijaria) e alguns bugs de fluxo. Use os arquivos atuais do projeto, principalmente:
+- /mnt/data/speechRenderer.ts
+- /mnt/data/batchService.ts
+- /mnt/data/interpreter.ts
+- /mnt/data/routes.ts
+- /mnt/data/recipe.ts
+e o doc anexado “Chat Alexa e Log Replit.docx” (use como referência de sintomas).
+
+OBJETIVO: o LLM pode “narrar” mais natural, mas NÃO PODE DECIDIR NADA. Ele só verbaliza exatamente o que o backend já determinou (stage atual, pending inputs, timers, doses calculadas, mensagem de erro, allowed utterances). E a narração precisa ser curta, objetiva e sem repetição.
+
+PROBLEMAS A CORRIGIR (todos):
+1) Não quero a Alexa dizendo “confirmação” em cada etapa.
+2) Não quero ela dizendo “Etapa X...” e depois “Prossiga com ...” repetindo o nome da etapa. Deve soar natural e sem redundância.
+3) Não quero ela dizendo sempre “você pode dizer qual é o status”. Só citar “status” quando o usuário pedir ajuda OU quando estiver perdido (unknown intent).
+4) Quero que, nas etapas “de ação” (sem input obrigatório pendente), ela termine com algo como: “Quando terminar, diga ‘avançar etapa’.” (ou “quando concluir, pode pedir para avançar”).
+5) Quando vocaliza “fermento DX”, hoje às vezes sai como “fermento quinhentos e dez”. O nome deve sair como “fermento D X” (ou “fermento dê xis”), sempre. Mesma lógica pode ser aplicada para LR e KL se necessário.
+6) Quando falar doses, não pode sair “rennet”; tem que falar “coalho”.
+7) Ela “pulou” a etapa de aquecer leite até 32°C (o usuário percebeu etapa 1 e depois etapa 4). Garantir que a etapa “Aquecer o leite a 32 graus” (stage 3 no seu fluxo atual, pois startBatch seta currentStageId=3 e auto-completa 1 e 2) seja sempre narrada e nunca “sumida” por bug de renderer/advance.
+
+ALÉM DISSO, CORRIGIR OS PROBLEMAS DE EXEMPLOS QUE TRAVAM O OPERADOR:
+8) LogTimeIntent: quando o slot de horário vier vazio (“?”/undefined), o exemplo sugerido deve ser MUITO mais “parseável” pela Alexa pt-BR. Hoje o usuário diz “vinte e três zero nove” e continua falhando. Troque o exemplo para um formato mais compatível, por exemplo:
+   - “hora da floculação às vinte e três e nove”
+   - e/ou “hora da floculação às onze e nove da noite”
+   (mantenha 1 exemplo só, curto, e coerente com o time_type).
+9) RegisterPHAndPiecesIntent: o usuário disse “p. h. cinquenta e seis” querendo 5,6 e a Alexa manda “?” no slot. A fala da Alexa deve orientar explicitamente a forma correta de falar pH: “cinco vírgula seis” (e não “cinquenta e seis”). Ajuste os exemplos em todas as mensagens e reprompts dessa etapa para sempre usar “cinco vírgula X”.
+
+IMPLEMENTAÇÃO (como fazer):
+
+A) speechRenderer.ts — padronizar um “guia de narração” deterministicamente
+- Remover qualquer menção a “confirmação” na prompt do LLM e/ou na composição do texto.
+- A fala de “advance” deve seguir este padrão (sem duplicar nome):
+  “Etapa {id}: {nomeCurto}. {1a instrução, se existir}. Quando terminar, diga ‘avançar etapa’.”
+  *Não repetir o nome da etapa dentro da instrução se a instrução já for redundante.*
+- A fala de “instructions” deve ser:
+  “{Instruções (1–2 frases)}. Quando terminar, diga ‘avançar etapa’.”
+- A fala de “status” deve ser curta:
+  “Você está na etapa {id}: {nome}. {Se houver input pendente: o que falta e como falar. Senão: o que fazer agora + ‘quando terminar, avançar etapa’}.”
+- Somente mencionar “status” e “ajuda” como comandos quando o contexto for help/unknown, ou quando houver MISROUTE repetida.
+- NÃO listar “qual é o status” automaticamente em todo advance/instructions.
+
+B) speechRenderer.ts — pronúncia de DX/LR/KL e “coalho”
+- Garanta que o renderer sempre substitui no texto final:
+  - “DX” -> “D X” (ou “dê xis”)
+  - “LR” -> “L R”
+  - “KL” -> “K L”
+- E garanta “RENNET” -> “coalho” (isso já existe em INPUT_LABELS, mas o LLM está “inventando”; então:
+  1) injete no prompt uma regra explícita: “Use exatamente os rótulos fornecidos em doses/inputs: coalho (não use ‘rennet’), fermento D X, fermento L R, fermento K L.”
+  2) aplique um pós-processamento no texto final para substituir qualquer ocorrência de “rennet” (case-insensitive) por “coalho”.
+
+C) speechRenderer.ts — evitar redundância “Prossiga com …”
+- Hoje aparece “Prossiga com medir pH…” e também “Etapa X: Medir pH…”. Faça uma limpeza:
+  - Se a primeira instrução começar com “Prossiga com {nome da etapa}”, remova essa instrução (pois é redundante).
+  - Se a instrução for basicamente repetir o título, não falar.
+  - Mantenha só instruções realmente operacionais.
+
+D) Fluxo / “pulou etapa 3”
+- Não mudar startBatch (ele corretamente começa em currentStageId=3 e auto completa 1 e 2).
+- O bug está na narração: garantir que quando um lote é iniciado, a primeira fala pós-início sempre narra a etapa atual (3) e o que fazer (aquecer até 32°C), e não uma etapa diferente.
+- Se existir algum trecho no handler que ao iniciar lote chama render de stage errado (ex: usando “1” hardcoded, ou usando “next stage” sem persistir), corrigir.
+- Adicionar log estruturado: quando for renderizar qualquer fala, logar:
+  [SPEECH] context=... batchId=... currentStageId=... stageName=... pendingInputs=... timers=... allowedUtterances=...
+  e o texto final pós pós-processamento.
+
+E) Timers “NaN minutos”
+- No payload timers, nunca gerar “NaN minutos”.
+- Se durationMinutes for NaN/undefined, omitir timer description e omitir instrução de timer no speech.
+
+VALIDAÇÃO (faça testes rápidos e me diga o resultado no final):
+1) Stage 6 (floculação): falar “hora da floculação às vinte e três e nove”. Se o slot não vier, a Alexa deve responder com exemplo novo (parseável).
+2) Stage 13 (pH e peças): a mensagem deve pedir “cinco vírgula seis” etc. Nunca “5 ponto 2”, nunca “cinquenta e seis”.
+3) Quando avançar para uma etapa sem input pendente: a fala termina com “Quando terminar, diga ‘avançar etapa’.” e NÃO inclui “qual é o status”.
+4) Em doses: nunca falar “rennet”; sempre “coalho”. E “DX” pronunciado como “D X”.
+5) Ao iniciar lote, status deve cair na etapa 3 e falar de aquecer até 32°C.
+
+IMPORTANTE: mantenha o LLM só como NARRADOR. As decisões continuam 100% no backend: gating, etapa, pending inputs, timers, etc. O LLM não escolhe exemplos fora de allowedUtterances; ele apenas verbaliza os exemplos já calculados pelo backend (após você melhorar a lista de allowedUtterances no renderer para não ser repetitiva).

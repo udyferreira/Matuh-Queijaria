@@ -308,45 +308,34 @@ export class RecipeManager {
     for (const input of missingInputs) {
       switch (input) {
         case 'flocculation_time':
-          // LogTimeIntent: "hora da {time_type} às {time}"
-          messages.push("Registre o horário de floculação. Diga: 'hora da floculação às 15:20'");
+          messages.push("Registre o horário de floculação. Diga: 'hora da floculação às vinte e três e nove'");
           break;
         case 'cut_point_time':
-          // LogTimeIntent: "hora do {time_type} às {time}"
-          messages.push("Registre o horário do ponto de corte. Diga: 'hora do corte às 14:39'");
+          messages.push("Registre o horário do ponto de corte. Diga: 'hora do corte às quinze e trinta'");
           break;
         case 'ph_value':
           if (stageId === 13) {
-            // RegisterPHAndPiecesIntent: "o pH é {ph_value} e são {pieces_quantity} peças"
-            // Combined prompt for Stage 13 - covers both ph_value and pieces_quantity
-            messages.push("Registre o pH inicial e a quantidade de peças. Diga: 'o pH é 5 ponto 2 e são 12 peças'");
+            messages.push("Registre o pH inicial e a quantidade de peças. Diga: 'pH cinco vírgula dois com doze peças'");
           } else {
-            // RegisterPHAndPiecesIntent: "o pH é {ph_value}"
-            messages.push("Registre o pH atual. Diga: 'o pH é 5 ponto 2'");
+            messages.push("Registre o pH atual. Diga: 'pH cinco vírgula dois'");
           }
           break;
         case 'pieces_quantity':
-          // Skip if Stage 13 (already covered by ph_value case above)
           if (stageId !== 13) {
-            // RegisterPHAndPiecesIntent: "são {pieces_quantity} peças"
             messages.push("Registre a quantidade de peças. Diga: 'são 12 peças'");
           }
           break;
         case 'press_start_time':
-          // LogTimeIntent: "hora da {time_type} às {time}"
-          messages.push("Registre o horário de início da prensa. Diga: 'hora da prensa às 16:10'");
+          messages.push("Registre o horário de início da prensa. Diga: 'hora da prensa às dezesseis e dez'");
           break;
         case 'chamber_2_entry_date':
-          // RegisterChamberEntryDateIntent: "coloquei na câmara dois {entry_date}" or "entrada na câmara dois {entry_date}"
-          messages.push("Registre a data de entrada na Câmara 2. Diga: 'coloquei na câmara dois hoje' ou 'entrada na câmara dois dia 8 de janeiro'");
+          messages.push("Registre a data de entrada na Câmara 2. Diga: 'coloquei na câmara dois hoje'");
           break;
         case 'milk_volume_l':
         case 'milk_temperature_c':
         case 'milk_ph':
-          // All three are required together - provide single combined message
-          // Only add once (when we see any of them)
           if (!messages.some(m => m.includes('iniciar novo lote'))) {
-            messages.push("Para iniciar um novo lote, diga: 'iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5'");
+            messages.push("Para iniciar um novo lote, diga: 'iniciar novo lote com 130 litros, temperatura 32 graus, pH seis vírgula cinco'");
           }
           break;
         default:

@@ -743,7 +743,7 @@ export async function registerRoutes(
         
         if (missing.length > 0) {
           return {
-            speech: `Para iniciar o lote, faltam: ${missing.join(", ")}. Diga: 'iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5'.`,
+            speech: `Para iniciar o lote, faltam: ${missing.join(", ")}. Diga: 'iniciar novo lote com 130 litros, temperatura 32 graus, pH seis vírgula cinco'.`,
             shouldEndSession: false
           };
         }
@@ -761,8 +761,8 @@ export async function registerRoutes(
           return { speech, shouldEndSession: false };
         }
         
-        const firstStage = recipeManager.getStage(1);
-        const payload = speechRenderer.buildStartBatchPayload(result.batch, firstStage);
+        const currentStage = recipeManager.getStage(result.batch.currentStageId || 3);
+        const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage);
         const speech = await speechRenderer.renderSpeech(payload);
         return { speech, shouldEndSession: false };
       }
@@ -773,7 +773,7 @@ export async function registerRoutes(
             "Não há lote ativo no momento.",
             undefined
           );
-          payload.allowedUtterances = ["iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5"];
+          payload.allowedUtterances = ["iniciar novo lote com 130 litros, temperatura 32 graus, pH seis vírgula cinco"];
           const speech = await speechRenderer.renderSpeech(payload);
           return { speech, shouldEndSession: false };
         }
@@ -1228,11 +1228,11 @@ export async function registerRoutes(
             const typeLabel = getTimeTypeLabel(timeType);
             // Provide correct example based on time type
             const examples: Record<string, string> = {
-              'flocculation': 'hora da floculação às quinze e trinta',
+              'flocculation': 'hora da floculação às vinte e três e nove',
               'cut_point': 'hora do corte às quinze e trinta',
-              'press_start': 'hora da prensa às quinze e trinta'
+              'press_start': 'hora da prensa às dezesseis e dez'
             };
-            const example = examples[timeType || ''] || 'hora da floculação às quinze e trinta';
+            const example = examples[timeType || ''] || 'hora da floculação às vinte e três e nove';
             console.log(`[LogTimeIntent] Missing time for ${timeType}, suggesting example: ${example}`);
             return res.status(200).json(buildAlexaResponse(
               `Por favor, diga o horário ${typeLabel}. Por exemplo: '${example}'.`,
@@ -1308,9 +1308,9 @@ export async function registerRoutes(
               
               // Check what's actually needed at this stage
               if (stageId === 13 && measurements["initial_ph"] === undefined) {
-                helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Para registrar o pH, diga: "pH cinco vírgula dois com doze peças". Ou diga "qual é o status" para ver o progresso.`;
+                helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Para registrar o pH, diga: "pH cinco vírgula dois com doze peças".`;
               } else if (stageId === 15) {
-                helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Para informar o pH, diga: "pH cinco vírgula dois". Ou diga "qual é o status".`;
+                helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Para informar o pH, diga: "pH cinco vírgula dois".`;
               } else {
                 // Stage doesn't require pH - suggest what IS valid
                 const utterances = speechRenderer.getContextualUtterances(currentStage, activeBatch);
@@ -1384,8 +1384,8 @@ export async function registerRoutes(
             // Step 1: If we have no pH at all, elicit it
             if (effectivePh === undefined) {
               const prompt = phError 
-                ? `${phError}. Qual é o pH inicial? Diga, por exemplo: 'cinco vírgula quatro'.`
-                : "Qual é o pH inicial? Diga, por exemplo: 'cinco vírgula quatro'.";
+                ? `${phError}. Qual é o pH inicial? Diga, por exemplo: 'cinco vírgula dois'.`
+                : "Qual é o pH inicial? Diga, por exemplo: 'cinco vírgula dois'.";
               console.log(`[Stage 13] Eliciting pH`);
               return res.status(200).json(buildAlexaElicitSlotResponse(
                 "ph_value",
@@ -1462,8 +1462,8 @@ export async function registerRoutes(
             // Step 1: If no pH provided, elicit it
             if (phValue === undefined) {
               const prompt = phError 
-                ? `${phError}. Informe o pH atual dos queijos. Diga, por exemplo: 'pH cinco ponto dois'.`
-                : "Informe o pH atual dos queijos. Diga, por exemplo: 'pH cinco ponto dois'.";
+                ? `${phError}. Informe o pH atual dos queijos. Diga, por exemplo: 'pH cinco vírgula dois'.`
+                : "Informe o pH atual dos queijos. Diga, por exemplo: 'pH cinco vírgula dois'.";
               console.log(`[Stage 15] Eliciting pH`);
               return res.status(200).json(buildAlexaElicitSlotResponse(
                 "ph_value",

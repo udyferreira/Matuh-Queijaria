@@ -65,30 +65,63 @@ export interface SpeechRenderPayload {
   confirmation?: string;
 }
 
-const SPEECH_RENDERER_PROMPT = `Sua função é APENAS narrar uma resposta de voz para Alexa, em português do Brasil.
-Você receberá um JSON estruturado.
+const SPEECH_RENDERER_PROMPT = `Sua função é APENAS narrar uma resposta de voz curta para Alexa, em português do Brasil.
+Você receberá um JSON estruturado com dados já validados pelo backend.
 Use SOMENTE as informações fornecidas no JSON.
 NUNCA invente dados, frases, pedidos ou instruções que não estejam no JSON.
-NUNCA peça informações que não estão mencionadas no JSON.
 
-Regras de fala:
-- Se houver stage, diga "Etapa X: [nome]" no início.
-- Se houver instructions, diga-as de forma clara e sequencial.
-- Se instructions estiver vazio ou ausente, NÃO invente instruções.
-- Se houver doses, diga todas com valor e unidade (ex: "65 ml de fermento LR").
-- Se houver timers, mencione-os brevemente.
-- Se houver notes, diga exatamente o que está em notes.
-- Se notes estiver ausente ou vazio, NÃO invente notes.
-- Se houver allowedUtterances, sugira 1-2 exemplos EXATAMENTE como fornecidos. Não substitua sinônimos.
-- Nunca sugira exemplos de outra etapa.
-- Para query_input, diga "A quantidade de [tipo] é [valor] [unidade]."
-- Para errors, diga a mensagem de erro de forma clara.
-- Para log_time/log_ph/log_date, confirme o registro feito.
-- Para help sem notes, apenas diga o nome da etapa e sugira os allowedUtterances.
-- Para auto_advance: primeiro diga "confirmation", depois "Etapa X: [nome]" e suas instruções. Combine numa narrativa fluida.
-- Use frases curtas, máximo de 4 frases para auto_advance, 3 para outros.
+REGRAS OBRIGATÓRIAS:
+1. NUNCA comece com "Confirmação" ou "confirmação".
+2. Se houver stage, diga "Etapa {id}: {nome}." no início.
+3. Se houver instructions, diga-as de forma clara APÓS o nome da etapa.
+   - NUNCA repita o nome da etapa dentro da instrução.
+   - NUNCA diga "Prossiga com [nome da etapa]" — é redundante.
+4. Se instructions estiver vazio ou ausente, NÃO invente instruções.
+5. Rótulos de doses OBRIGATÓRIOS (use exatamente):
+   - "coalho" (NUNCA "rennet")
+   - "fermento D X" (NUNCA "fermento DX" junto, nem "fermento quinhentos e dez")
+   - "fermento L R" (NUNCA "fermento LR" junto)
+   - "fermento K L" (NUNCA "fermento KL" junto)
+6. Se houver timers, mencione brevemente (ex: "Timer de 30 minutos").
+7. Se houver notes, diga exatamente o que está em notes.
+8. Se notes estiver ausente, NÃO invente.
+9. allowedUtterances são EXEMPLOS DE COMANDOS para o usuário. Sugira com "Diga: '{utterance}'."
+   - Se "avançar etapa": termine com "Quando terminar, diga 'avançar etapa'."
+   - Para outros (ex: hora/pH/câmara): termine com "Diga: '{utterance}'."
+   - NUNCA trate utterances como dados ou resultados de consulta.
+   - NUNCA sugira "qual é o status" por conta própria.
+10. Para error, diga a mensagem de erro de forma clara.
+11. Para query_input, diga "A quantidade de [tipo] é [valor] [unidade]."
+12. Para auto_advance: combine confirmation + próxima etapa numa narrativa fluida e curta. NÃO diga "confirmação".
+13. Para start_batch: mencione as doses calculadas e a instrução da etapa atual.
+14. Para log_time/log_ph/log_date: confirme o registro feito de forma curta.
+15. Máximo: 4 frases para auto_advance/start_batch, 3 para outros contextos.
 
 Responda APENAS com o texto de fala, sem aspas, sem explicações.`;
+
+/**
+ * Post-process LLM or fallback speech to fix pronunciation and remove redundancies
+ */
+function postProcessSpeech(text: string): string {
+  let result = text;
+
+  result = result.replace(/^[Cc]onfirma[çc][ãa]o\.?\s*/g, '');
+  result = result.replace(/\brennet\b/gi, 'coalho');
+
+  result = result.replace(/\bDX\b/g, 'D X');
+  result = result.replace(/\bLR\b/g, 'L R');
+  result = result.replace(/\bKL\b/g, 'K L');
+
+  result = result.replace(/\.?\s*Prossiga com [^.]+\./gi, '.');
+  result = result.replace(/Sugest[õo]es de comandos:\s*/gi, '');
+
+  result = result.replace(/\n+/g, ' ');
+  result = result.replace(/\.\s*\./g, '.');
+  result = result.replace(/\s{2,}/g, ' ');
+  result = result.trim();
+
+  return result;
+}
 
 /**
  * Render structured data into natural speech using LLM
@@ -111,7 +144,6 @@ export async function renderSpeech(payload: SpeechRenderPayload): Promise<string
     
     let speech = response.choices[0]?.message?.content?.trim() || getFallbackSpeech(payload);
     
-    // Validate LLM output - check for violations
     if (payload.allowedUtterances && payload.allowedUtterances.length > 0) {
       const violation = checkForViolation(speech, payload.allowedUtterances);
       if (violation) {
@@ -120,25 +152,33 @@ export async function renderSpeech(payload: SpeechRenderPayload): Promise<string
       }
     }
     
+    speech = postProcessSpeech(speech);
+    
     console.log(`[llm.render.output] "${speech}"`);
+    console.log(`[SPEECH] context=${payload.context} stageId=${payload.stage?.id || 'N/A'} stageName=${payload.stage?.name || 'N/A'} pendingInputs=${payload.notes || 'none'} timers=${payload.timers?.map(t => t.description).join(',') || 'none'} allowedUtterances=${payload.allowedUtterances?.join(',') || 'none'} speech="${speech.substring(0, 150)}"`);
     
     return speech;
   } catch (error) {
     console.error("[llm.render.error]", error);
-    return getFallbackSpeech(payload);
+    const fallback = postProcessSpeech(getFallbackSpeech(payload));
+    console.log(`[SPEECH] context=${payload.context} stageId=${payload.stage?.id || 'N/A'} FALLBACK speech="${fallback.substring(0, 150)}"`);
+    return fallback;
   }
 }
 
 /**
  * Fallback speech generation when LLM fails
- * Uses simple deterministic logic
+ * Uses deterministic logic - clean, non-redundant output
  */
 function getFallbackSpeech(payload: SpeechRenderPayload): string {
   const parts: string[] = [];
   
-  // For auto_advance context, include confirmation first
   if (payload.confirmation) {
     parts.push(payload.confirmation);
+  }
+  
+  if (payload.batchInfo) {
+    parts.push(`Lote iniciado com ${payload.batchInfo.milkVolumeL} litros.`);
   }
   
   if (payload.stage) {
@@ -153,20 +193,53 @@ function getFallbackSpeech(payload: SpeechRenderPayload): string {
     parts.push(`A quantidade de ${payload.queryResult.inputType} é ${payload.queryResult.value} ${payload.queryResult.unit}.`);
   }
   
+  if (payload.loggedValue) {
+    parts.push(`${payload.loggedValue.type}: ${payload.loggedValue.value} registrado.`);
+  }
+  
   if (payload.doses) {
     const doseTexts = Object.entries(payload.doses)
       .map(([name, info]) => `${info.value} ${info.unit} de ${formatDoseName(name)}`)
       .join(', ');
-    if (doseTexts) parts.push(`Use ${doseTexts}.`);
+    if (doseTexts) parts.push(`Doses: ${doseTexts}.`);
   }
   
   if (payload.instructions && payload.instructions.length > 0) {
-    parts.push(payload.instructions.slice(0, 2).join(' '));
+    const filtered = payload.instructions.filter(i =>
+      !i.toLowerCase().startsWith('prossiga com')
+    );
+    if (filtered.length > 0) {
+      const joined = filtered.slice(0, 2).join('. ');
+      parts.push(joined.endsWith('.') ? joined : joined + '.');
+    }
+  }
+  
+  if (payload.notes) {
+    parts.push(payload.notes);
+  }
+  
+  if (payload.timers && payload.timers.length > 0) {
+    for (const timer of payload.timers) {
+      if (timer.remainingMinutes !== undefined && !isNaN(timer.remainingMinutes) && timer.remainingMinutes > 0) {
+        parts.push(`Faltam ${timer.remainingMinutes} minuto${timer.remainingMinutes !== 1 ? 's' : ''}.`);
+      } else if (timer.description && !timer.description.includes('NaN')) {
+        parts.push(`Timer de ${timer.description}.`);
+      }
+    }
   }
   
   if (payload.allowedUtterances && payload.allowedUtterances.length > 0) {
-    const examples = payload.allowedUtterances.slice(0, 2).join(' ou ');
-    parts.push(`Você pode dizer: ${examples}.`);
+    if (payload.context === 'help' || payload.context === 'error') {
+      const examples = payload.allowedUtterances.slice(0, 2).join(' ou ');
+      parts.push(`Você pode dizer: ${examples}.`);
+    } else {
+      const first = payload.allowedUtterances[0];
+      if (first === 'avançar etapa') {
+        parts.push("Quando terminar, diga 'avançar etapa'.");
+      } else {
+        parts.push(`Diga: '${first}'.`);
+      }
+    }
   }
   
   return parts.join(' ') || "Não foi possível processar sua solicitação.";
@@ -174,9 +247,9 @@ function getFallbackSpeech(payload: SpeechRenderPayload): string {
 
 function formatDoseName(name: string): string {
   const nameMap: Record<string, string> = {
-    "FERMENT_LR": "fermento LR",
-    "FERMENT_DX": "fermento DX", 
-    "FERMENT_KL": "fermento KL",
+    "FERMENT_LR": "fermento L R",
+    "FERMENT_DX": "fermento D X", 
+    "FERMENT_KL": "fermento K L",
     "RENNET": "coalho",
     "SALT": "sal"
   };
@@ -190,7 +263,6 @@ function formatDoseName(name: string): string {
 function checkForViolation(speech: string, allowedUtterances: string[]): string | null {
   const speechLower = speech.toLowerCase();
   
-  // Known invented content patterns - LLM making up requests
   const inventedPatterns = [
     /forneça.*notas/,
     /forneça.*instruções/,
@@ -205,7 +277,6 @@ function checkForViolation(speech: string, allowedUtterances: string[]): string 
     }
   }
   
-  // Known problematic patterns - suggestions from wrong stages
   const wrongStagePhrases = [
     { pattern: /hora da floculação/, validFor: ['floculação'] },
     { pattern: /hora do corte/, validFor: ['corte'] },
@@ -215,12 +286,10 @@ function checkForViolation(speech: string, allowedUtterances: string[]): string 
     { pattern: /registrar.*prensa/, validFor: ['prensa'] },
   ];
   
-  // Check if any allowed utterance mentions floculação, corte, or prensa
   const allowedTopics = allowedUtterances.map(u => u.toLowerCase()).join(' ');
   
   for (const phrase of wrongStagePhrases) {
     if (phrase.pattern.test(speechLower)) {
-      // Check if any of the valid topics is in allowed utterances
       const isValid = phrase.validFor.some(topic => allowedTopics.includes(topic));
       if (!isValid) {
         const match = speechLower.match(phrase.pattern);
@@ -243,18 +312,20 @@ export function buildStatusPayload(
 ): SpeechRenderPayload {
   const calculatedInputs = batch.calculatedInputs || {};
   
-  // Use keyword-based dose matching instead of hardcoded stage IDs
   const doses = getRelevantDosesForStage(stage, calculatedInputs);
   
   const timers: TimerInfo[] = [];
   const activeTimers = batch.activeTimers || [];
   for (const timer of activeTimers) {
     const remaining = timer.endTime ? Math.max(0, Math.ceil((new Date(timer.endTime).getTime() - Date.now()) / 60000)) : 0;
-    timers.push({
-      description: timer.description || `Timer de ${timer.durationMinutes} minutos`,
-      blocking: timer.blocking || false,
-      remainingMinutes: remaining
-    });
+    const desc = timer.description || (timer.durationMinutes && !isNaN(timer.durationMinutes) ? `${timer.durationMinutes} minutos` : undefined);
+    if (desc && !desc.includes('NaN')) {
+      timers.push({
+        description: desc,
+        blocking: timer.blocking || false,
+        remainingMinutes: remaining
+      });
+    }
   }
   
   return {
@@ -272,8 +343,37 @@ export function buildStatusPayload(
 }
 
 /**
+ * Build timer description from stage recipe definition
+ * Returns undefined if duration is invalid/NaN
+ */
+function buildTimerDescription(stageTimer: any): string | undefined {
+  const durationMin = stageTimer.duration_min;
+  const durationHours = stageTimer.duration_hours;
+  
+  let totalMinutes: number | undefined;
+  if (typeof durationMin === 'number' && !isNaN(durationMin)) {
+    totalMinutes = durationMin;
+  } else if (typeof durationHours === 'number' && !isNaN(durationHours)) {
+    totalMinutes = durationHours * 60;
+  }
+  
+  if (totalMinutes === undefined || isNaN(totalMinutes) || totalMinutes <= 0) {
+    return undefined;
+  }
+  
+  if (totalMinutes >= 60) {
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    if (mins === 0) {
+      return `${hours} hora${hours > 1 ? 's' : ''}`;
+    }
+    return `${hours} hora${hours > 1 ? 's' : ''} e ${mins} minutos`;
+  }
+  return `${totalMinutes} minutos`;
+}
+
+/**
  * Build a SpeechRenderPayload for advance context
- * IMPORTANT: Never include NaN values in timers; if duration is undefined, omit timer
  */
 export function buildAdvancePayload(
   batch: any,
@@ -283,6 +383,7 @@ export function buildAdvancePayload(
   if (completed) {
     return {
       context: "advance",
+      stage: { id: 20, name: "Conclusão" },
       notes: "Lote finalizado com sucesso! Todas as 20 etapas foram concluídas.",
       allowedUtterances: ["qual é o status", "iniciar novo lote"]
     };
@@ -290,40 +391,20 @@ export function buildAdvancePayload(
   
   const calculatedInputs = batch.calculatedInputs || {};
   
-  // Use keyword-based dose matching instead of hardcoded stage IDs
   const doses = getRelevantDosesForStage(nextStage, calculatedInputs);
   
-  // Build timers only if duration is valid (not undefined/NaN)
   const timers: TimerInfo[] = [];
   if (nextStage.timer) {
-    const durationMinutes = nextStage.timer.duration_minutes;
-    const durationHours = nextStage.timer.duration_hours;
-    
-    // Calculate total minutes only if we have valid values
-    let totalMinutes: number | undefined;
-    if (typeof durationMinutes === 'number' && !isNaN(durationMinutes)) {
-      totalMinutes = durationMinutes;
-    } else if (typeof durationHours === 'number' && !isNaN(durationHours)) {
-      totalMinutes = durationHours * 60;
-    }
-    
-    // Only add timer if we have a valid duration
-    if (totalMinutes !== undefined && !isNaN(totalMinutes) && totalMinutes > 0) {
+    const desc = buildTimerDescription(nextStage.timer);
+    if (desc) {
       timers.push({
-        description: totalMinutes >= 60 
-          ? `${Math.floor(totalMinutes / 60)} hora${Math.floor(totalMinutes / 60) > 1 ? 's' : ''} e ${totalMinutes % 60} minutos`
-          : `${totalMinutes} minutos`,
+        description: desc,
         blocking: nextStage.timer.blocking || false
       });
     }
   }
   
-  // Build instructions - if stage has no instructions, provide a helpful fallback
-  let instructions = nextStage.instructions || [];
-  if (instructions.length === 0 && nextStage.name) {
-    // Fallback: use the stage name as minimal guidance
-    instructions = [`Prossiga com ${nextStage.name.toLowerCase()}.`];
-  }
+  const instructions = nextStage.instructions || [];
   
   return {
     context: "advance",
@@ -345,7 +426,6 @@ export function buildQueryInputPayload(
   inputType: string,
   value: number
 ): SpeechRenderPayload {
-  // All ferment/rennet quantities are in ml
   const unit = "ml";
   
   return {
@@ -365,9 +445,14 @@ export function buildHelpPayload(
   stage?: any,
   batch?: any
 ): SpeechRenderPayload {
-  const utterances = stage && batch 
-    ? getContextualUtterances(stage, batch)
-    : ["qual é o status", "diga instruções", "avançar etapa"];
+  let utterances: string[];
+  if (stage && batch) {
+    const contextual = getContextualUtterances(stage, batch);
+    utterances = [...contextual, "qual é o status", "ajuda"];
+    utterances = [...new Set(utterances)];
+  } else {
+    utterances = ["qual é o status", "iniciar novo lote com 130 litros, temperatura 32 graus, pH seis vírgula cinco"];
+  }
   
   return {
     context: "help",
@@ -392,19 +477,24 @@ export function buildErrorPayload(
 
 /**
  * Build a SpeechRenderPayload for start_batch context
+ * Shows current stage (3 = Aquecer o leite) with all calculated doses
  */
 export function buildStartBatchPayload(
   batch: any,
-  firstStage: any
+  currentStage: any
 ): SpeechRenderPayload {
   const calculatedInputs = batch.calculatedInputs || {};
   
-  // For start_batch, show all calculated doses as summary
   const doses: Record<string, DoseInfo> = {};
   if (calculatedInputs.FERMENT_LR) doses["FERMENT_LR"] = { value: calculatedInputs.FERMENT_LR, unit: "ml" };
   if (calculatedInputs.FERMENT_DX) doses["FERMENT_DX"] = { value: calculatedInputs.FERMENT_DX, unit: "ml" };
   if (calculatedInputs.FERMENT_KL) doses["FERMENT_KL"] = { value: calculatedInputs.FERMENT_KL, unit: "ml" };
   if (calculatedInputs.RENNET) doses["RENNET"] = { value: calculatedInputs.RENNET, unit: "ml" };
+  
+  let instructions = currentStage.instructions || [];
+  if (instructions.length === 0 && currentStage.type === 'heat' && currentStage.parameters?.target_temp_c) {
+    instructions = [`Aqueça o leite até ${currentStage.parameters.target_temp_c}°C.`];
+  }
   
   return {
     context: "start_batch",
@@ -413,12 +503,12 @@ export function buildStartBatchPayload(
       startedAt: batch.startedAt
     },
     stage: {
-      id: firstStage.id,
-      name: firstStage.name
+      id: currentStage.id,
+      name: currentStage.name
     },
-    instructions: firstStage.instructions || [],
+    instructions,
     doses: Object.keys(doses).length > 0 ? doses : undefined,
-    allowedUtterances: getContextualUtterances(firstStage, batch)
+    allowedUtterances: getContextualUtterances(currentStage, batch)
   };
 }
 
@@ -429,7 +519,7 @@ export function buildLaunchPayload(): SpeechRenderPayload {
   return {
     context: "help",
     notes: "Bem-vindo à Matuh Queijaria!",
-    allowedUtterances: ["qual é o status", "iniciar novo lote com 130 litros, temperatura 32 graus, pH 6 ponto 5"]
+    allowedUtterances: ["qual é o status", "iniciar novo lote com 130 litros, temperatura 32 graus, pH seis vírgula cinco"]
   };
 }
 
@@ -479,30 +569,16 @@ export function buildAutoAdvancePayload(
   
   const timers: TimerInfo[] = [];
   if (nextStage.timer) {
-    const durationMinutes = nextStage.timer.duration_minutes;
-    const durationHours = nextStage.timer.duration_hours;
-    
-    let totalMinutes: number | undefined;
-    if (typeof durationMinutes === 'number' && !isNaN(durationMinutes)) {
-      totalMinutes = durationMinutes;
-    } else if (typeof durationHours === 'number' && !isNaN(durationHours)) {
-      totalMinutes = durationHours * 60;
-    }
-    
-    if (totalMinutes !== undefined && !isNaN(totalMinutes) && totalMinutes > 0) {
+    const desc = buildTimerDescription(nextStage.timer);
+    if (desc) {
       timers.push({
-        description: totalMinutes >= 60 
-          ? `${Math.floor(totalMinutes / 60)} hora${Math.floor(totalMinutes / 60) > 1 ? 's' : ''} e ${totalMinutes % 60} minutos`
-          : `${totalMinutes} minutos`,
+        description: desc,
         blocking: nextStage.timer.blocking || false
       });
     }
   }
   
-  let instructions = nextStage.instructions || [];
-  if (instructions.length === 0 && nextStage.name) {
-    instructions = [`Prossiga com ${nextStage.name.toLowerCase()}.`];
-  }
+  const instructions = nextStage.instructions || [];
   
   return {
     context: "auto_advance",
@@ -520,15 +596,17 @@ export function buildAutoAdvancePayload(
 
 /**
  * Get contextual utterances based on current stage and batch state
- * Uses measurements (not storedValues) and returns interactionModel-compatible phrases
- * Order: [required-input-example, "status", "instruções"] - prioritizes the pending input
+ * Returns interactionModel-compatible phrases
+ * 
+ * RULES:
+ * - Stages with pending input: return only the input example (no "status")
+ * - Stages without pending input: return only "avançar etapa" (no "status")
+ * - "qual é o status" is only included in help/error contexts (handled by buildHelpPayload)
  */
 export function getContextualUtterances(stage: any, batch: any): string[] {
-  // Check for operator_input_required
   const requiredInputs = stage?.operator_input_required || [];
   const measurements = batch?.measurements || {};
   
-  // Map required inputs to measurement keys
   const inputToMeasurementKey: Record<string, string> = {
     'flocculation_time': 'flocculation_time',
     'cut_point_time': 'cut_point_time',
@@ -539,39 +617,35 @@ export function getContextualUtterances(stage: any, batch: any): string[] {
     'chamber_2_entry_date': 'chamber_2_entry_date'
   };
   
-  // Find first pending input and put its example FIRST (highest priority)
   for (const input of requiredInputs) {
     const measurementKey = inputToMeasurementKey[input] || input;
     if (measurements[measurementKey] === undefined) {
-      // Return exact phrases that match interactionModel samples - INPUT FIRST
       if (input === 'flocculation_time') {
-        return ["hora da floculação às quinze e trinta", "qual é o status"];
+        return ["hora da floculação às vinte e três e nove"];
       }
       if (input === 'cut_point_time') {
-        return ["hora do corte às quinze e trinta", "qual é o status"];
+        return ["hora do corte às quinze e trinta"];
       }
       if (input === 'press_start_time') {
-        return ["hora da prensa às quinze e trinta", "qual é o status"];
+        return ["hora da prensa às dezesseis e dez"];
       }
       if (input === 'ph_value' || input === 'initial_ph') {
-        // Stage 13 needs pH + pieces
         if (stage?.id === 13) {
-          return ["pH cinco vírgula dois com doze peças", "qual é o status"];
+          return ["pH cinco vírgula dois com doze peças"];
         } else {
-          return ["pH cinco vírgula dois", "qual é o status"];
+          return ["pH cinco vírgula dois"];
         }
       }
       if (input === 'pieces_quantity') {
-        return ["doze peças", "qual é o status"];
+        return ["doze peças"];
       }
       if (input === 'chamber_2_entry_date') {
-        return ["coloquei na câmara dois hoje", "qual é o status"];
+        return ["coloquei na câmara dois hoje"];
       }
     }
   }
   
-  // No pending inputs - suggest advance first
-  return ["avançar etapa", "qual é o status", "diga instruções"];
+  return ["avançar etapa"];
 }
 
 /**
@@ -586,13 +660,11 @@ export function getRelevantDosesForStage(
   
   if (!stage || !calculatedInputs) return doses;
   
-  // Build searchable text from stage name and instructions
   const stageText = [
     stage.name || '',
     ...(stage.instructions || [])
   ].join(' ').toLowerCase();
   
-  // Match doses by keywords
   if (stageText.includes('lr') && calculatedInputs.FERMENT_LR) {
     doses["FERMENT_LR"] = { value: calculatedInputs.FERMENT_LR, unit: "ml" };
   }

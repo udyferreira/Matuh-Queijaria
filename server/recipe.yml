@@ -196,7 +196,7 @@ stages:
       - initial_ph
       - pieces_quantity
     expected_intent: "RegisterPHAndPiecesIntent"
-    input_prompt: "Informe o pH inicial e a quantidade de peças dizendo: 'pH cinco ponto quatro e seis peças'."
+    input_prompt: "Informe o pH inicial e a quantidade de peças dizendo: 'pH cinco vírgula quatro e seis peças'."
 
   - id: 14
     name: "Colocar na prensa"
@@ -225,7 +225,7 @@ stages:
       - ph_measurements[]
       - turning_cycles_count
     expected_intent: "RegisterPHAndPiecesIntent"
-    input_prompt: "Informe o pH atual dos queijos dizendo: 'pH cinco ponto dois'."
+    input_prompt: "Informe o pH atual dos queijos dizendo: 'pH cinco vírgula dois'."
     llm_guidance: >
       Se o pH atingir 5,2 antes de completar 2 horas,
       o loop pode ser encerrado imediatamente.
