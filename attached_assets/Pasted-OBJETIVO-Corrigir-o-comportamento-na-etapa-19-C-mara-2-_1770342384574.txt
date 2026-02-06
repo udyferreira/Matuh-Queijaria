@@ -1,0 +1,97 @@
+OBJETIVO
+Corrigir o comportamento na etapa 19 (Câmara 2) e eliminar inconsistências de IDs/nomes da etapa 20 (Maturação vs Conclusão), garantindo que:
+- A Alexa NUNCA sugira “avançar etapa” quando houver input obrigatório pendente.
+- O LLM apenas “narra” com naturalidade, mas só pode mencionar exemplos e próximos comandos que o backend determinou.
+- A detecção de pendingInputs na etapa 19 use o campo correto (batch.chamber2EntryDate), não measurements.
+- O YAML de receita tenha IDs coerentes: maturação e conclusão não podem compartilhar o mesmo ID.
+
+ARQUIVOS A ALTERAR
+- server/speechRenderer.ts
+- server/routes.ts (apenas se necessário para payload/telemetria)
+- server/recipe.yml (para corrigir IDs/nomes)
+- (opcional) server/recipe.ts se precisar de helper, mas prefira mexer no YAML
+
+1) BUG PRINCIPAL: pendingInputs da etapa 19 está errado (usa measurements)
+No speechRenderer.ts, hoje getPendingInputs() e getContextualUtterances() assumem que os inputs pendentes estão em batch.measurements[...] para várias etapas.
+Corrija especificamente a etapa 19 para ler batch.chamber2EntryDate (top-level), e a etapa 20 para não depender disso.
+
+IMPLEMENTAÇÃO (speechRenderer.ts)
+A) Ajustar getPendingInputs(batch, stageId)
+- Para stageId === 19, considerar pendente quando batch.chamber2EntryDate == null.
+- NÃO usar measurements["chamber_2_entry_date"] (não existe no modelo).
+- Exemplo:
+  if (stageId === 19 && !batch.chamber2EntryDate) pending.push("chamber2EntryDate");
+
+B) Ajustar getContextualUtterances(batch, stageId, allowedUtterances)
+- Quando stageId === 19 e batch.chamber2EntryDate está vazio:
+  - O PRIMEIRO exemplo DEVE ser a frase de registro da entrada (ex: “coloquei na câmara dois hoje”).
+  - Não incluir “avançar etapa” nesses casos.
+  - “qual é o status” pode existir como fallback, mas não precisa aparecer sempre. Só inclua se já vier em allowedUtterances ou se você decidir manter como fallback único (no máx 1).
+- Quando stageId === 19 e batch.chamber2EntryDate já existe:
+  - Aí sim “avançar etapa” pode aparecer (se permitido) porque não há input pendente.
+- Importante: “allowedUtterances” vindo do backend é soberano. Se allowedUtterances NÃO contém “avançar etapa”, o LLM NÃO pode falar isso.
+
+C) Travar call-to-action (“quando terminar…”) no renderer (não deixar pro LLM inventar)
+- Crie um campo derivado no payload para o LLM, por ex:
+  payload.nextAction = { kind: "register" | "do_then_advance", phrase: "..." }
+- Regras:
+  - Se houver pendingInputs: nextAction.kind="register" e phrase deve ser UM exemplo permitido (o primeiro de allowedUtterances).
+  - Se NÃO houver pendingInputs: nextAction.kind="do_then_advance" e phrase pode ser “Quando terminar, diga ‘avançar etapa’.” SOMENTE se “avançar etapa” estiver em allowedUtterances.
+
+2) Conter o LLM: ele só narra e NÃO pode inventar comandos
+Hoje o LLM frequentemente adiciona “Quando terminar, diga ‘avançar etapa’.” mesmo quando isso não está em allowedUtterances.
+Corrija a camada que chama o LLM (onde você monta llm.render.input) para incluir regras duras e validação pós-resposta.
+
+A) No prompt do LLM (onde quer que esteja no speechRenderer.ts / llm.render), adicionar regras:
+- “Você DEVE citar apenas exemplos contidos em allowedUtterances. Não invente frases.”
+- “Se ‘avançar etapa’ NÃO estiver em allowedUtterances, você NÃO pode mencionar ‘avançar etapa’ nem sinônimos.”
+- “Você NÃO pode repetir o nome da etapa 2 vezes (evitar ‘Etapa X… Prossiga com…’).”
+- “Não dizer ‘confirmação’.”
+- “Se nextAction.kind=register, diga de forma direta que precisa registrar antes de continuar, usando nextAction.phrase literalmente.”
+- “Se nextAction.kind=do_then_advance, aí sim oriente ‘quando terminar, diga …’ conforme nextAction.phrase.”
+
+B) Validação pós-resposta (anti-invenção)
+Após receber llm.render.output:
+- Verifique se o texto contém qualquer um destes tokens proibidos quando não estão em allowedUtterances:
+  - “avançar etapa”, “próxima etapa”, “concluir etapa” etc.
+- Se contiver algo fora, faça fallback para um renderer determinístico:
+  - “<Nome curto da etapa>. <Instrução 1>. <Se pending: ‘Para continuar, diga: X’ senão: ‘Quando terminar, diga: avançar etapa’>”
+- Logue quando cair no fallback com tag [LLM_GUARDRAIL].
+
+3) Corrigir inconsistência “Etapa 20: Conclusão” (recipe.yml)
+Abra server/recipe.yml e garanta:
+- Existe uma etapa 20: “Maturação em Câmara 2”
+- Existe uma etapa 21: “Conclusão” (ou então remova a etapa “Conclusão” do YAML e finalize lote sem stage extra — mas o fluxo atual e as falas indicam que você quer uma conclusão explícita).
+- IDs devem ser estritamente sequenciais e únicos (…19, 20, 21).
+- Ajuste qualquer lugar onde “Conclusão” esteja com id 20.
+
+Depois, confirme que recipeManager.getNextStage(20) retorna 21.
+
+4) Ajustes de telemetria para troubleshooting (logs)
+Adicione logs estruturados (sem flood):
+- Em cada render do speech (tag [SPEECH]):
+  - stageId, stageName
+  - pendingInputs (lista real)
+  - allowedUtterances (lista)
+  - nextAction.kind e nextAction.phrase
+  - se LLM foi usado ou se caiu em fallback ([LLM_GUARDRAIL]=true/false)
+- Na etapa 19, ao registrar a data:
+  - logar batch.chamber2EntryDate antes/depois
+
+5) Testes rápidos (manual)
+Após implementar:
+- Vá para etapa 19 com chamber2EntryDate = null
+  - A fala DEVE pedir registro da data (exemplo “coloquei na câmara dois hoje”)
+  - NÃO pode sugerir “avançar etapa”
+- Registre a data (RegisterChamberEntryDateIntent)
+  - Deve auto-avançar para etapa 20 (Maturação)
+  - Ao avançar novamente, deve ir para etapa 21 (Conclusão) e finalizar.
+
+ENTREGA
+- Commitar mudanças nos arquivos acima.
+- Rodar o fluxo até etapa 21.
+- Colar no log final uma amostra da fala da etapa 19, 20 e 21 mostrando que:
+  - Etapa 19 pede registro antes de avançar
+  - Etapa 20 é maturação (não conclusão)
+  - Etapa 21 é conclusão/finalização
+  - Nenhuma fala sugere comandos fora de allowedUtterances
