@@ -1068,24 +1068,12 @@ export async function registerRoutes(
           const stageLock = recipeManager.getStageInputLock(activeBatchForGating.currentStageId);
           
           if (stageLock.locked && stageLock.expectedIntent) {
-            // Check if inputs are satisfied
-            const measurements = (activeBatchForGating.measurements as Record<string, any>) || {};
-            const expectedInputs = recipeManager.getExpectedInputsForStage(activeBatchForGating.currentStageId);
-            
-            // Map stored_values to measurements keys
-            const inputToMeasurementKey: Record<string, string> = {
-              'flocculation_time': 'flocculation_time',
-              'cut_point_time': 'cut_point_time',
-              'press_start_time': 'press_start_time',
-              'ph_value': 'initial_ph',
-              'pieces_quantity': 'pieces_quantity',
-              'chamber_2_entry_date': 'chamber_2_entry_date'
-            };
-            
-            const pendingInputs = expectedInputs.filter(input => {
-              const measurementKey = inputToMeasurementKey[input] || input;
-              return measurements[measurementKey] === undefined;
-            });
+            const currentStageForGating = recipeManager.getStage(activeBatchForGating.currentStageId);
+            const pendingInputs = speechRenderer.getPendingInputs(
+              activeBatchForGating, 
+              activeBatchForGating.currentStageId,
+              currentStageForGating
+            );
             
             const inputsSatisfied = pendingInputs.length === 0;
             
@@ -1620,8 +1608,12 @@ export async function registerRoutes(
             ));
           }
           
+          console.log(`[Stage 19] chamber2EntryDate BEFORE: ${(activeBatch as any).chamber2EntryDate || 'null'}`);
+          
           // Use centralized function for chamber 2 entry
           const result = await batchService.recordChamber2Entry(activeBatch.id, dateValue);
+          
+          console.log(`[Stage 19] chamber2EntryDate AFTER: dateValue=${dateValue} success=${result.success}`);
           
           if (!result.success) {
             return res.status(200).json(buildAlexaResponse(

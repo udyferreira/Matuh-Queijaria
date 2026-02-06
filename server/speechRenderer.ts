@@ -37,6 +37,11 @@ export interface TimerInfo {
   remainingMinutes?: number;
 }
 
+export interface NextAction {
+  kind: "register" | "do_then_advance";
+  phrase: string;
+}
+
 export interface SpeechRenderPayload {
   context: SpeechContext;
   stage?: {
@@ -47,6 +52,7 @@ export interface SpeechRenderPayload {
   doses?: Record<string, DoseInfo>;
   timers?: TimerInfo[];
   allowedUtterances?: string[];
+  nextAction?: NextAction;
   notes?: string;
   errorMessage?: string;
   queryResult?: {
@@ -85,10 +91,12 @@ REGRAS OBRIGATÓRIAS:
 6. Se houver timers, mencione brevemente (ex: "Timer de 30 minutos").
 7. Se houver notes, diga exatamente o que está em notes.
 8. Se notes estiver ausente, NÃO invente.
-9. allowedUtterances são EXEMPLOS DE COMANDOS para o usuário. Sugira com "Diga: '{utterance}'."
-   - Se "avançar etapa": termine com "Quando terminar, diga 'avançar etapa'."
-   - Para outros (ex: hora/pH/câmara): termine com "Diga: '{utterance}'."
-   - NUNCA trate utterances como dados ou resultados de consulta.
+9. REGRA CRÍTICA DE COMANDOS — nextAction é SOBERANO:
+   - Se nextAction.kind="register": diga de forma direta que precisa registrar antes de continuar, usando nextAction.phrase LITERALMENTE. NÃO mencione "avançar etapa", "próxima etapa" nem sinônimos.
+   - Se nextAction.kind="do_then_advance": termine com "Quando terminar, diga 'avançar etapa'." usando nextAction.phrase LITERALMENTE.
+   - Se nextAction estiver ausente: NÃO sugira nenhum comando por conta própria.
+   - Você DEVE citar APENAS exemplos contidos em allowedUtterances. NÃO invente frases.
+   - Se "avançar etapa" NÃO estiver em allowedUtterances, você NÃO pode mencionar "avançar etapa" nem sinônimos ("próxima etapa", "concluir etapa", "prosseguir").
    - NUNCA sugira "qual é o status" por conta própria.
 10. Para error, diga a mensagem de erro de forma clara.
 11. Para query_input, diga "A quantidade de [tipo] é [valor] [unidade]."
@@ -96,6 +104,7 @@ REGRAS OBRIGATÓRIAS:
 13. Para start_batch: mencione as doses calculadas e a instrução da etapa atual.
 14. Para log_time/log_ph/log_date: confirme o registro feito de forma curta.
 15. Máximo: 4 frases para auto_advance/start_batch, 3 para outros contextos.
+16. NUNCA repita o nome da etapa 2 vezes. Evitar "Etapa X… Prossiga com etapa X…"
 
 Responda APENAS com o texto de fala, sem aspas, sem explicações.`;
 
@@ -124,12 +133,62 @@ function postProcessSpeech(text: string): string {
 }
 
 /**
+ * Compute nextAction from allowedUtterances
+ * This determines what the LLM is allowed to suggest as the user's next command
+ */
+function computeNextAction(allowedUtterances?: string[]): NextAction | undefined {
+  if (!allowedUtterances || allowedUtterances.length === 0) return undefined;
+  
+  const first = allowedUtterances[0];
+  if (first === 'avançar etapa') {
+    return { kind: "do_then_advance", phrase: "Quando terminar, diga 'avançar etapa'." };
+  }
+  return { kind: "register", phrase: `Diga: '${first}'.` };
+}
+
+/**
+ * Guardrail: check if LLM output contains "avançar etapa" or synonyms when NOT in allowedUtterances
+ * Returns true if a violation was detected (LLM invented a command)
+ */
+function checkAdvanceGuardrail(speech: string, allowedUtterances?: string[]): boolean {
+  if (!allowedUtterances) return false;
+  
+  const hasAdvanceAllowed = allowedUtterances.some(u => u === 'avançar etapa');
+  if (hasAdvanceAllowed) return false;
+  
+  const speechLower = speech.toLowerCase();
+  const forbiddenPatterns = [
+    'avançar etapa',
+    'próxima etapa',
+    'concluir etapa',
+    'prosseguir para',
+    'seguir para a próxima',
+    "diga 'avançar",
+    'diga "avançar',
+    'quando terminar, diga',
+  ];
+  
+  for (const pattern of forbiddenPatterns) {
+    if (speechLower.includes(pattern)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Render structured data into natural speech using LLM
  */
 export async function renderSpeech(payload: SpeechRenderPayload): Promise<string> {
+  if (!payload.nextAction && payload.allowedUtterances) {
+    payload.nextAction = computeNextAction(payload.allowedUtterances);
+  }
+  
   const payloadJson = JSON.stringify(payload, null, 2);
   
   console.log(`[llm.render.input] context=${payload.context} stage=${payload.stage?.id || 'N/A'} payload=${payloadJson}`);
+  
+  let usedGuardrail = false;
   
   try {
     const response = await openai.chat.completions.create({
@@ -149,13 +208,20 @@ export async function renderSpeech(payload: SpeechRenderPayload): Promise<string
       if (violation) {
         console.log(`[llm.render.violation] LLM suggested "${violation}" which is not in allowedUtterances`);
         speech = getFallbackSpeech(payload);
+        usedGuardrail = true;
       }
+    }
+    
+    if (!usedGuardrail && checkAdvanceGuardrail(speech, payload.allowedUtterances)) {
+      console.log(`[LLM_GUARDRAIL] LLM invented "avançar etapa" when not in allowedUtterances. Falling back to deterministic speech.`);
+      speech = getFallbackSpeech(payload);
+      usedGuardrail = true;
     }
     
     speech = postProcessSpeech(speech);
     
     console.log(`[llm.render.output] "${speech}"`);
-    console.log(`[SPEECH] context=${payload.context} stageId=${payload.stage?.id || 'N/A'} stageName=${payload.stage?.name || 'N/A'} pendingInputs=${payload.notes || 'none'} timers=${payload.timers?.map(t => t.description).join(',') || 'none'} allowedUtterances=${payload.allowedUtterances?.join(',') || 'none'} speech="${speech.substring(0, 150)}"`);
+    console.log(`[SPEECH] context=${payload.context} stageId=${payload.stage?.id || 'N/A'} stageName=${payload.stage?.name || 'N/A'} nextAction=${payload.nextAction ? `${payload.nextAction.kind}:${payload.nextAction.phrase}` : 'none'} pendingInputs=${payload.notes || 'none'} timers=${payload.timers?.map(t => t.description).join(',') || 'none'} allowedUtterances=${payload.allowedUtterances?.join(',') || 'none'} [LLM_GUARDRAIL]=${usedGuardrail} speech="${speech.substring(0, 150)}"`);
     
     return speech;
   } catch (error) {
@@ -383,8 +449,8 @@ export function buildAdvancePayload(
   if (completed) {
     return {
       context: "advance",
-      stage: { id: 20, name: "Conclusão" },
-      notes: "Lote finalizado com sucesso! Todas as 20 etapas foram concluídas.",
+      stage: { id: 21, name: "Conclusão" },
+      notes: "Lote finalizado com sucesso! Todas as etapas foram concluídas.",
       allowedUtterances: ["qual é o status", "iniciar novo lote"]
     };
   }
@@ -449,7 +515,7 @@ export function buildHelpPayload(
   if (stage && batch) {
     const contextual = getContextualUtterances(stage, batch);
     utterances = [...contextual, "qual é o status", "ajuda"];
-    utterances = [...new Set(utterances)];
+    utterances = Array.from(new Set(utterances));
   } else {
     utterances = ["qual é o status", "iniciar novo lote com 130 litros, temperatura 32 graus, pH seis vírgula cinco"];
   }
@@ -599,9 +665,10 @@ export function buildAutoAdvancePayload(
  * Returns interactionModel-compatible phrases
  * 
  * RULES:
- * - Stages with pending input: return only the input example (no "status")
+ * - Stages with pending input: return only the input example (no "status", no "avançar etapa")
  * - Stages without pending input: return only "avançar etapa" (no "status")
  * - "qual é o status" is only included in help/error contexts (handled by buildHelpPayload)
+ * - Stage 19: checks batch.chamber2EntryDate (top-level), NOT measurements
  */
 export function getContextualUtterances(stage: any, batch: any): string[] {
   const requiredInputs = stage?.operator_input_required || [];
@@ -614,10 +681,16 @@ export function getContextualUtterances(stage: any, batch: any): string[] {
     'ph_value': 'initial_ph',
     'initial_ph': 'initial_ph',
     'pieces_quantity': 'pieces_quantity',
-    'chamber_2_entry_date': 'chamber_2_entry_date'
   };
   
   for (const input of requiredInputs) {
+    if (input === 'chamber_2_entry_date') {
+      if (!batch?.chamber2EntryDate) {
+        return ["coloquei na câmara dois hoje"];
+      }
+      continue;
+    }
+    
     const measurementKey = inputToMeasurementKey[input] || input;
     if (measurements[measurementKey] === undefined) {
       if (input === 'flocculation_time') {
@@ -639,13 +712,53 @@ export function getContextualUtterances(stage: any, batch: any): string[] {
       if (input === 'pieces_quantity') {
         return ["doze peças"];
       }
-      if (input === 'chamber_2_entry_date') {
-        return ["coloquei na câmara dois hoje"];
-      }
     }
   }
   
   return ["avançar etapa"];
+}
+
+/**
+ * Get list of pending inputs for a stage, using correct data sources
+ * Stage 19: checks batch.chamber2EntryDate (top-level field)
+ * Other stages: checks batch.measurements
+ */
+export function getPendingInputs(batch: any, stageId: number, stage: any): string[] {
+  const requiredInputs = stage?.operator_input_required || [];
+  if (requiredInputs.length === 0) return [];
+  
+  const measurements = batch?.measurements || {};
+  const pending: string[] = [];
+  
+  const inputToMeasurementKey: Record<string, string> = {
+    'flocculation_time': 'flocculation_time',
+    'cut_point_time': 'cut_point_time',
+    'press_start_time': 'press_start_time',
+    'ph_value': 'initial_ph',
+    'initial_ph': 'initial_ph',
+    'pieces_quantity': 'pieces_quantity',
+  };
+  
+  for (const input of requiredInputs) {
+    if (input === 'chamber_2_entry_date') {
+      if (!batch?.chamber2EntryDate) {
+        pending.push('chamber_2_entry_date');
+      }
+      continue;
+    }
+    
+    if (input === 'milk_volume_l') {
+      if (!batch?.milkVolumeL) pending.push('milk_volume_l');
+      continue;
+    }
+    
+    const measurementKey = inputToMeasurementKey[input] || input;
+    if (measurements[measurementKey] === undefined) {
+      pending.push(input);
+    }
+  }
+  
+  return pending;
 }
 
 /**

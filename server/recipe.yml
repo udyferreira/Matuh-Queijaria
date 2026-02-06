@@ -268,9 +268,13 @@ stages:
     maturation_control:
       duration_days: 90
       count_from: "chamber_2_entry_date"
-      on_complete:
-        - "marcar_lote_como_pronto_para_comercializacao"
-        - "encerrar_producao_do_lote"
     instructions:
       - "Virar os queijos diariamente"
       - "Trocar tábua se estiver molhada"
+
+  - id: 21
+    name: "Conclusão"
+    type: "completion"
+    instructions:
+      - "Lote finalizado com sucesso"
+      - "Queijos prontos para comercialização"

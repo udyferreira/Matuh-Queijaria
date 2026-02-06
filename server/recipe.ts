@@ -254,9 +254,11 @@ export class RecipeManager {
       };
       
       const missingInputs = currentStage.operator_input_required.filter(key => {
-        // Special case for milk_volume_l which is on the batch root
         if (key === 'milk_volume_l') {
           return !batch.milkVolumeL;
+        }
+        if (key === 'chamber_2_entry_date') {
+          return !(batch as any).chamber2EntryDate;
         }
         const storedKey = keyMapping[key] || key;
         return !measurements || measurements[storedKey] === undefined;
