@@ -1037,7 +1037,7 @@ export async function registerRoutes(
 
   async function buildBatchSelectionMenu(sessionAttrs: Record<string, any>): Promise<{ speechText: string; repromptText: string; newSessionAttrs: Record<string, any> }> {
     const batches = await batchService.listInProgressBatches();
-    console.log(`[buildBatchSelectionMenu] Found ${batches.length} in-progress batch(es)`);
+    console.log(`[BATCH_MENU] count=${batches.length}`);
 
     if (batches.length === 0) {
       return {
@@ -1110,15 +1110,17 @@ export async function registerRoutes(
         const slots = intent?.slots || {};
         const dialogState = alexaRequest?.request?.dialogState || 'N/A';
         
-        // Resolve active batch using session attributes (session-aware)
         const activeBatchResolved = await resolveActiveBatch(sessionAttributes);
         const stageForLog = activeBatchResolved?.currentStageId || 'no-batch';
+        if (activeBatchResolved) {
+          console.log(`[ACTIVE_BATCH] activeBatchId=${activeBatchResolved.id} stage=${stageForLog}`);
+        }
         
         console.log(`[ALEXA_REQ] intent=${intentName} stage=${stageForLog} activeBatchId=${sessionAttributes?.activeBatchId || 'none'} dialogState=${dialogState} slots=${JSON.stringify(Object.fromEntries(Object.entries(slots).map(([k, v]: [string, any]) => [k, v?.value || '?'])))}`);
         
         // --- ChangeBatchIntent: User wants to switch to a different batch ---
         if (intentName === "ChangeBatchIntent") {
-          console.log(`[ChangeBatchIntent] Listing batches for selection`);
+          console.log(`[ALEXA_REQ] intent=ChangeBatchIntent`);
           const { speechText, repromptText, newSessionAttrs } = await buildBatchSelectionMenu(sessionAttributes);
           return res.status(200).json(buildAlexaResponse(speechText, false, repromptText, newSessionAttrs));
         }
@@ -1157,7 +1159,7 @@ export async function registerRoutes(
           const newSessionAttrs = { ...sessionAttributes, activeBatchId: selected.batchId, state: undefined, batchChoices: undefined };
           
           const speech = `Beleza, vamos continuar o lote do ${selected.recipeName} iniciado em ${dateStr}. Você está na etapa ${selected.currentStageId}: ${selected.currentStageName}.`;
-          console.log(`[SelectBatchIntent] Selected batch id=${selected.batchId} option=${optionNumber}`);
+          console.log(`[BATCH_SELECT] option=${optionNumber} batchId=${selected.batchId}`);
           
           return res.status(200).json(buildAlexaResponse(
             speech,
