@@ -72,6 +72,10 @@ export class RecipeManager {
     }
   }
 
+  getRecipeName(): string {
+    return this.recipe.name;
+  }
+
   getStage(stageId: number): RecipeStage | undefined {
     return this.recipe.stages.find(s => s.id === stageId);
   }

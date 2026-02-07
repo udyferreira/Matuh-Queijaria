@@ -1,0 +1,125 @@
+Implementar a feature “Boas-vindas com seleção de lote” na Alexa.
+
+CONCEITO:
+- “Lote em andamento” deve ser definido por STATUS, não por etapa.
+- Em andamento = batches com status "in_progress" (inclui pausados/aguardando dentro do processo, mas ainda não concluídos).
+- Não listar batches com status "completed" nem "cancelled".
+- Sem paginação.
+- Ordem da lista: startedAt asc (mais antigo = opção 1).
+
+ARQUIVOS (server):
+- batchService.ts
+- routes.ts
+- (opcional) speechRenderer.ts apenas se você preferir centralizar texto, mas pode gerar o texto no routes.ts.
+- Se existir arquivo de model/storage onde Batch é definido, ajuste-o também (ex: types/models/storage.ts etc.).
+
+1) MODELO DE STATUS (criar/ajustar)
+A) Se já existir status em Batch:
+- Mapear os valores existentes para os seguintes estados canônicos (string):
+  - "in_progress"
+  - "completed"
+  - "cancelled"
+  - (opcional) "paused" (se existir lógica de pausa; se não existir ainda, manter como futuro)
+B) Se NÃO existir status em Batch:
+- Criar o campo batch.status: "in_progress" | "completed" | "cancelled" (e opcional "paused" se já houver feature de pausa).
+- Garantir que na criação de lote novo o status default seja "in_progress".
+- Quando o lote for concluído (etapa final / conclusão existente), além de avançar a etapa, atualizar status para "completed".
+- Se existir comando ou endpoint de cancelamento (ou se for criado futuramente), status deve virar "cancelled".
+C) Migração / compatibilidade:
+- Para batches antigos sem status, inferir:
+  - Se currentStageId representa conclusão (ex: etapa 21 já existente como "Conclusão"), setar status = "completed"
+  - Senão, setar status = "in_progress"
+- Essa migração pode ser feita “lazy” ao carregar o batch (se status undefined, atribuir e persistir) ou via função de migração no startup.
+
+2) batchService.ts
+Criar uma função nova:
+  async function listInProgressBatches(): Promise<BatchSummary[]>
+
+BatchSummary deve conter:
+  - batchId: number
+  - recipeId: string
+  - recipeName: string
+  - startedAt: string (ISO)
+  - currentStageId: number
+  - currentStageName: string
+  - status: string
+
+Implementação:
+- Precisamos listar TODOS os batches do storage. Se o storage não tiver método, crie um método (ex: storage.getAllBatches()).
+- Filtrar apenas os que status === "in_progress" (e opcionalmente incluir "paused" se você implementar esse status agora; se não, ignore).
+- startedAt:
+  - Preferir batch.createdAt se existir
+  - Senão, derivar do batch.history (primeiro timestamp)
+  - Senão, usar new Date().toISOString() como fallback
+- currentStageName:
+  - recipeManager.getStage(batch.currentStageId)?.name || `Etapa ${batch.currentStageId}`
+- recipeName:
+  - usar recipeManager/recipe.yml para obter um nome falável (ex: "Queijo Nete")
+- Ordenar por startedAt asc
+
+3) routes.ts — Alexa webhook
+A) Atualizar buildAlexaResponse para aceitar sessionAttributes e incluir no JSON:
+  function buildAlexaResponse(speechText, shouldEndSession=false, repromptText?, sessionAttributes?)
+  Se sessionAttributes existir: adicionar no retorno top-level: { sessionAttributes: sessionAttributes }
+
+B) LaunchRequest:
+- Chamar batchService.listInProgressBatches()
+- Se 0:
+  Responder: "Olá, não temos lotes em andamento. Vamos iniciar um novo lote? Para iniciar um novo lote, diga: 'iniciar lote com X litros temperatura Y graus pH Z'."
+  Manter sessão aberta e reprompt: "Você quer iniciar um novo lote?"
+- Se 1:
+  Setar sessionAttributes.activeBatchId = batches[0].batchId
+  Responder confirmação:
+    "Beleza, vamos continuar o lote do {recipeName} iniciado em {data}. Você está na etapa {currentStageId}: {currentStageName}."
+  Manter sessão aberta e reprompt: "O que deseja fazer?"
+- Se >1:
+  Criar lista falada:
+    "Olá, temos X lotes em andamento. Opção 1: ... Opção 2: ... Qual opção você quer continuar?"
+  Onde cada item:
+    "Opção N: {recipeName}, iniciado em {data}, etapa {currentStageId}: {currentStageName}."
+  Setar sessionAttributes:
+    - state = "AWAITING_BATCH_SELECTION"
+    - batchChoices = [{ optionNumber: N, batchId, recipeName, startedAt, currentStageId, currentStageName }]
+  Reprompt: "Diga 'opção 1', 'opção 2'..."
+
+C) IntentRequest:
+- Implementar handler para SelectBatchIntent:
+  - Ler session.attributes.state e batchChoices
+  - Se state !== "AWAITING_BATCH_SELECTION": responder algo curto (ex: "Diga 'status' ou 'ajuda'.") OU relistar os lotes (preferível se houver dúvidas).
+  - Extrair optionNumber do slot
+  - Validar range 1..N
+  - Selecionar choice correspondente
+  - Atualizar sessionAttributes:
+      activeBatchId = choice.batchId
+      remover state e batchChoices
+  - Responder:
+      "Beleza, vamos continuar o lote do {recipeName} iniciado em {data}. Você está na etapa {currentStageId}: {currentStageName}."
+  - Manter sessão aberta
+
+D) A partir daqui, TODA a lógica atual deve usar o lote selecionado:
+- Em vez de sempre usar batchService.getActiveBatch(), resolver o activeBatch assim:
+  - Se session.attributes.activeBatchId existir: storage.getBatch(activeBatchId)
+  - Senão: batchService.getActiveBatch() (fallback)
+- Aplicar isso em:
+  - stage gating (activeBatchForGating)
+  - HelpIntent (quando precisa do stage)
+  - ProcessCommandIntent -> handleCommand(activeBatch, ...)
+  - LogTimeIntent / RegisterPHAndPiecesIntent / RegisterChamberEntryDateIntent etc.
+
+4) Formatação de data:
+- Criar helper no routes.ts para falar data em PT-BR:
+  - Converter ISO para "5 de fevereiro" (não precisa falar ano)
+  - Evitar libs externas; usar Date e um array de meses PT.
+
+5) Não quebrar comportamento existente:
+- Todos os intents atuais devem continuar funcionando quando activeBatchId está setado.
+- Se não houver activeBatchId e houver apenas 1 lote em andamento, o LaunchRequest já vai setar.
+- Se não houver activeBatchId e vier um comando direto (sem passar pelo launch), manter fallback para getActiveBatch.
+
+ENTREGA:
+- Modificar somente o necessário.
+- Garantir logs claros no console para:
+  - LaunchRequest com 0/1/N
+  - SelectBatchIntent com optionNumber
+  - activeBatchId sendo aplicado
+  - listInProgressBatches filtrando por status

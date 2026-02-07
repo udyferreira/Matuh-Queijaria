@@ -354,6 +354,45 @@ export async function getBatch(batchId: number) {
   return storage.getBatch(batchId);
 }
 
+export interface BatchSummary {
+  batchId: number;
+  recipeId: string;
+  recipeName: string;
+  startedAt: string;
+  currentStageId: number;
+  currentStageName: string;
+  status: string;
+}
+
+export async function listInProgressBatches(): Promise<BatchSummary[]> {
+  const allBatches = await storage.getActiveBatches();
+  
+  const recipeName = recipeManager.getRecipeName();
+  
+  const summaries: BatchSummary[] = allBatches.map(batch => {
+    const stage = recipeManager.getStage(batch.currentStageId);
+    const startedAtISO = batch.startedAt 
+      ? new Date(batch.startedAt).toISOString() 
+      : new Date().toISOString();
+    
+    return {
+      batchId: batch.id,
+      recipeId: batch.recipeId,
+      recipeName: recipeName,
+      startedAt: startedAtISO,
+      currentStageId: batch.currentStageId,
+      currentStageName: stage?.name || `Etapa ${batch.currentStageId}`,
+      status: batch.status,
+    };
+  });
+  
+  summaries.sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+  
+  console.log(`[listInProgressBatches] Found ${summaries.length} batch(es) with status=active`);
+  
+  return summaries;
+}
+
 export async function getBatchStatus(batchId: number) {
   const batch = await storage.getBatch(batchId);
   if (!batch) return null;

@@ -505,9 +505,9 @@ export async function registerRoutes(
   function buildAlexaResponse(
     speechText: string, 
     shouldEndSession: boolean = false, 
-    repromptText?: string
+    repromptText?: string,
+    sessionAttributes?: Record<string, any>
   ) {
-    // NEVER allow empty speech text - always use a fallback
     let finalSpeech = speechText?.trim();
     if (!finalSpeech) {
       finalSpeech = shouldEndSession ? DEFAULT_FALLBACK_SPEECH : DEFAULT_SESSION_OPEN_FALLBACK;
@@ -524,7 +524,10 @@ export async function registerRoutes(
       }
     };
     
-    // Only include reprompt when session stays open (ASK requirement)
+    if (sessionAttributes && Object.keys(sessionAttributes).length > 0) {
+      response.sessionAttributes = sessionAttributes;
+    }
+    
     if (!shouldEndSession) {
       const finalReprompt = repromptText?.trim() || DEFAULT_REPROMPT;
       response.response.reprompt = {
@@ -544,7 +547,8 @@ export async function registerRoutes(
     intentName: string,
     speechText: string,
     repromptText?: string,
-    currentSlots?: Record<string, any>
+    currentSlots?: Record<string, any>,
+    sessionAttributes?: Record<string, any>
   ) {
     const response: any = {
       version: "1.0",
@@ -574,7 +578,10 @@ export async function registerRoutes(
       }
     };
     
-    // Copy existing slot values to preserve state
+    if (sessionAttributes && Object.keys(sessionAttributes).length > 0) {
+      response.sessionAttributes = sessionAttributes;
+    }
+    
     if (currentSlots) {
       for (const [key, value] of Object.entries(currentSlots)) {
         response.response.directives[0].updatedIntent.slots[key] = {
@@ -722,11 +729,11 @@ export async function registerRoutes(
   // IMPORTANT: Uses batchService for ALL operations to ensure consistency with REST API
   async function executeIntent(
     command: Awaited<ReturnType<typeof interpretCommand>>,
-    pendingInputReminder?: string
+    pendingInputReminder?: string,
+    resolvedBatch?: any
   ): Promise<{ speech: string; shouldEndSession: boolean }> {
     
-    // Get active batch for context
-    const activeBatch = await batchService.getActiveBatch();
+    const activeBatch = resolvedBatch || await batchService.getActiveBatch();
     
     switch (command.intent) {
       case "start_batch": {
@@ -1001,17 +1008,99 @@ export async function registerRoutes(
     }
   }
 
+  function formatDatePtBr(isoDateStr: string): string {
+    try {
+      const date = new Date(isoDateStr);
+      const day = date.getUTCDate();
+      const month = date.getUTCMonth() + 1;
+      return `${day} de ${getMonthName(month)}`;
+    } catch {
+      return isoDateStr;
+    }
+  }
+
+  async function resolveActiveBatch(sessionAttributes?: Record<string, any>) {
+    if (sessionAttributes?.activeBatchId) {
+      const batch = await batchService.getBatch(sessionAttributes.activeBatchId);
+      if (batch && batch.status === "active") {
+        console.log(`[resolveActiveBatch] Using session batch id=${batch.id} stage=${batch.currentStageId}`);
+        return batch;
+      }
+      console.log(`[resolveActiveBatch] Session batch id=${sessionAttributes.activeBatchId} not found or not active, falling back`);
+    }
+    const batch = await batchService.getActiveBatch();
+    if (batch) {
+      console.log(`[resolveActiveBatch] Fallback to first active batch id=${batch.id} stage=${batch.currentStageId}`);
+    }
+    return batch;
+  }
+
   app.post("/api/alexa/webhook", async (req, res) => {
-    // Always return HTTP 200 - errors are communicated via speech
     try {
       const alexaRequest = req.body;
       const requestType = alexaRequest?.request?.type;
+      const sessionAttributes: Record<string, any> = alexaRequest?.session?.attributes || {};
       
-      // --- LaunchRequest: Skill opening ---
+      // --- LaunchRequest: Skill opening with batch selection ---
       if (requestType === "LaunchRequest") {
-        const payload = speechRenderer.buildLaunchPayload();
-        const speech = await speechRenderer.renderSpeech(payload);
-        return res.status(200).json(buildAlexaResponse(speech, false, "Diga 'ajuda' para ver os comandos."));
+        const batches = await batchService.listInProgressBatches();
+        console.log(`[LaunchRequest] Found ${batches.length} in-progress batch(es)`);
+        
+        if (batches.length === 0) {
+          const speech = "Olá, não temos lotes em andamento. Vamos iniciar um novo lote? Para iniciar, diga: 'iniciar lote com cento e trinta litros temperatura trinta e dois graus pH seis vírgula cinco'.";
+          return res.status(200).json(buildAlexaResponse(
+            speech,
+            false,
+            "Você quer iniciar um novo lote?",
+            sessionAttributes
+          ));
+        }
+        
+        if (batches.length === 1) {
+          const b = batches[0];
+          const dateStr = formatDatePtBr(b.startedAt);
+          const newSessionAttrs = { ...sessionAttributes, activeBatchId: b.batchId };
+          const speech = `Beleza, vamos continuar o lote do ${b.recipeName} iniciado em ${dateStr}. Você está na etapa ${b.currentStageId}: ${b.currentStageName}.`;
+          console.log(`[LaunchRequest] Auto-selected batch id=${b.batchId} stage=${b.currentStageId}`);
+          return res.status(200).json(buildAlexaResponse(
+            speech,
+            false,
+            "O que deseja fazer?",
+            newSessionAttrs
+          ));
+        }
+        
+        // Multiple batches: list options
+        const batchChoices = batches.map((b, idx) => ({
+          optionNumber: idx + 1,
+          batchId: b.batchId,
+          recipeName: b.recipeName,
+          startedAt: b.startedAt,
+          currentStageId: b.currentStageId,
+          currentStageName: b.currentStageName,
+        }));
+        
+        const optionsList = batchChoices.map(c => {
+          const dateStr = formatDatePtBr(c.startedAt);
+          return `Opção ${c.optionNumber}: ${c.recipeName}, iniciado em ${dateStr}, etapa ${c.currentStageId}: ${c.currentStageName}.`;
+        }).join(' ');
+        
+        const speech = `Olá, temos ${batches.length} lotes em andamento. ${optionsList} Qual opção você quer continuar?`;
+        const repromptOptions = batchChoices.map(c => `'opção ${c.optionNumber}'`).join(', ');
+        
+        const newSessionAttrs = {
+          ...sessionAttributes,
+          state: "AWAITING_BATCH_SELECTION",
+          batchChoices,
+        };
+        
+        console.log(`[LaunchRequest] Listed ${batches.length} batches for selection`);
+        return res.status(200).json(buildAlexaResponse(
+          speech,
+          false,
+          `Diga ${repromptOptions}.`,
+          newSessionAttrs
+        ));
       }
       
       // --- SessionEndedRequest: Skill closing ---
@@ -1031,12 +1120,78 @@ export async function registerRoutes(
         const slots = intent?.slots || {};
         const dialogState = alexaRequest?.request?.dialogState || 'N/A';
         
-        // Get current stage for logging
-        const activeBatchForLog = await batchService.getActiveBatch();
-        const stageForLog = activeBatchForLog?.currentStageId || 'no-batch';
+        // Resolve active batch using session attributes (session-aware)
+        const activeBatchResolved = await resolveActiveBatch(sessionAttributes);
+        const stageForLog = activeBatchResolved?.currentStageId || 'no-batch';
         
-        // Structured log for all Alexa intent requests
-        console.log(`[ALEXA_REQ] intent=${intentName} stage=${stageForLog} dialogState=${dialogState} slots=${JSON.stringify(Object.fromEntries(Object.entries(slots).map(([k, v]: [string, any]) => [k, v?.value || '?'])))}`);
+        console.log(`[ALEXA_REQ] intent=${intentName} stage=${stageForLog} activeBatchId=${sessionAttributes?.activeBatchId || 'none'} dialogState=${dialogState} slots=${JSON.stringify(Object.fromEntries(Object.entries(slots).map(([k, v]: [string, any]) => [k, v?.value || '?'])))}`);
+        
+        // --- SelectBatchIntent: Batch selection from multi-batch list ---
+        if (intentName === "SelectBatchIntent") {
+          const optionSlot = slots.option_number?.value || slots.optionNumber?.value;
+          const optionNumber = optionSlot ? parseInt(optionSlot, 10) : NaN;
+          
+          console.log(`[SelectBatchIntent] optionNumber=${optionNumber} state=${sessionAttributes?.state || 'none'}`);
+          
+          if (sessionAttributes?.state !== "AWAITING_BATCH_SELECTION" || !sessionAttributes?.batchChoices) {
+            const batches = await batchService.listInProgressBatches();
+            if (batches.length <= 1) {
+              return res.status(200).json(buildAlexaResponse(
+                "Não há seleção de lote pendente. Diga 'qual é o status' ou 'ajuda'.",
+                false,
+                "O que deseja fazer?",
+                sessionAttributes
+              ));
+            }
+            // Re-list batches for selection
+            const batchChoices = batches.map((b, idx) => ({
+              optionNumber: idx + 1,
+              batchId: b.batchId,
+              recipeName: b.recipeName,
+              startedAt: b.startedAt,
+              currentStageId: b.currentStageId,
+              currentStageName: b.currentStageName,
+            }));
+            const optionsList = batchChoices.map(c => {
+              const dateStr = formatDatePtBr(c.startedAt);
+              return `Opção ${c.optionNumber}: ${c.recipeName}, iniciado em ${dateStr}, etapa ${c.currentStageId}: ${c.currentStageName}.`;
+            }).join(' ');
+            const newSessionAttrs = { ...sessionAttributes, state: "AWAITING_BATCH_SELECTION", batchChoices };
+            return res.status(200).json(buildAlexaResponse(
+              `Temos ${batches.length} lotes. ${optionsList} Qual opção?`,
+              false,
+              "Diga 'opção 1', 'opção 2'...",
+              newSessionAttrs
+            ));
+          }
+          
+          const choices = sessionAttributes.batchChoices as Array<{ optionNumber: number; batchId: number; recipeName: string; startedAt: string; currentStageId: number; currentStageName: string }>;
+          
+          if (isNaN(optionNumber) || optionNumber < 1 || optionNumber > choices.length) {
+            const validRange = choices.map(c => c.optionNumber).join(', ');
+            return res.status(200).json(buildAlexaResponse(
+              `Opção inválida. Escolha entre: ${validRange}.`,
+              false,
+              `Diga 'opção 1', 'opção 2'...`,
+              sessionAttributes
+            ));
+          }
+          
+          const selected = choices.find(c => c.optionNumber === optionNumber)!;
+          const dateStr = formatDatePtBr(selected.startedAt);
+          
+          const newSessionAttrs = { activeBatchId: selected.batchId };
+          
+          const speech = `Beleza, vamos continuar o lote do ${selected.recipeName} iniciado em ${dateStr}. Você está na etapa ${selected.currentStageId}: ${selected.currentStageName}.`;
+          console.log(`[SelectBatchIntent] Selected batch id=${selected.batchId} option=${optionNumber}`);
+          
+          return res.status(200).json(buildAlexaResponse(
+            speech,
+            false,
+            "O que deseja fazer?",
+            newSessionAttrs
+          ));
+        }
         
         // Handle Amazon built-in intents
         if (intentName === "AMAZON.CancelIntent" || intentName === "AMAZON.StopIntent") {
@@ -1044,24 +1199,22 @@ export async function registerRoutes(
         }
         
         if (intentName === "AMAZON.HelpIntent") {
-          const activeBatch = await batchService.getActiveBatch();
+          const activeBatch = activeBatchResolved;
           const stage = activeBatch ? recipeManager.getStage(activeBatch.currentStageId) : undefined;
           const payload = speechRenderer.buildHelpPayload(stage, activeBatch);
           const speech = await speechRenderer.renderSpeech(payload);
-          return res.status(200).json(buildAlexaResponse(speech, false, "Diga um comando."));
+          return res.status(200).json(buildAlexaResponse(speech, false, "Diga um comando.", sessionAttributes));
         }
         
         if (intentName === "AMAZON.FallbackIntent") {
           const payload = speechRenderer.buildErrorPayload("Não entendi o comando.");
           payload.allowedUtterances = ["ajuda"];
           const speech = await speechRenderer.renderSpeech(payload);
-          return res.status(200).json(buildAlexaResponse(speech, false, "Diga 'ajuda' para ver os comandos."));
+          return res.status(200).json(buildAlexaResponse(speech, false, "Diga 'ajuda' para ver os comandos.", sessionAttributes));
         }
         
         // === STAGE-AWARE INTENT GATING ===
-        // If stage has pending required inputs, block ADVANCE but allow status/instructions/help
-        // These read-only intents get a notes reminder about the pending input
-        const activeBatchForGating = await batchService.getActiveBatch();
+        const activeBatchForGating = activeBatchResolved;
         let pendingInputReminder: string | undefined;
         
         if (activeBatchForGating) {
@@ -1114,7 +1267,7 @@ export async function registerRoutes(
                 payload.notes = pendingInputReminder;
                 payload.allowedUtterances = speechRenderer.getContextualUtterances(stage, activeBatchForGating);
                 const speech = await speechRenderer.renderSpeech(payload);
-                return res.status(200).json(buildAlexaResponse(speech, false, `Use o comando apropriado para esta etapa.`));
+                return res.status(200).json(buildAlexaResponse(speech, false, `Use o comando apropriado para esta etapa.`, sessionAttributes));
               }
             }
           }
@@ -1125,12 +1278,13 @@ export async function registerRoutes(
         if (intentName === "LogTimeIntent") {
           console.log("LogTimeIntent received:", JSON.stringify(slots, null, 2));
           
-          const activeBatch = await batchService.getActiveBatch();
+          const activeBatch = activeBatchResolved;
           if (!activeBatch) {
             return res.status(200).json(buildAlexaResponse(
               "Não há lote ativo para registrar horário.",
               false,
-              "O que mais posso ajudar?"
+              "O que mais posso ajudar?",
+              sessionAttributes
             ));
           }
           
@@ -1169,7 +1323,8 @@ export async function registerRoutes(
             return res.status(200).json(buildAlexaResponse(
               `Não é possível registrar horário de ${typeInfo?.label || 'evento'} nesta etapa. Estamos na etapa ${activeBatch.currentStageId}: ${currentStage?.name || 'em andamento'}.`,
               false,
-              "O que mais posso ajudar?"
+              "O que mais posso ajudar?",
+              sessionAttributes
             ));
           }
           
@@ -1225,7 +1380,8 @@ export async function registerRoutes(
             return res.status(200).json(buildAlexaResponse(
               `Por favor, diga o horário ${typeLabel}. Por exemplo: '${example}'.`,
               false,
-              `Qual foi a hora ${typeLabel}?`
+              `Qual foi a hora ${typeLabel}?`,
+              sessionAttributes
             ));
           }
           
@@ -1235,7 +1391,8 @@ export async function registerRoutes(
             return res.status(200).json(buildAlexaResponse(
               logResult.error || "Erro ao registrar horário.",
               false,
-              "O que mais posso ajudar?"
+              "O que mais posso ajudar?",
+              sessionAttributes
             ));
           }
           
@@ -1252,7 +1409,7 @@ export async function registerRoutes(
             if (nextStage && updatedBatch) {
               const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
               const speech = await speechRenderer.renderSpeech(payload);
-              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?"));
+              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
             }
           }
           
@@ -1260,7 +1417,8 @@ export async function registerRoutes(
           return res.status(200).json(buildAlexaResponse(
             confirmationMsg,
             false,
-            "O que mais posso ajudar?"
+            "O que mais posso ajudar?",
+            sessionAttributes
           ));
         }
         
@@ -1282,7 +1440,7 @@ export async function registerRoutes(
           const piecesEmpty = !piecesSlot || piecesSlot === '?';
           
           if (phEmpty && piecesEmpty) {
-            const activeBatch = await batchService.getActiveBatch();
+            const activeBatch = activeBatchResolved;
             const stageId = activeBatch?.currentStageId || 0;
             const currentStage = recipeManager.getStage(stageId);
             
@@ -1312,16 +1470,18 @@ export async function registerRoutes(
             return res.status(200).json(buildAlexaResponse(
               helpMessage,
               false,
-              "O que mais posso ajudar?"
+              "O que mais posso ajudar?",
+              sessionAttributes
             ));
           }
           
-          const activeBatch = await batchService.getActiveBatch();
+          const activeBatch = activeBatchResolved;
           if (!activeBatch) {
             return res.status(200).json(buildAlexaResponse(
               "Não há lote ativo para registrar pH.",
               false,
-              "O que mais posso ajudar?"
+              "O que mais posso ajudar?",
+              sessionAttributes
             ));
           }
           
@@ -1380,7 +1540,8 @@ export async function registerRoutes(
                 "RegisterPHAndPiecesIntent",
                 prompt,
                 "Qual é o pH inicial?",
-                slots
+                slots,
+                sessionAttributes
               ));
             }
             
@@ -1399,7 +1560,8 @@ export async function registerRoutes(
                 "RegisterPHAndPiecesIntent",
                 prompt,
                 "Quantas peças? Diga, por exemplo: seis peças.",
-                slots
+                slots,
+                sessionAttributes
               ));
             }
             
@@ -1410,7 +1572,8 @@ export async function registerRoutes(
               return res.status(200).json(buildAlexaResponse(
                 result.error || "Erro ao registrar valores.",
                 false,
-                "Tente novamente."
+                "Tente novamente.",
+                sessionAttributes
               ));
             }
             
@@ -1428,7 +1591,7 @@ export async function registerRoutes(
               if (nextStage && updatedBatch) {
                 const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
                 const speech = await speechRenderer.renderSpeech(payload);
-                return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?"));
+                return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
               }
             }
             
@@ -1436,7 +1599,8 @@ export async function registerRoutes(
             return res.status(200).json(buildAlexaResponse(
               `${confirmationMsg} Diga 'avançar etapa' para continuar.`,
               false,
-              "Diga 'avançar etapa' para continuar."
+              "Diga 'avançar etapa' para continuar.",
+              sessionAttributes
             ));
           }
           
@@ -1458,7 +1622,8 @@ export async function registerRoutes(
                 "RegisterPHAndPiecesIntent",
                 prompt,
                 "Qual o pH atual?",
-                slots
+                slots,
+                sessionAttributes
               ));
             }
             
@@ -1469,7 +1634,8 @@ export async function registerRoutes(
               return res.status(200).json(buildAlexaResponse(
                 result.error || "Erro ao registrar pH.",
                 false,
-                "Tente novamente."
+                "Tente novamente.",
+                sessionAttributes
               ));
             }
             
@@ -1489,7 +1655,7 @@ export async function registerRoutes(
                 if (nextStage && updatedBatch) {
                   const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
                   const speech = await speechRenderer.renderSpeech(payload);
-                  return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?"));
+                  return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
                 }
               }
               
@@ -1497,7 +1663,8 @@ export async function registerRoutes(
               return res.status(200).json(buildAlexaResponse(
                 `${confirmationMsg} Diga 'avançar etapa' para continuar.`,
                 false,
-                "Diga 'avançar etapa' para continuar."
+                "Diga 'avançar etapa' para continuar.",
+                sessionAttributes
               ));
             } else {
               // pH still above target - continue loop
@@ -1506,7 +1673,8 @@ export async function registerRoutes(
               return res.status(200).json(buildAlexaResponse(
                 `pH ${phValue} registrado. Queijos virados ${turningCycles} vez${turningCycles > 1 ? 'es' : ''}. Continue monitorando ou informe novo pH.`,
                 false,
-                "Informe o próximo pH ou diga 'qual é o status' para ver o progresso."
+                "Informe o próximo pH ou diga 'qual é o status' para ver o progresso.",
+                sessionAttributes
               ));
             }
           }
@@ -1517,7 +1685,8 @@ export async function registerRoutes(
           return res.status(200).json(buildAlexaResponse(
             `Esta etapa não aceita registro de pH. Estamos na etapa ${stageId}: ${currentStage?.name || 'em andamento'}.`,
             false,
-            "O que mais posso ajudar?"
+            "O que mais posso ajudar?",
+            sessionAttributes
           ));
         }
         
@@ -1534,7 +1703,7 @@ export async function registerRoutes(
           const dateEmpty = !dateSlot || dateSlot === '?';
           
           if (dateEmpty) {
-            const activeBatch = await batchService.getActiveBatch();
+            const activeBatch = activeBatchResolved;
             const stageId = activeBatch?.currentStageId || 0;
             const currentStage = recipeManager.getStage(stageId);
             
@@ -1558,16 +1727,18 @@ export async function registerRoutes(
             return res.status(200).json(buildAlexaResponse(
               helpMessage,
               false,
-              "O que mais posso ajudar?"
+              "O que mais posso ajudar?",
+              sessionAttributes
             ));
           }
           
-          const activeBatch = await batchService.getActiveBatch();
+          const activeBatch = activeBatchResolved;
           if (!activeBatch) {
             return res.status(200).json(buildAlexaResponse(
               "Não há lote ativo para registrar data de entrada na câmara.",
               false,
-              "O que mais posso ajudar?"
+              "O que mais posso ajudar?",
+              sessionAttributes
             ));
           }
           
@@ -1579,7 +1750,8 @@ export async function registerRoutes(
             return res.status(200).json(buildAlexaResponse(
               `Estamos na etapa ${activeBatch.currentStageId}: ${currentStage?.name || 'em andamento'}. Você pode dizer ${examples}.`,
               false,
-              "O que mais posso ajudar?"
+              "O que mais posso ajudar?",
+              sessionAttributes
             ));
           }
           
@@ -1604,7 +1776,8 @@ export async function registerRoutes(
             return res.status(200).json(buildAlexaResponse(
               "Por favor, informe a data de entrada na câmara 2. Diga: 'entrada na câmara dois hoje' ou 'entrada na câmara dois dia quinze de janeiro'.",
               false,
-              "Qual a data de entrada na câmara 2?"
+              "Qual a data de entrada na câmara 2?",
+              sessionAttributes
             ));
           }
           
@@ -1619,7 +1792,8 @@ export async function registerRoutes(
             return res.status(200).json(buildAlexaResponse(
               result.error || "Erro ao registrar data.",
               false,
-              "Tente novamente."
+              "Tente novamente.",
+              sessionAttributes
             ));
           }
           
@@ -1644,7 +1818,7 @@ export async function registerRoutes(
             if (nextStage && updatedBatch) {
               const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
               const speech = await speechRenderer.renderSpeech(payload);
-              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?"));
+              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
             }
           }
           
@@ -1652,7 +1826,8 @@ export async function registerRoutes(
           return res.status(200).json(buildAlexaResponse(
             `${confirmationMsg} Diga 'avançar etapa' para continuar.`,
             false,
-            "Diga 'avançar etapa' para continuar."
+            "Diga 'avançar etapa' para continuar.",
+            sessionAttributes
           ));
         }
         
@@ -1698,7 +1873,8 @@ export async function registerRoutes(
             return res.status(200).json(buildAlexaResponse(
               "Entendi! Pode dar mais detalhes? Por exemplo: 'qual o status', 'quero avançar', ou 'preciso de ajuda'.",
               false,
-              "Diga um comando completo como 'qual é o status' ou 'avançar etapa'."
+              "Diga um comando completo como 'qual é o status' ou 'avançar etapa'.",
+              sessionAttributes
             ));
           }
           
@@ -1706,12 +1882,13 @@ export async function registerRoutes(
           const command = await interpretCommand(textToInterpret);
           console.log("LLM interpreted command:", JSON.stringify(command));
           // Pass pendingInputReminder from GATING to status/instructions handlers
-          const result = await executeIntent(command, pendingInputReminder) as any;
+          const result = await executeIntent(command, pendingInputReminder, activeBatchResolved || undefined) as any;
           
           return res.status(200).json(buildAlexaResponse(
             result.speech,
             result.shouldEndSession,
-            result.shouldEndSession ? undefined : "O que mais posso ajudar?"
+            result.shouldEndSession ? undefined : "O que mais posso ajudar?",
+            sessionAttributes
           ));
         }
         
@@ -1719,7 +1896,8 @@ export async function registerRoutes(
         return res.status(200).json(buildAlexaResponse(
           "Comando não reconhecido. Diga 'ajuda' para ver as opções.",
           false,
-          "Diga 'ajuda' para ver os comandos."
+          "Diga 'ajuda' para ver os comandos.",
+          sessionAttributes
         ));
       }
       
@@ -1727,16 +1905,18 @@ export async function registerRoutes(
       return res.status(200).json(buildAlexaResponse(
         "Desculpe, não consegui processar sua solicitação.",
         false,
-        "Diga 'ajuda' para ver os comandos."
+        "Diga 'ajuda' para ver os comandos.",
+        sessionAttributes
       ));
       
     } catch (error) {
       console.error("Alexa webhook error:", error);
-      // Always return 200 with error message via speech
+      const catchSessionAttrs = req.body?.session?.attributes || {};
       return res.status(200).json(buildAlexaResponse(
         "Ocorreu um erro. Tente novamente.",
         false,
-        "Diga 'ajuda' para ver os comandos."
+        "Diga 'ajuda' para ver os comandos.",
+        catchSessionAttrs
       ));
     }
   });
