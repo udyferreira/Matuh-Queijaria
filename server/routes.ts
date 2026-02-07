@@ -1022,7 +1022,7 @@ export async function registerRoutes(
   async function resolveActiveBatch(sessionAttributes?: Record<string, any>) {
     if (sessionAttributes?.activeBatchId) {
       const batch = await batchService.getBatch(sessionAttributes.activeBatchId);
-      if (batch && batch.status === "active") {
+      if (batch && (batch.status === "active" || (batch.status as string) === "in_progress")) {
         console.log(`[resolveActiveBatch] Using session batch id=${batch.id} stage=${batch.currentStageId}`);
         return batch;
       }
@@ -1035,6 +1035,51 @@ export async function registerRoutes(
     return batch;
   }
 
+  async function buildBatchSelectionMenu(sessionAttrs: Record<string, any>): Promise<{ speechText: string; repromptText: string; newSessionAttrs: Record<string, any> }> {
+    const batches = await batchService.listInProgressBatches();
+    console.log(`[buildBatchSelectionMenu] Found ${batches.length} in-progress batch(es)`);
+
+    if (batches.length === 0) {
+      return {
+        speechText: "Olá, não temos lotes em andamento. Vamos iniciar um novo lote? Para iniciar, diga: 'iniciar lote com cento e trinta litros temperatura trinta e dois graus pH seis vírgula cinco'.",
+        repromptText: "Você quer iniciar um novo lote?",
+        newSessionAttrs: { ...sessionAttrs, activeBatchId: undefined, state: undefined, batchChoices: undefined },
+      };
+    }
+
+    if (batches.length === 1) {
+      const b = batches[0];
+      const dateStr = formatDatePtBr(b.startedAt);
+      return {
+        speechText: `Beleza, vamos continuar o lote do ${b.recipeName} iniciado em ${dateStr}. Você está na etapa ${b.currentStageId}: ${b.currentStageName}.`,
+        repromptText: "O que deseja fazer?",
+        newSessionAttrs: { ...sessionAttrs, activeBatchId: b.batchId, state: undefined, batchChoices: undefined },
+      };
+    }
+
+    const batchChoices = batches.map((b, idx) => ({
+      optionNumber: idx + 1,
+      batchId: b.batchId,
+      recipeName: b.recipeName,
+      startedAt: b.startedAt,
+      currentStageId: b.currentStageId,
+      currentStageName: b.currentStageName,
+    }));
+
+    const optionsList = batchChoices.map(c => {
+      const dateStr = formatDatePtBr(c.startedAt);
+      return `Opção ${c.optionNumber}: ${c.recipeName}, iniciado em ${dateStr}, etapa ${c.currentStageId}: ${c.currentStageName}.`;
+    }).join(' ');
+
+    const repromptOptions = batchChoices.map(c => `'opção ${c.optionNumber}'`).join(', ');
+
+    return {
+      speechText: `Olá, temos ${batches.length} lotes em andamento. ${optionsList} Qual opção você quer continuar?`,
+      repromptText: `Diga ${repromptOptions}.`,
+      newSessionAttrs: { ...sessionAttrs, state: "AWAITING_BATCH_SELECTION", batchChoices },
+    };
+  }
+
   app.post("/api/alexa/webhook", async (req, res) => {
     try {
       const alexaRequest = req.body;
@@ -1043,64 +1088,9 @@ export async function registerRoutes(
       
       // --- LaunchRequest: Skill opening with batch selection ---
       if (requestType === "LaunchRequest") {
-        const batches = await batchService.listInProgressBatches();
-        console.log(`[LaunchRequest] Found ${batches.length} in-progress batch(es)`);
-        
-        if (batches.length === 0) {
-          const speech = "Olá, não temos lotes em andamento. Vamos iniciar um novo lote? Para iniciar, diga: 'iniciar lote com cento e trinta litros temperatura trinta e dois graus pH seis vírgula cinco'.";
-          return res.status(200).json(buildAlexaResponse(
-            speech,
-            false,
-            "Você quer iniciar um novo lote?",
-            sessionAttributes
-          ));
-        }
-        
-        if (batches.length === 1) {
-          const b = batches[0];
-          const dateStr = formatDatePtBr(b.startedAt);
-          const newSessionAttrs = { ...sessionAttributes, activeBatchId: b.batchId };
-          const speech = `Beleza, vamos continuar o lote do ${b.recipeName} iniciado em ${dateStr}. Você está na etapa ${b.currentStageId}: ${b.currentStageName}.`;
-          console.log(`[LaunchRequest] Auto-selected batch id=${b.batchId} stage=${b.currentStageId}`);
-          return res.status(200).json(buildAlexaResponse(
-            speech,
-            false,
-            "O que deseja fazer?",
-            newSessionAttrs
-          ));
-        }
-        
-        // Multiple batches: list options
-        const batchChoices = batches.map((b, idx) => ({
-          optionNumber: idx + 1,
-          batchId: b.batchId,
-          recipeName: b.recipeName,
-          startedAt: b.startedAt,
-          currentStageId: b.currentStageId,
-          currentStageName: b.currentStageName,
-        }));
-        
-        const optionsList = batchChoices.map(c => {
-          const dateStr = formatDatePtBr(c.startedAt);
-          return `Opção ${c.optionNumber}: ${c.recipeName}, iniciado em ${dateStr}, etapa ${c.currentStageId}: ${c.currentStageName}.`;
-        }).join(' ');
-        
-        const speech = `Olá, temos ${batches.length} lotes em andamento. ${optionsList} Qual opção você quer continuar?`;
-        const repromptOptions = batchChoices.map(c => `'opção ${c.optionNumber}'`).join(', ');
-        
-        const newSessionAttrs = {
-          ...sessionAttributes,
-          state: "AWAITING_BATCH_SELECTION",
-          batchChoices,
-        };
-        
-        console.log(`[LaunchRequest] Listed ${batches.length} batches for selection`);
-        return res.status(200).json(buildAlexaResponse(
-          speech,
-          false,
-          `Diga ${repromptOptions}.`,
-          newSessionAttrs
-        ));
+        const { speechText, repromptText, newSessionAttrs } = await buildBatchSelectionMenu(sessionAttributes);
+        console.log(`[LaunchRequest] activeBatchId=${newSessionAttrs.activeBatchId || 'none'} state=${newSessionAttrs.state || 'none'}`);
+        return res.status(200).json(buildAlexaResponse(speechText, false, repromptText, newSessionAttrs));
       }
       
       // --- SessionEndedRequest: Skill closing ---
@@ -1126,6 +1116,13 @@ export async function registerRoutes(
         
         console.log(`[ALEXA_REQ] intent=${intentName} stage=${stageForLog} activeBatchId=${sessionAttributes?.activeBatchId || 'none'} dialogState=${dialogState} slots=${JSON.stringify(Object.fromEntries(Object.entries(slots).map(([k, v]: [string, any]) => [k, v?.value || '?'])))}`);
         
+        // --- ChangeBatchIntent: User wants to switch to a different batch ---
+        if (intentName === "ChangeBatchIntent") {
+          console.log(`[ChangeBatchIntent] Listing batches for selection`);
+          const { speechText, repromptText, newSessionAttrs } = await buildBatchSelectionMenu(sessionAttributes);
+          return res.status(200).json(buildAlexaResponse(speechText, false, repromptText, newSessionAttrs));
+        }
+
         // --- SelectBatchIntent: Batch selection from multi-batch list ---
         if (intentName === "SelectBatchIntent") {
           const optionSlot = slots.option_number?.value || slots.optionNumber?.value;
@@ -1134,45 +1131,22 @@ export async function registerRoutes(
           console.log(`[SelectBatchIntent] optionNumber=${optionNumber} state=${sessionAttributes?.state || 'none'}`);
           
           if (sessionAttributes?.state !== "AWAITING_BATCH_SELECTION" || !sessionAttributes?.batchChoices) {
-            const batches = await batchService.listInProgressBatches();
-            if (batches.length <= 1) {
-              return res.status(200).json(buildAlexaResponse(
-                "Não há seleção de lote pendente. Diga 'qual é o status' ou 'ajuda'.",
-                false,
-                "O que deseja fazer?",
-                sessionAttributes
-              ));
-            }
-            // Re-list batches for selection
-            const batchChoices = batches.map((b, idx) => ({
-              optionNumber: idx + 1,
-              batchId: b.batchId,
-              recipeName: b.recipeName,
-              startedAt: b.startedAt,
-              currentStageId: b.currentStageId,
-              currentStageName: b.currentStageName,
-            }));
-            const optionsList = batchChoices.map(c => {
-              const dateStr = formatDatePtBr(c.startedAt);
-              return `Opção ${c.optionNumber}: ${c.recipeName}, iniciado em ${dateStr}, etapa ${c.currentStageId}: ${c.currentStageName}.`;
-            }).join(' ');
-            const newSessionAttrs = { ...sessionAttributes, state: "AWAITING_BATCH_SELECTION", batchChoices };
             return res.status(200).json(buildAlexaResponse(
-              `Temos ${batches.length} lotes. ${optionsList} Qual opção?`,
+              "Para trocar de lote, diga 'trocar lote'.",
               false,
-              "Diga 'opção 1', 'opção 2'...",
-              newSessionAttrs
+              "Diga 'trocar lote' para ver os lotes disponíveis.",
+              sessionAttributes
             ));
           }
           
           const choices = sessionAttributes.batchChoices as Array<{ optionNumber: number; batchId: number; recipeName: string; startedAt: string; currentStageId: number; currentStageName: string }>;
           
           if (isNaN(optionNumber) || optionNumber < 1 || optionNumber > choices.length) {
-            const validRange = choices.map(c => c.optionNumber).join(', ');
+            const validRange = choices.map(c => `'opção ${c.optionNumber}'`).join(', ');
             return res.status(200).json(buildAlexaResponse(
               `Opção inválida. Escolha entre: ${validRange}.`,
               false,
-              `Diga 'opção 1', 'opção 2'...`,
+              `Diga ${validRange}.`,
               sessionAttributes
             ));
           }
@@ -1180,7 +1154,7 @@ export async function registerRoutes(
           const selected = choices.find(c => c.optionNumber === optionNumber)!;
           const dateStr = formatDatePtBr(selected.startedAt);
           
-          const newSessionAttrs = { activeBatchId: selected.batchId };
+          const newSessionAttrs = { ...sessionAttributes, activeBatchId: selected.batchId, state: undefined, batchChoices: undefined };
           
           const speech = `Beleza, vamos continuar o lote do ${selected.recipeName} iniciado em ${dateStr}. Você está na etapa ${selected.currentStageId}: ${selected.currentStageName}.`;
           console.log(`[SelectBatchIntent] Selected batch id=${selected.batchId} option=${optionNumber}`);

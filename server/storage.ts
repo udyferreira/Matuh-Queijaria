@@ -4,7 +4,7 @@ import {
   type ProductionBatch, type InsertBatch,
   type InsertLog 
 } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 import { chatStorage, type IChatStorage } from "./replit_integrations/chat/storage";
 
 export interface IStorage extends IChatStorage {
@@ -39,7 +39,7 @@ export class DatabaseStorage implements IStorage {
   async getActiveBatches(): Promise<ProductionBatch[]> {
     return await db.select()
       .from(productionBatches)
-      .where(eq(productionBatches.status, "active"))
+      .where(inArray(productionBatches.status, ["active", "in_progress"] as any))
       .orderBy(desc(productionBatches.startedAt));
   }
 

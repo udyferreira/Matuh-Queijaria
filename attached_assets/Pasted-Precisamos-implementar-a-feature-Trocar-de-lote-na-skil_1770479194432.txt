@@ -1,0 +1,130 @@
+Precisamos implementar a feature “Trocar de lote” na skill Matuh Queijaria, alinhada ao Interaction Model atual:
+
+INTENTS EXISTENTES (já no JSON):
+- ChangeBatchIntent (sem slots): “trocar lote”, “listar lotes”, etc.
+- SelectBatchIntent com slot optionNumber (AMAZON.NUMBER): “opção 2”, “número 2”, etc.
+
+OBJETIVO (UX):
+1) Quando o usuário disser ChangeBatchIntent:
+   - Listar todos os lotes EM ANDAMENTO (por status) em ordem de data (mais antigo = opção 1).
+   - Falar: “Olá, temos X lotes em andamento.” e enumerar:
+     “Opção 1: {Queijo}, iniciado em {data}, etapa {id}: {nome da etapa}.”
+   - Perguntar: “Qual opção você quer continuar?”
+   - Entrar em estado de sessão: AWAITING_BATCH_SELECTION.
+
+2) Quando o usuário disser SelectBatchIntent (optionNumber):
+   - Se state == AWAITING_BATCH_SELECTION:
+     - Validar o número, selecionar o lote correspondente.
+     - Confirmar: “Beleza, vamos continuar o lote do {Queijo} iniciado em {data}. Você está na etapa {id}: {nome}.”
+     - Salvar activeBatchId na sessão e sair do estado de seleção.
+   - Caso state != AWAITING_BATCH_SELECTION:
+     - Responder curto: “Para trocar de lote, diga ‘trocar lote’.” (ou relistar menu).
+
+3) Após selecionar um lote, TODOS os comandos existentes (status/avançar/log de pH/horários/câmara etc.) devem operar no lote selecionado (activeBatchId da sessão). Se não houver activeBatchId na sessão, usar o fallback atual (getActiveBatch).
+
+REGRA DE “EM ANDAMENTO”:
+- Usar status no batch (não usar etapa 21).
+- Em andamento = status "in_progress".
+- Excluir status "completed" e "cancelled".
+- Compatibilidade: se hoje existir status "active", tratá-lo como "in_progress".
+- Se batch não tiver status, definir default "in_progress" (migração lazy ao carregar).
+
+ARQUIVOS:
+- server/routes.ts
+- server/batchService.ts
+- (se necessário) camada storage/types onde Batch é definido, para suportar:
+  - listar todos batches (getAllBatches / listBatches)
+  - buscar batch por id (getBatch)
+
+IMPLEMENTAÇÃO DETALHADA
+
+A) batchService.ts
+1) Padronize status:
+   - Onde cria batch novo: status deve ser "in_progress" (ou manter "active" mas mapear para "in_progress"; prefira padronizar).
+   - Onde marca conclusão do lote (quando atingir etapa final no fluxo atual): setar status="completed".
+   - Preparar status "cancelled" (não precisa criar intent agora, mas modelo deve suportar).
+
+2) Criar função:
+   async listInProgressBatches(): Promise<BatchSummary[]>
+   BatchSummary:
+     - id (batchId)
+     - recipeId
+     - recipeName (falável, ex: "Queijo Nete")
+     - startedAt (ISO)
+     - currentStageId
+     - currentStageName
+     - status
+
+   Como obter:
+   - Precisa listar TODOS os batches no storage:
+     - Se não existir, crie storage.getAllBatches(): Promise<Batch[]>
+   - Normalizar status legado:
+     - if (!batch.status) batch.status="in_progress" (persistir se possível)
+     - if (batch.status==="active") tratar como "in_progress"
+   - Filtrar: status === "in_progress" (e opcionalmente incluir "active" se não migrar)
+   - startedAt:
+     - preferir batch.createdAt
+     - senão usar primeiro timestamp do batch.history
+     - fallback new Date().toISOString()
+   - currentStageName:
+     - recipeManager.getStage(batch.currentStageId)?.name || `Etapa ${batch.currentStageId}`
+   - recipeName:
+     - obter via recipeManager / recipe.yml (nome do queijo)
+   - ordenar por startedAt asc
+
+B) routes.ts (webhook Alexa) — estado de sessão
+1) Atualizar buildAlexaResponse para suportar sessionAttributes:
+   function buildAlexaResponse(speechText, shouldEndSession=false, repromptText?, sessionAttributes?)
+   - Se sessionAttributes existir, incluir no retorno:
+     {
+       version:"1.0",
+       sessionAttributes: { ... },
+       response: { ... }
+     }
+   OBS: manter reprompt quando shouldEndSession=false.
+
+2) Ler sessionAttributes da requisição Alexa:
+   const sessionAttrs = alexaRequest?.session?.attributes || {}
+
+3) Criar helper interno reutilizável para montar o menu de seleção:
+   async function buildBatchSelectionMenu(sessionAttrs): { speechText, repromptText, newSessionAttrs }
+   - batches = await batchService.listInProgressBatches()
+   - Se 0:
+     speech: "Olá, não temos lotes em andamento. Vamos iniciar um novo lote? Para iniciar um novo lote, ..." (reaproveitar orientação existente)
+     newSessionAttrs: limpar state/batchChoices/activeBatchId (se quiser)
+   - Se 1:
+     set activeBatchId = batches[0].id
+     speech confirmação:
+       "Beleza, vamos continuar o lote do {recipeName} iniciado em {data}. Você está na etapa {currentStageId}: {currentStageName}."
+     newSessionAttrs: { ...sessionAttrs, activeBatchId, state: undefined, batchChoices: undefined }
+   - Se >1:
+     speech:
+       "Olá, temos X lotes em andamento. " + listagem numerada + " Qual opção você quer continuar?"
+     batchChoices:
+       [{ optionNumber: 1, batchId, recipeName, startedAt, currentStageId, currentStageName }, ...]
+     newSessionAttrs:
+       { ...sessionAttrs, state:"AWAITING_BATCH_SELECTION", batchChoices }
+     reprompt: "Diga 'opção 1', 'opção 2'..."
+
+4) Implementar handler de ChangeBatchIntent:
+   - Dentro de IntentRequest, se intentName==="ChangeBatchIntent":
+     - chamar buildBatchSelectionMenu(sessionAttrs)
+     - responder buildAlexaResponse(speech, false, reprompt, newSessionAttrs)
+
+5) Implementar/ajustar handler de SelectBatchIntent:
+   - Se intentName==="SelectBatchIntent":
+     - if sessionAttrs.state !== "AWAITING_BATCH_SELECTION" OR !batchChoices:
+         responder: "Para trocar de lote, diga 'trocar lote'."
+     - else:
+         ler slot optionNumber (AMAZON.NUMBER)
+         validar range
+         selecionar choice
+         newSessionAttrs:
+           { ...sessionAttrs, activeBatchId: choice.batchId, state: undefined, batchChoices: undefined }
+         speech confirmação:
+           "Beleza, vamos continuar o lote do {recipeName} iniciado em {data}. Você está na etapa {currentStageId}: {currentStageName}."
+         responder buildAlexaResponse(speech, false, "O que deseja fazer?", newSessionAttrs)
+
+6) Garantir que os demais intents usem o lote selecionado:
+   - Criar helper:
+     async function getSessionActiveBatch(sessionAttrs): Pro
