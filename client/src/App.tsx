@@ -11,6 +11,7 @@ import BatchDetail from "@/pages/BatchDetail";
 import AlexaIntegration from "@/pages/AlexaIntegration";
 import Reports from "@/pages/Reports";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
+import TermsOfUse from "@/pages/TermsOfUse";
 
 function Router() {
   return (
@@ -21,6 +22,7 @@ function Router() {
       <Route path="/alexa" component={AlexaIntegration} />
       <Route path="/reports" component={Reports} />
       <Route path="/privacy" component={PrivacyPolicy} />
+      <Route path="/terms" component={TermsOfUse} />
       <Route component={NotFound} />
     </Switch>
   );

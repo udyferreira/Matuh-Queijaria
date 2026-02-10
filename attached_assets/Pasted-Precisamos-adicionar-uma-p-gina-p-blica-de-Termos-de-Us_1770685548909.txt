@@ -1,0 +1,88 @@
+Precisamos adicionar uma página pública de Termos de Uso na aplicação web https://matuh.replit.app e incluir um link para essa página no rodapé (footer) do site, semelhante ao que já fizemos/estamos fazendo com a Política de Privacidade.
+
+OBJETIVO:
+- Criar uma página acessível publicamente (sem login) com os Termos de Uso da skill “Matuh Queijaria”.
+- A página deve estar disponível em uma URL estável, por exemplo:
+  - /terms
+  ou
+  - /terms-of-use
+- Adicionar um link visível no rodapé do site com o texto “Termos de Uso”.
+- Essa URL será usada no cadastro/distribuição da Alexa Skill (campo Terms of Use URL).
+
+REQUISITOS:
+- A página deve carregar corretamente em desktop e mobile.
+- Não deve exigir autenticação.
+- Deve usar o layout visual existente do site (header/footer padrão).
+- O conteúdo deve estar em português.
+- O link no rodapé deve aparecer em todas as páginas do site.
+- Se já existir um footer com “Política de Privacidade”, manter e adicionar “Termos de Uso” ao lado.
+
+IMPLEMENTAÇÃO (ADAPTAR AO STACK ATUAL DO PROJETO):
+
+1) Criar a rota/página
+- Se o projeto usa Express:
+  - Criar rota GET /terms (ou /terms-of-use) que renderiza HTML.
+- Se usa framework frontend (React/Vue/etc.):
+  - Criar a página correspondente e registrar na rota.
+- Garantir HTTP 200 e conteúdo renderizado.
+
+2) Conteúdo da página (copiar exatamente este texto):
+
+TÍTULO:
+Termos de Uso – Matuh Queijaria
+
+CONTEÚDO:
+
+Última atualização: 09/02/2026
+
+Ao utilizar a skill Matuh Queijaria, o usuário concorda com os termos e condições descritos a seguir.
+
+Finalidade da skill
+A Matuh Queijaria é uma ferramenta de apoio operacional destinada a auxiliar no acompanhamento do processo produtivo de queijos artesanais, fornecendo orientações por voz, registrando informações operacionais e emitindo alertas de tempo quando aplicável.
+
+A skill tem caráter informativo e assistivo, não substituindo o conhecimento técnico, a experiência profissional ou a tomada de decisão do operador responsável pela produção.
+
+Uso adequado
+O usuário compromete-se a utilizar a Matuh Queijaria exclusivamente para fins relacionados ao acompanhamento do processo produtivo, de forma responsável e de acordo com as boas práticas da atividade exercida.
+
+Limitação de responsabilidade
+A Matuh Queijaria é fornecida “no estado em que se encontra”, sem garantias de qualquer natureza.
+Os desenvolvedores não se responsabilizam por:
+- falhas no processo produtivo;
+- perdas financeiras;
+- resultados decorrentes do uso inadequado das orientações fornecidas pela skill;
+- interrupções no serviço causadas por indisponibilidade da plataforma Alexa ou da conexão à internet.
+
+Alertas e lembretes
+Quando autorizado pelo usuário, a skill pode criar lembretes utilizando os serviços nativos da Amazon Alexa.
+A entrega dos alertas depende da disponibilidade e funcionamento da plataforma Alexa, não sendo garantida em todos os cenários.
+
+Modificações
+Os Termos de Uso podem ser atualizados a qualquer momento para refletir melhorias na skill ou alterações legais. O uso contínuo da skill após eventuais atualizações implica concordância com os novos termos.
+
+3) Estilo da página
+- Usar tipografia e layout padrão do site.
+- Título destacado (h1).
+- Texto legível, com espaçamento adequado.
+- Sem CSS custom pesado; simplicidade é suficiente.
+
+4) Rodapé (footer)
+- Localizar o componente ou template de rodapé existente.
+- Adicionar link:
+  Texto: “Termos de Uso”
+  URL: /terms (ou /terms-of-use)
+- Garantir que o link aparece em todas as páginas.
+- Manter links existentes (ex.: “Política de Privacidade”) e adicionar “Termos de Uso” no mesmo bloco.
+
+5) Testes rápidos
+- Acessar https://matuh.replit.app/terms em aba anônima.
+- Verificar:
+  - carrega sem erro
+  - não redireciona para login
+  - link no rodapé funciona em todas as páginas
+- Confirmar que a URL pode ser usada no campo Terms of Use URL na Alexa Developer Console.
+
+ENTREGA:
+- Implementar a página.
+- Adicionar o link no rodapé.
+- Commit com mensagem: “Add terms of use page and footer link”.
