@@ -828,7 +828,13 @@ export async function registerRoutes(
         const payload = speechRenderer.buildAdvancePayload(updatedBatch, nextStage, false);
         let speech = await speechRenderer.renderSpeech(payload);
         
-        if (result.needsReminderPermission) {
+        if (result.reminderScheduled && result.waitDurationText) {
+          speech += ` Vou te avisar em ${result.waitDurationText}.`;
+        } else if (result.needsReminderPermission && result.waitDurationText) {
+          speech += ` Esta etapa dura ${result.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
+          const { card } = buildPermissionCard();
+          return { speech, shouldEndSession: false, card };
+        } else if (result.needsReminderPermission) {
           speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
           const { card } = buildPermissionCard();
           return { speech, shouldEndSession: false, card };
@@ -1101,6 +1107,7 @@ export async function registerRoutes(
       const requestType = alexaRequest?.request?.type;
       const sessionAttributes: Record<string, any> = alexaRequest?.session?.attributes || {};
       const apiCtx = extractApiContext(alexaRequest);
+      console.log(`[ALEXA_REQ] type=${requestType} apiCtx=${apiCtx ? 'present' : 'NULL'} sessionActiveBatch=${sessionAttributes.activeBatchId || 'none'}`);
       
       // --- LaunchRequest: Skill opening with batch selection ---
       if (requestType === "LaunchRequest") {
@@ -1401,7 +1408,12 @@ export async function registerRoutes(
               const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
               let speech = await speechRenderer.renderSpeech(payload);
               let permCard: any = undefined;
-              if (advanceResult.needsReminderPermission) {
+              if (advanceResult.reminderScheduled && advanceResult.waitDurationText) {
+                speech += ` Vou te avisar em ${advanceResult.waitDurationText}.`;
+              } else if (advanceResult.needsReminderPermission && advanceResult.waitDurationText) {
+                speech += ` Esta etapa dura ${advanceResult.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
+                permCard = buildPermissionCard().card;
+              } else if (advanceResult.needsReminderPermission) {
                 speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
                 permCard = buildPermissionCard().card;
               }
@@ -1587,7 +1599,12 @@ export async function registerRoutes(
                 const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
                 let speech = await speechRenderer.renderSpeech(payload);
                 let permCard: any = undefined;
-                if (advanceResult.needsReminderPermission) {
+                if (advanceResult.reminderScheduled && advanceResult.waitDurationText) {
+                  speech += ` Vou te avisar em ${advanceResult.waitDurationText}.`;
+                } else if (advanceResult.needsReminderPermission && advanceResult.waitDurationText) {
+                  speech += ` Esta etapa dura ${advanceResult.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
+                  permCard = buildPermissionCard().card;
+                } else if (advanceResult.needsReminderPermission) {
                   speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
                   permCard = buildPermissionCard().card;
                 }
@@ -1656,7 +1673,12 @@ export async function registerRoutes(
                   const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
                   let speech = await speechRenderer.renderSpeech(payload);
                   let permCard: any = undefined;
-                  if (advanceResult.needsReminderPermission) {
+                  if (advanceResult.reminderScheduled && advanceResult.waitDurationText) {
+                    speech += ` Vou te avisar em ${advanceResult.waitDurationText}.`;
+                  } else if (advanceResult.needsReminderPermission && advanceResult.waitDurationText) {
+                    speech += ` Esta etapa dura ${advanceResult.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
+                    permCard = buildPermissionCard().card;
+                  } else if (advanceResult.needsReminderPermission) {
                     speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
                     permCard = buildPermissionCard().card;
                   }
@@ -1823,7 +1845,12 @@ export async function registerRoutes(
               const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
               let speech = await speechRenderer.renderSpeech(payload);
               let permCard: any = undefined;
-              if (advanceResult.needsReminderPermission) {
+              if (advanceResult.reminderScheduled && advanceResult.waitDurationText) {
+                speech += ` Vou te avisar em ${advanceResult.waitDurationText}.`;
+              } else if (advanceResult.needsReminderPermission && advanceResult.waitDurationText) {
+                speech += ` Esta etapa dura ${advanceResult.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
+                permCard = buildPermissionCard().card;
+              } else if (advanceResult.needsReminderPermission) {
                 speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
                 permCard = buildPermissionCard().card;
               }

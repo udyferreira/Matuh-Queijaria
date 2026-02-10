@@ -100,6 +100,7 @@ export interface AdvanceBatchResult {
   code?: string;
   reminderScheduled?: boolean;
   needsReminderPermission?: boolean;
+  waitDurationText?: string;
 }
 
 export async function startBatch(params: StartBatchParams): Promise<StartBatchResult> {
@@ -358,7 +359,19 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
   let needsPermission = false;
   const waitSpec = getWaitSpecForStage(nextStage.id);
 
-  console.log(`[REMINDER] advanceBatch: nextStage=${nextStage.id} waitSpec=${waitSpec ? JSON.stringify(waitSpec) : 'null'} apiCtx=${apiCtx ? 'present' : 'null'}`);
+  let waitDurationText: string | undefined;
+  if (waitSpec) {
+    const totalMin = Math.round(waitSpec.seconds / 60);
+    if (totalMin >= 60) {
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      waitDurationText = m > 0 ? `${h} hora${h > 1 ? 's' : ''} e ${m} minutos` : `${h} hora${h > 1 ? 's' : ''}`;
+    } else {
+      waitDurationText = `${totalMin} minuto${totalMin !== 1 ? 's' : ''}`;
+    }
+  }
+
+  console.log(`[REMINDER] advanceBatch: batch=${batchId} nextStage=${nextStage.id} waitSpec=${waitSpec ? JSON.stringify(waitSpec) : 'null'} waitDurationText=${waitDurationText || 'none'} apiCtx=${apiCtx ? 'present' : 'NULL'}`);
 
   if (waitSpec) {
     if (apiCtx) {
@@ -392,12 +405,15 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     }
   }
 
+  console.log(`[REMINDER] advanceBatch RESULT: batch=${batchId} nextStage=${nextStage.id} reminderScheduled=${reminderScheduled} needsPermission=${needsPermission} waitDurationText=${waitDurationText || 'none'}`);
+
   return { 
     success: true, 
     batch: updatedBatch, 
     nextStage: { id: nextStage.id, name: nextStage.name },
     reminderScheduled,
-    needsReminderPermission: needsPermission
+    needsReminderPermission: needsPermission,
+    waitDurationText
   };
 }
 
