@@ -367,21 +367,24 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
         await cancelReminder(apiCtx, scheduledAlerts[newKey].reminderId);
         delete scheduledAlerts[newKey];
       }
-      const reminderId = await scheduleReminderForWait(
+      const reminderResult = await scheduleReminderForWait(
         apiCtx,
         { id: batchId, recipeId: batch.recipeId },
         nextStage.id,
         waitSpec.seconds
       );
-      if (reminderId) {
+      if (reminderResult.reminderId) {
         scheduledAlerts[newKey] = {
-          reminderId,
+          reminderId: reminderResult.reminderId,
           stageId: nextStage.id,
           dueAtISO: new Date(Date.now() + waitSpec.seconds * 1000).toISOString(),
           kind: waitSpec.kind
         };
         await storage.updateBatch(batchId, { scheduledAlerts });
         reminderScheduled = true;
+      } else if (reminderResult.permissionDenied) {
+        needsPermission = true;
+        console.log(`[REMINDER] Permission denied by API for batch=${batchId} stage=${nextStage.id}. User must grant reminder permission.`);
       }
     } else {
       needsPermission = true;

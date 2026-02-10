@@ -12,11 +12,21 @@ export interface ScheduledAlert {
   kind: string;
 }
 
+export interface ReminderResult {
+  reminderId: string | null;
+  permissionDenied: boolean;
+  httpStatus?: number;
+}
+
 export function getApiContext(alexaRequest: any): ApiContext | null {
   const system = alexaRequest?.context?.System;
   const apiEndpoint = system?.apiEndpoint;
   const apiAccessToken = system?.apiAccessToken;
-  if (!apiEndpoint || !apiAccessToken) return null;
+  if (!apiEndpoint || !apiAccessToken) {
+    console.log(`[REMINDER] getApiContext: apiEndpoint=${apiEndpoint ? 'present' : 'missing'} apiAccessToken=${apiAccessToken ? `present(${String(apiAccessToken).substring(0, 10)}...)` : 'missing'}`);
+    return null;
+  }
+  console.log(`[REMINDER] getApiContext: endpoint=${apiEndpoint} token=${String(apiAccessToken).substring(0, 10)}...`);
   return { apiEndpoint: apiEndpoint.replace(/\/$/, ''), apiAccessToken };
 }
 
@@ -47,7 +57,7 @@ export async function scheduleReminderForWait(
   stageId: number,
   seconds: number,
   timezone?: string
-): Promise<string | null> {
+): Promise<ReminderResult> {
   const stage = recipeManager.getStage(stageId);
   const recipeName = recipeManager.getRecipeName();
   const stageName = stage?.name || `Etapa ${stageId}`;
@@ -99,7 +109,11 @@ export async function scheduleReminderForWait(
 
     if (!resp.ok) {
       console.error(`[REMINDER] API error ${resp.status}: ${respText}`);
-      return null;
+      const permissionDenied = resp.status === 401 || resp.status === 403;
+      if (permissionDenied) {
+        console.error(`[REMINDER] Permission denied (${resp.status}). User needs to grant alexa::alerts:reminders:skill:readwrite permission.`);
+      }
+      return { reminderId: null, permissionDenied, httpStatus: resp.status };
     }
 
     let data: { alertToken?: string };
@@ -107,15 +121,15 @@ export async function scheduleReminderForWait(
       data = JSON.parse(respText);
     } catch {
       console.error(`[REMINDER] Failed to parse response as JSON: ${respText}`);
-      return null;
+      return { reminderId: null, permissionDenied: false };
     }
 
     const reminderId = data.alertToken || null;
     console.log(`[REMINDER] Created reminderId=${reminderId} for batch=${batch.id} stage=${stageId}`);
-    return reminderId;
+    return { reminderId, permissionDenied: false };
   } catch (err) {
     console.error(`[REMINDER] Failed to schedule:`, err);
-    return null;
+    return { reminderId: null, permissionDenied: false };
   }
 }
 

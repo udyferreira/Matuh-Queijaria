@@ -8,7 +8,7 @@ import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import * as batchService from "./batchService";
 import * as speechRenderer from "./speechRenderer";
-import { getApiContext as extractApiContext, cancelAllBatchReminders, type ApiContext, type ScheduledAlert } from "./alexaReminders";
+import { getApiContext as extractApiContext, cancelAllBatchReminders, buildPermissionCard, type ApiContext, type ScheduledAlert } from "./alexaReminders";
 import { z } from "zod";
 import { randomBytes } from "crypto";
 
@@ -509,7 +509,8 @@ export async function registerRoutes(
     speechText: string, 
     shouldEndSession: boolean = false, 
     repromptText?: string,
-    sessionAttributes?: Record<string, any>
+    sessionAttributes?: Record<string, any>,
+    card?: any
   ) {
     let finalSpeech = speechText?.trim();
     if (!finalSpeech) {
@@ -526,6 +527,10 @@ export async function registerRoutes(
         shouldEndSession
       }
     };
+    
+    if (card) {
+      response.response.card = card;
+    }
     
     if (sessionAttributes && Object.keys(sessionAttributes).length > 0) {
       response.sessionAttributes = sessionAttributes;
@@ -735,7 +740,7 @@ export async function registerRoutes(
     pendingInputReminder?: string,
     resolvedBatch?: any,
     apiCtxParam?: ApiContext | null
-  ): Promise<{ speech: string; shouldEndSession: boolean }> {
+  ): Promise<{ speech: string; shouldEndSession: boolean; card?: any }> {
     
     const activeBatch = resolvedBatch || await batchService.getActiveBatch();
     
@@ -824,7 +829,9 @@ export async function registerRoutes(
         let speech = await speechRenderer.renderSpeech(payload);
         
         if (result.needsReminderPermission) {
-          speech += ' Para eu te avisar automaticamente quando o tempo acabar, habilite as permissões de lembrete no app da Alexa.';
+          speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
+          const { card } = buildPermissionCard();
+          return { speech, shouldEndSession: false, card };
         }
         
         return { speech, shouldEndSession: false };
@@ -1392,8 +1399,13 @@ export async function registerRoutes(
             
             if (nextStage && updatedBatch) {
               const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
-              const speech = await speechRenderer.renderSpeech(payload);
-              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
+              let speech = await speechRenderer.renderSpeech(payload);
+              let permCard: any = undefined;
+              if (advanceResult.needsReminderPermission) {
+                speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
+                permCard = buildPermissionCard().card;
+              }
+              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes, permCard));
             }
           }
           
@@ -1573,8 +1585,13 @@ export async function registerRoutes(
               
               if (nextStage && updatedBatch) {
                 const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
-                const speech = await speechRenderer.renderSpeech(payload);
-                return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
+                let speech = await speechRenderer.renderSpeech(payload);
+                let permCard: any = undefined;
+                if (advanceResult.needsReminderPermission) {
+                  speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
+                  permCard = buildPermissionCard().card;
+                }
+                return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes, permCard));
               }
             }
             
@@ -1637,8 +1654,13 @@ export async function registerRoutes(
                 
                 if (nextStage && updatedBatch) {
                   const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
-                  const speech = await speechRenderer.renderSpeech(payload);
-                  return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
+                  let speech = await speechRenderer.renderSpeech(payload);
+                  let permCard: any = undefined;
+                  if (advanceResult.needsReminderPermission) {
+                    speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
+                    permCard = buildPermissionCard().card;
+                  }
+                  return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes, permCard));
                 }
               }
               
@@ -1799,8 +1821,13 @@ export async function registerRoutes(
             
             if (nextStage && updatedBatch) {
               const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
-              const speech = await speechRenderer.renderSpeech(payload);
-              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
+              let speech = await speechRenderer.renderSpeech(payload);
+              let permCard: any = undefined;
+              if (advanceResult.needsReminderPermission) {
+                speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
+                permCard = buildPermissionCard().card;
+              }
+              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes, permCard));
             }
           }
           
@@ -1870,7 +1897,8 @@ export async function registerRoutes(
             result.speech,
             result.shouldEndSession,
             result.shouldEndSession ? undefined : "O que mais posso ajudar?",
-            sessionAttributes
+            sessionAttributes,
+            result.card
           ));
         }
         
