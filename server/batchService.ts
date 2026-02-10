@@ -358,6 +358,8 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
   let needsPermission = false;
   const waitSpec = getWaitSpecForStage(nextStage.id);
 
+  console.log(`[REMINDER] advanceBatch: nextStage=${nextStage.id} waitSpec=${waitSpec ? JSON.stringify(waitSpec) : 'null'} apiCtx=${apiCtx ? 'present' : 'null'}`);
+
   if (waitSpec) {
     if (apiCtx) {
       const newKey = `stage_${nextStage.id}`;

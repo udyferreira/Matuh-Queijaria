@@ -20,6 +20,27 @@ export function getApiContext(alexaRequest: any): ApiContext | null {
   return { apiEndpoint: apiEndpoint.replace(/\/$/, ''), apiAccessToken };
 }
 
+function toLocalISOString(date: Date, tz: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(date);
+
+    const get = (type: string) => parts.find(p => p.type === type)?.value || '00';
+    return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}.000`;
+  } catch {
+    const iso = date.toISOString();
+    return iso.replace('Z', '').replace(/\.\d{3}$/, '.000');
+  }
+}
+
 export async function scheduleReminderForWait(
   apiCtx: ApiContext,
   batch: { id: number; recipeId: string },
@@ -32,10 +53,13 @@ export async function scheduleReminderForWait(
   const stageName = stage?.name || `Etapa ${stageId}`;
   const tz = timezone || 'America/Sao_Paulo';
 
-  const scheduledTime = new Date(Date.now() + seconds * 1000).toISOString();
+  const now = new Date();
+  const scheduledDate = new Date(now.getTime() + seconds * 1000);
+  const requestTime = toLocalISOString(now, tz);
+  const scheduledTime = toLocalISOString(scheduledDate, tz);
 
   const body = {
-    requestTime: new Date().toISOString(),
+    requestTime,
     trigger: {
       type: 'SCHEDULED_ABSOLUTE',
       scheduledTime,
@@ -58,7 +82,8 @@ export async function scheduleReminderForWait(
 
   try {
     const url = `${apiCtx.apiEndpoint}/v1/alerts/reminders`;
-    console.log(`[REMINDER] Scheduling for batch=${batch.id} stage=${stageId} seconds=${seconds}`);
+    console.log(`[REMINDER] Scheduling for batch=${batch.id} stage=${stageId} seconds=${seconds} scheduledTime=${scheduledTime} tz=${tz}`);
+    console.log(`[REMINDER] Request body: ${JSON.stringify(body)}`);
 
     const resp = await fetch(url, {
       method: 'POST',
@@ -69,13 +94,22 @@ export async function scheduleReminderForWait(
       body: JSON.stringify(body),
     });
 
+    const respText = await resp.text();
+    console.log(`[REMINDER] Response status=${resp.status} body=${respText}`);
+
     if (!resp.ok) {
-      const errText = await resp.text();
-      console.error(`[REMINDER] API error ${resp.status}: ${errText}`);
+      console.error(`[REMINDER] API error ${resp.status}: ${respText}`);
       return null;
     }
 
-    const data = await resp.json() as { alertToken?: string };
+    let data: { alertToken?: string };
+    try {
+      data = JSON.parse(respText);
+    } catch {
+      console.error(`[REMINDER] Failed to parse response as JSON: ${respText}`);
+      return null;
+    }
+
     const reminderId = data.alertToken || null;
     console.log(`[REMINDER] Created reminderId=${reminderId} for batch=${batch.id} stage=${stageId}`);
     return reminderId;
