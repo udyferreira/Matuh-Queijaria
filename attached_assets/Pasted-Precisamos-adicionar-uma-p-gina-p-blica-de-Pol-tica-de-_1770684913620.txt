@@ -1,0 +1,95 @@
+Precisamos adicionar uma página pública de Política de Privacidade na aplicação web https://matuh.replit.app e incluir um link para essa página no rodapé do site.
+
+OBJETIVO:
+- Criar uma página acessível publicamente (sem login) com a Política de Privacidade da skill “Matuh Queijaria”.
+- A página deve estar disponível em uma URL estável, por exemplo:
+  - /privacy
+  ou
+  - /privacy-policy
+- Adicionar um link visível no rodapé (footer) do site com o texto “Política de Privacidade”.
+- Essa URL será usada no cadastro/distribuição da Alexa Skill (campo Privacy Policy URL).
+
+REQUISITOS GERAIS:
+- A página deve carregar corretamente em desktop e mobile.
+- Não deve exigir autenticação.
+- Deve usar o layout visual existente do site (header/footer padrão).
+- O conteúdo deve estar em português.
+- O link no rodapé deve aparecer em todas as páginas do site.
+
+IMPLEMENTAÇÃO (AJUSTAR AO STACK ATUAL DO PROJETO):
+
+1) Criar a rota da página
+- Se o projeto usa Express:
+  - Criar rota GET /privacy (ou /privacy-policy)
+- Se usa framework frontend (React/Vue/etc.):
+  - Criar página correspondente e registrar na rota.
+- Garantir HTTP 200 e conteúdo HTML renderizado.
+
+2) Conteúdo da página (copiar exatamente este texto):
+
+TÍTULO:
+Política de Privacidade – Matuh Queijaria
+
+CONTEÚDO:
+
+Última atualização: 09/02/2026
+
+A aplicação e a skill Matuh Queijaria foram desenvolvidas para auxiliar no acompanhamento do processo produtivo de queijos artesanais por meio de interação por voz e interface web.
+
+Coleta de informações
+A Matuh Queijaria não coleta, armazena ou processa dados pessoais dos usuários, tais como nome, endereço, e-mail, telefone ou localização.
+
+As informações utilizadas pela aplicação e pela skill referem-se exclusivamente a dados operacionais do processo produtivo, incluindo, mas não se limitando a:
+- identificação de lotes de produção;
+- etapas do processo;
+- registros de horários;
+- medições de pH;
+- quantidade de peças;
+- datas relacionadas ao processo produtivo.
+
+Essas informações não identificam indivíduos e são utilizadas apenas para o funcionamento da solução.
+
+Uso de lembretes da Alexa
+A skill Matuh Queijaria pode criar lembretes utilizando os serviços nativos da Amazon Alexa, mediante autorização explícita do usuário.
+
+Os lembretes são gerenciados integralmente pela plataforma Amazon Alexa, de acordo com as políticas de privacidade da Amazon. A Matuh Queijaria não armazena, acessa ou compartilha dados relacionados aos lembretes.
+
+Compartilhamento de dados
+A Matuh Queijaria não compartilha informações com terceiros.
+
+Armazenamento e segurança
+Os dados operacionais são utilizados exclusivamente para o funcionamento da aplicação e da skill. Medidas técnicas adequadas são adotadas para proteger as informações contra acesso não autorizado.
+
+Exclusão de dados
+Como não há coleta de dados pessoais, não existem dados pessoais a serem excluídos. O usuário pode interromper o uso da skill a qualquer momento desabilitando-a no aplicativo da Alexa.
+
+Alterações nesta política
+Esta Política de Privacidade pode ser atualizada periodicamente para refletir melhorias na aplicação ou alterações legais.
+
+3) Estilo da página
+- Usar tipografia padrão do site.
+- Título destacado (h1).
+- Texto legível, com espaçamento adequado.
+- Não precisa de CSS customizado pesado; simplicidade é suficiente.
+
+4) Rodapé (footer)
+- Localizar o componente ou template de rodapé existente.
+- Adicionar link:
+  Texto: “Política de Privacidade”
+  URL: /privacy (ou /privacy-policy)
+- O link deve:
+  - Ser visível, mas discreto (padrão de rodapé).
+  - Abrir na mesma aba.
+
+5) Testes rápidos
+- Acessar https://matuh.replit.app/privacy em aba anônima.
+- Verificar se:
+  - a página carrega sem erro
+  - o link do rodapé funciona
+  - não há redirecionamento para login
+- Confirmar que o link pode ser usado diretamente como Privacy Policy URL na Alexa Developer Console.
+
+ENTREGA:
+- Implementar a página.
+- Adicionar o link no rodapé.
+- Commit com mensagem clara: “Add privacy policy page and footer link”.

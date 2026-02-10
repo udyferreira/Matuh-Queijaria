@@ -1,4 +1,5 @@
 import { Navbar } from "@/components/layout/Navbar";
+import { Footer } from "@/components/layout/Footer";
 import { Mic, Check, Wifi, Key } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -147,6 +148,7 @@ export default function AlexaIntegration() {
           </div>
         </div>
       </main>
+      <Footer />
     </div>
   );
 }

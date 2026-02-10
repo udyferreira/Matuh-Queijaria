@@ -10,6 +10,7 @@ import NewBatch from "@/pages/NewBatch";
 import BatchDetail from "@/pages/BatchDetail";
 import AlexaIntegration from "@/pages/AlexaIntegration";
 import Reports from "@/pages/Reports";
+import PrivacyPolicy from "@/pages/PrivacyPolicy";
 
 function Router() {
   return (
@@ -19,6 +20,7 @@ function Router() {
       <Route path="/batch/:id" component={BatchDetail} />
       <Route path="/alexa" component={AlexaIntegration} />
       <Route path="/reports" component={Reports} />
+      <Route path="/privacy" component={PrivacyPolicy} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { Plus, ArrowRight, Activity, Clock, CheckCircle } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
+import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { useBatches } from "@/hooks/use-batches";
 import { ChatAssistant } from "@/components/widgets/ChatAssistant";
@@ -103,6 +104,7 @@ export default function Home() {
         )}
       </main>
 
+      <Footer />
       <ChatAssistant />
     </div>
   );

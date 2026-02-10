@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { ArrowRight, CheckCircle, AlertCircle, Thermometer, Scale, Pause, Play, XCircle, Flag } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
+import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -720,6 +721,7 @@ export default function BatchDetail() {
         </div>
       </main>
 
+      <Footer />
       <ChatAssistant context={`Lote ${formatBatchCode(batch.startedAt)}, Etapa ${batch.currentStageId}`} />
     </div>
   );
