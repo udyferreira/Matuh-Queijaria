@@ -135,6 +135,20 @@ Preferred communication style: Simple, everyday language.
 - **Loop etapa 15**: Sai quando pH <= 5.2 OU após 2 horas (2 min em TEST_MODE)
 - **UX amigável**: Mensagens claras informando qual input falta e como fornecê-lo
 
+### Alexa Reminders API (`server/alexaReminders.ts`)
+- Automaticamente agenda lembretes nativos da Alexa para etapas com tempo de espera
+- `getWaitSpecForStage(stageId)` em recipe.ts: detecta stages com timer (duration_min/duration_hours) ou loop (max_loop_duration_hours)
+- `scheduleReminderForWait()`: cria reminder via POST `/v1/alerts/reminders` usando apiAccessToken da sessão
+- `cancelReminder()`: cancela reminder específico via DELETE
+- `cancelAllBatchReminders()`: cancela todos os lembretes pendentes de um lote
+- `getApiContext(alexaRequest)`: extrai apiEndpoint + apiAccessToken do request.context.System
+- Agendamento ocorre em `advanceBatch()` quando novo estágio tem waitSpec
+- Cancelamento: ao sair de etapa, ao completar lote, ao cancelar lote
+- Se apiAccessToken ausente ou API falhar: log + continua sem quebrar fluxo
+- Dados persistidos em `batch.scheduledAlerts` (JSONB): `{ stage_N: { reminderId, stageId, dueAtISO, kind } }`
+- Requer permissão `alexa::alerts:reminders:skill:readwrite` no skill manifest
+- Fallback timezone: "America/Sao_Paulo"
+
 ### Key npm Dependencies
 - `drizzle-orm` / `drizzle-kit` - Database ORM and migrations
 - `openai` - LLM API client

@@ -22,6 +22,7 @@ export const productionBatches = pgTable("production_batches", {
   measurements: jsonb("measurements").default({}), // ph, temps, timestamps, pieces_quantity, etc.
   activeTimers: jsonb("active_timers").default([]),
   activeReminders: jsonb("active_reminders").default([]), // For recurring reminders (stage 15, 20)
+  scheduledAlerts: jsonb("scheduled_alerts").default({}), // Alexa Reminders API alert IDs by stageId key
   history: jsonb("history").default([]), // Log of all actions
   
   // New: Stage 15 loop tracking

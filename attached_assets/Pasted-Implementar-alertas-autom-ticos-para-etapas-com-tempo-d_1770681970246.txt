@@ -1,0 +1,81 @@
+Implementar alertas automáticos para etapas com tempo de espera usando Alexa Reminders API.
+
+OBJETIVO:
+- Em toda etapa que tiver tempo de espera (timer no recipe.yml, loop com max_loop_duration_hours, e outros controles equivalentes), o backend deve criar um lembrete Alexa para disparar quando o tempo terminar.
+- O lembrete deve aparecer/alertar como um lembrete nativo (Alexa app/dispositivo), portanto usar Alexa Reminders API.
+- Se a etapa terminar antes, cancelar o lembrete.
+- Se o lote for concluído ou cancelado, cancelar lembretes pendentes do lote.
+
+FONTES/RESTRIÇÕES ALEXA:
+- Reminders API requer permissão `alexa::alerts:reminders:skill:readwrite` e usa apiAccessToken do request (in-session) para criar lembrete.
+- Se não houver permissão/token, responder com card/prompt pedindo permissão, mas NÃO quebrar o fluxo: continuar guiando manualmente.
+
+ARQUIVOS DO SERVIDOR:
+- server/routes.ts (webhook principal)
+- server/batchService.ts (persistência e lifecycle do lote)
+- server/recipe.ts (helpers para identificar wait steps)
+- server/speechRenderer.ts (opcional, só se precisar)
+- storage/types onde Batch é definido (para persistir scheduled alerts)
+
+IMPLEMENTAÇÃO:
+
+1) Detectar etapas com “espera”
+- No recipe.yml já existe `timer` em alguns stages (duration_min/duration_hours + blocking).
+- Criar helper em recipe.ts:
+  - getWaitSpecForStage(stage): retorna null ou { seconds, kind, messageTemplate? }
+  Regras:
+  - Se stage.timer.duration_min -> seconds = min*60
+  - Se stage.timer.duration_hours -> seconds = hours*3600
+  - Se stage.type == "loop" e existir max_loop_duration_hours -> seconds = hours*3600 (kind="loop_timeout")
+  - (Opcional v2) maturação: não disparar “fim da maturação” agora; só timers/loop por enquanto, mas deixar gancho.
+
+2) Criar módulo/funções de agendamento de reminders (pode ser em batchService.ts ou novo arquivo)
+- Funções:
+  - scheduleReminderForWait({ apiEndpoint, apiAccessToken, batch, stage, seconds }): Promise<reminderId>
+  - cancelReminder({ apiEndpoint, apiAccessToken, reminderId }): Promise<void>
+- Usar fetch/axios para chamar Reminders API:
+  POST {apiEndpoint}/v1/alerts/reminders
+  Headers: Authorization: Bearer {apiAccessToken}
+  Body: reminder com scheduledTime = now + seconds, timeZone do device (se disponível no request; se não, usar "America/Sao_Paulo" como fallback), e announcement com spokenText.
+- Salvar reminderId no batch para permitir cancelamento posterior:
+  batch.scheduledAlerts = batch.scheduledAlerts || {}
+  batch.scheduledAlerts[key] = { reminderId, stageId, dueAtISO }
+
+3) Onde agendar/cancelar
+A) Ao avançar para uma nova etapa (quando o sistema muda currentStageId):
+- Após atualizar o batch.currentStageId, chamar helper getWaitSpecForStage(novaStage).
+- Se houver waitSpec:
+  - Se apiAccessToken ausente (sem permissão): registrar log e NÃO agendar; responder ao usuário instruindo habilitar permissão para alertas automáticos.
+  - Se token presente: criar reminder e persistir reminderId no batch.
+
+B) Ao concluir uma etapa / sair dela:
+- Se houver reminder associado à etapa anterior (key por stageId), cancelar e remover do batch.scheduledAlerts.
+- Para loops: cada ciclo pode ter key "loop_{stageId}_iteration_{n}". Se existir contador de loop no batch, use-o; senão, adicione.
+
+C) Ao concluir lote (status=completed) ou cancelar (status=cancelled):
+- Cancelar todos reminderIds em batch.scheduledAlerts (best-effort), limpar estrutura.
+
+4) Integração com webhook (routes.ts)
+- Obter de cada request:
+  - apiEndpoint: request.context.System.apiEndpoint
+  - apiAccessToken: request.context.System.apiAccessToken
+- Criar função util:
+  - getApiContext(req) -> { apiEndpoint, apiAccessToken }
+- Em todas as rotas/handlers que mudam de etapa (advance stage / next step / concluir loop / etc.), chamar schedule/cancel conforme regras.
+- Não criar timers em intents que só consultam status.
+
+5) Mensagens
+- Texto do lembrete (spokenText) deve incluir lote e etapa:
+  “Tempo finalizado do lote {recipeName}. Etapa {stageId}: {stageName}. Você já pode continuar.”
+- Quando não houver permissão:
+  “Para eu te avisar automaticamente quando o tempo acabar, habilite as permissões de lembrete no app da Alexa.”
+
+6) Robustez
+- Se a chamada à Reminders API falhar, não derrubar o fluxo: logar erro e seguir.
+- Garantir que a lista de lembretes seja idempotente:
+  - Antes de criar um novo lembrete para o mesmo stageId, cancelar o anterior (se existir).
+
+ENTREGA:
+- Implementar com mudanças mínimas e logs claros.
+- Garantir que nenhum lembrete seja criado sem permissão.
+- Commit com mensagem: “Add wait-time reminders via Alexa Reminders API”

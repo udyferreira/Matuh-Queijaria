@@ -8,6 +8,7 @@ import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import * as batchService from "./batchService";
 import * as speechRenderer from "./speechRenderer";
+import { getApiContext as extractApiContext, cancelAllBatchReminders, type ApiContext, type ScheduledAlert } from "./alexaReminders";
 import { z } from "zod";
 import { randomBytes } from "crypto";
 
@@ -180,7 +181,8 @@ export async function registerRoutes(
 
     const updatedBatch = await storage.updateBatch(batchId, {
       status: "completed",
-      completedAt: new Date()
+      completedAt: new Date(),
+      scheduledAlerts: {}
     });
 
     await storage.logBatchAction({
@@ -211,7 +213,8 @@ export async function registerRoutes(
     const updatedBatch = await storage.updateBatch(batchId, {
       status: "cancelled",
       cancelledAt: new Date(),
-      cancelReason: reason
+      cancelReason: reason,
+      scheduledAlerts: {}
     });
 
     await storage.logBatchAction({
@@ -730,7 +733,8 @@ export async function registerRoutes(
   async function executeIntent(
     command: Awaited<ReturnType<typeof interpretCommand>>,
     pendingInputReminder?: string,
-    resolvedBatch?: any
+    resolvedBatch?: any,
+    apiCtxParam?: ApiContext | null
   ): Promise<{ speech: string; shouldEndSession: boolean }> {
     
     const activeBatch = resolvedBatch || await batchService.getActiveBatch();
@@ -799,7 +803,7 @@ export async function registerRoutes(
           return { speech: "Não há lote ativo para avançar.", shouldEndSession: false };
         }
         
-        const result = await batchService.advanceBatch(activeBatch.id);
+        const result = await batchService.advanceBatch(activeBatch.id, apiCtxParam);
         
         if (!result.success) {
           const stage = recipeManager.getStage(activeBatch.currentStageId);
@@ -817,7 +821,11 @@ export async function registerRoutes(
         const updatedBatch = result.batch || activeBatch;
         const nextStage = recipeManager.getStage(result.nextStage?.id || 0);
         const payload = speechRenderer.buildAdvancePayload(updatedBatch, nextStage, false);
-        const speech = await speechRenderer.renderSpeech(payload);
+        let speech = await speechRenderer.renderSpeech(payload);
+        
+        if (result.needsReminderPermission) {
+          speech += ' Para eu te avisar automaticamente quando o tempo acabar, habilite as permissões de lembrete no app da Alexa.';
+        }
         
         return { speech, shouldEndSession: false };
       }
@@ -1085,6 +1093,7 @@ export async function registerRoutes(
       const alexaRequest = req.body;
       const requestType = alexaRequest?.request?.type;
       const sessionAttributes: Record<string, any> = alexaRequest?.session?.attributes || {};
+      const apiCtx = extractApiContext(alexaRequest);
       
       // --- LaunchRequest: Skill opening with batch selection ---
       if (requestType === "LaunchRequest") {
@@ -1375,8 +1384,7 @@ export async function registerRoutes(
           const typeLabel = getTimeTypeLabel(timeType);
           const confirmationMsg = `Hora ${typeLabel} registrada às ${timeValue}.`;
           
-          // Auto-advance after successful time registration
-          const advanceResult = await batchService.advanceBatch(activeBatch.id);
+          const advanceResult = await batchService.advanceBatch(activeBatch.id, apiCtx);
           if (advanceResult.success && advanceResult.nextStage) {
             const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
             const updatedBatch = await batchService.getBatch(activeBatch.id);
@@ -1557,8 +1565,7 @@ export async function registerRoutes(
             
             const confirmationMsg = `pH ${effectivePh} e ${effectivePieces} peças registrados.`;
             
-            // Auto-advance to next stage and vocalize it
-            const advanceResult = await batchService.advanceBatch(activeBatch.id);
+            const advanceResult = await batchService.advanceBatch(activeBatch.id, apiCtx);
             if (advanceResult.success && advanceResult.nextStage) {
               const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
               const updatedBatch = await batchService.getBatch(activeBatch.id);
@@ -1622,7 +1629,7 @@ export async function registerRoutes(
               // pH reached target - advance to next stage and vocalize it
               const confirmationMsg = `pH ${phValue} registrado. Valor ideal atingido! Queijos virados ${turningCycles} vezes.`;
               
-              const advanceResult = await batchService.advanceBatch(activeBatch.id);
+              const advanceResult = await batchService.advanceBatch(activeBatch.id, apiCtx);
               if (advanceResult.success && advanceResult.nextStage) {
                 const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
                 const updatedBatch = await batchService.getBatch(activeBatch.id);
@@ -1784,8 +1791,7 @@ export async function registerRoutes(
           
           const confirmationMsg = `Data de entrada na câmara 2 registrada: ${formattedDate}. A maturação de 90 dias terminará em ${formattedMatDate}.`;
           
-          // Auto-advance to next stage and vocalize it
-          const advanceResult = await batchService.advanceBatch(activeBatch.id);
+          const advanceResult = await batchService.advanceBatch(activeBatch.id, apiCtx);
           if (advanceResult.success && advanceResult.nextStage) {
             const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
             const updatedBatch = await batchService.getBatch(activeBatch.id);
@@ -1858,7 +1864,7 @@ export async function registerRoutes(
           const command = await interpretCommand(textToInterpret);
           console.log("LLM interpreted command:", JSON.stringify(command));
           // Pass pendingInputReminder from GATING to status/instructions handlers
-          const result = await executeIntent(command, pendingInputReminder, activeBatchResolved || undefined) as any;
+          const result = await executeIntent(command, pendingInputReminder, activeBatchResolved || undefined, apiCtx) as any;
           
           return res.status(200).json(buildAlexaResponse(
             result.speech,

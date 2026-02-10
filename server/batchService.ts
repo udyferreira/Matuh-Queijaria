@@ -1,7 +1,8 @@
 import { storage } from "./storage";
-import { recipeManager, getTimerDurationMinutes, getIntervalDurationMinutes, TEST_MODE } from "./recipe";
+import { recipeManager, getTimerDurationMinutes, getIntervalDurationMinutes, getWaitSpecForStage, TEST_MODE } from "./recipe";
 import { CHEESE_TYPES } from "@shared/schema";
 import { randomBytes } from "crypto";
+import { ApiContext, ScheduledAlert, scheduleReminderForWait, cancelReminder, cancelAllBatchReminders } from "./alexaReminders";
 
 const generateId = () => randomBytes(8).toString('hex');
 
@@ -97,6 +98,8 @@ export interface AdvanceBatchResult {
   nextStage?: { id: number; name: string };
   error?: string;
   code?: string;
+  reminderScheduled?: boolean;
+  needsReminderPermission?: boolean;
 }
 
 export async function startBatch(params: StartBatchParams): Promise<StartBatchResult> {
@@ -175,7 +178,7 @@ export async function startBatch(params: StartBatchParams): Promise<StartBatchRe
   return { success: true, batch };
 }
 
-export async function advanceBatch(batchId: number): Promise<AdvanceBatchResult> {
+export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null): Promise<AdvanceBatchResult> {
   const batch = await storage.getBatch(batchId);
   if (!batch) {
     return { success: false, error: "Lote não encontrado", code: "BATCH_NOT_FOUND" };
@@ -244,9 +247,14 @@ export async function advanceBatch(batchId: number): Promise<AdvanceBatchResult>
 
   const nextStage = recipeManager.getNextStage(batch.currentStageId);
   if (!nextStage) {
+    const alerts = (batch.scheduledAlerts as Record<string, ScheduledAlert>) || {};
+    if (apiCtx && Object.keys(alerts).length > 0) {
+      await cancelAllBatchReminders(apiCtx, alerts);
+    }
     const completed = await storage.updateBatch(batchId, { 
       status: "completed",
-      completedAt: new Date()
+      completedAt: new Date(),
+      scheduledAlerts: {}
     });
     return { success: true, batch: completed, completed: true };
   }
@@ -257,10 +265,18 @@ export async function advanceBatch(batchId: number): Promise<AdvanceBatchResult>
   let activeReminders = (batch.activeReminders as any[]) || [];
   activeReminders = activeReminders.filter((r: any) => r.stageId !== currentStage.id);
 
+  let scheduledAlerts = { ...((batch.scheduledAlerts as Record<string, ScheduledAlert>) || {}) };
+  const prevKey = `stage_${currentStage.id}`;
+  if (scheduledAlerts[prevKey] && apiCtx) {
+    await cancelReminder(apiCtx, scheduledAlerts[prevKey].reminderId);
+    delete scheduledAlerts[prevKey];
+  }
+
   const updates: any = {
     currentStageId: nextStage.id,
     activeTimers,
-    activeReminders
+    activeReminders,
+    scheduledAlerts
   };
 
   if (nextStage.timer) {
@@ -338,10 +354,45 @@ export async function advanceBatch(batchId: number): Promise<AdvanceBatchResult>
     details: { from: currentStage.id, to: nextStage.id }
   });
 
+  let reminderScheduled = false;
+  let needsPermission = false;
+  const waitSpec = getWaitSpecForStage(nextStage.id);
+
+  if (waitSpec) {
+    if (apiCtx) {
+      const newKey = `stage_${nextStage.id}`;
+      if (scheduledAlerts[newKey]) {
+        await cancelReminder(apiCtx, scheduledAlerts[newKey].reminderId);
+        delete scheduledAlerts[newKey];
+      }
+      const reminderId = await scheduleReminderForWait(
+        apiCtx,
+        { id: batchId, recipeId: batch.recipeId },
+        nextStage.id,
+        waitSpec.seconds
+      );
+      if (reminderId) {
+        scheduledAlerts[newKey] = {
+          reminderId,
+          stageId: nextStage.id,
+          dueAtISO: new Date(Date.now() + waitSpec.seconds * 1000).toISOString(),
+          kind: waitSpec.kind
+        };
+        await storage.updateBatch(batchId, { scheduledAlerts });
+        reminderScheduled = true;
+      }
+    } else {
+      needsPermission = true;
+      console.log(`[REMINDER] No apiAccessToken available for batch=${batchId} stage=${nextStage.id}. Permission needed.`);
+    }
+  }
+
   return { 
     success: true, 
     batch: updatedBatch, 
-    nextStage: { id: nextStage.id, name: nextStage.name }
+    nextStage: { id: nextStage.id, name: nextStage.name },
+    reminderScheduled,
+    needsReminderPermission: needsPermission
   };
 }
 

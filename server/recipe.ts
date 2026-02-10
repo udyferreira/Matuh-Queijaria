@@ -10,8 +10,13 @@ if (TEST_MODE) {
   console.log('[TEST_MODE] All timers reduced to 1 minute for testing');
 }
 
-// Types matching the YAML structure
-interface RecipeStage {
+export interface WaitSpec {
+  seconds: number;
+  kind: 'timer' | 'loop_timeout';
+  stageName: string;
+}
+
+export interface RecipeStage {
   id: number;
   name: string;
   type: string;
@@ -30,6 +35,7 @@ interface RecipeStage {
   };
   validations?: Array<{ rule: string }>;
   loop_condition?: { until: string };
+  max_loop_duration_hours?: number;
   loop_actions?: string[];
   llm_guidance?: string;
   parameters?: Record<string, any>;
@@ -404,4 +410,24 @@ export function getIntervalDurationMinutes(stage: RecipeStage | undefined): numb
   if (TEST_MODE) return 1;
   
   return stage.timer.interval_hours * 60;
+}
+
+export function getWaitSpecForStage(stageId: number): WaitSpec | null {
+  const stage = recipeManager.getStage(stageId);
+  if (!stage) return null;
+
+  if (stage.timer && (stage.timer.duration_min || stage.timer.duration_hours)) {
+    const minutes = getTimerDurationMinutes(stage);
+    if (minutes > 0) {
+      return { seconds: minutes * 60, kind: 'timer', stageName: stage.name };
+    }
+  }
+
+  if (stage.type === 'loop' && stage.max_loop_duration_hours) {
+    const hours = stage.max_loop_duration_hours;
+    const seconds = TEST_MODE ? 120 : hours * 3600;
+    return { seconds, kind: 'loop_timeout', stageName: stage.name };
+  }
+
+  return null;
 }
