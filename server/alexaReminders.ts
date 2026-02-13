@@ -44,7 +44,8 @@ function toLocalISOString(date: Date, tz: string): string {
     }).formatToParts(date);
 
     const get = (type: string) => parts.find(p => p.type === type)?.value || '00';
-    return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}.000`;
+    const hour = get('hour') === '24' ? '00' : get('hour');
+    return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}:${get('second')}.000`;
   } catch {
     const iso = date.toISOString();
     return iso.replace('Z', '').replace(/\.\d{3}$/, '.000');

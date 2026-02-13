@@ -43,6 +43,12 @@ export const productionBatches = pgTable("production_batches", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const alexaUserState = pgTable("alexa_user_state", {
+  alexaUserId: text("alexa_user_id").primaryKey(),
+  activeBatchId: integer("active_batch_id"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const batchLogs = pgTable("batch_logs", {
   id: serial("id").primaryKey(),
   batchId: integer("batch_id").notNull().references(() => productionBatches.id),

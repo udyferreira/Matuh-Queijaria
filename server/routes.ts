@@ -739,7 +739,8 @@ export async function registerRoutes(
     command: Awaited<ReturnType<typeof interpretCommand>>,
     pendingInputReminder?: string,
     resolvedBatch?: any,
-    apiCtxParam?: ApiContext | null
+    apiCtxParam?: ApiContext | null,
+    alexaUserId?: string | null
   ): Promise<{ speech: string; shouldEndSession: boolean; card?: any }> {
     
     const activeBatch = resolvedBatch || await batchService.getActiveBatch();
@@ -777,6 +778,10 @@ export async function registerRoutes(
           return { speech, shouldEndSession: false };
         }
         
+        if (alexaUserId && result.batch?.id) {
+          await storage.setLastActiveBatch(alexaUserId, result.batch.id);
+          console.log(`[start_batch] Persisted activeBatch=${result.batch.id} for user`);
+        }
         const currentStage = recipeManager.getStage(result.batch.currentStageId || 3);
         const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage);
         const speech = await speechRenderer.renderSpeech(payload);
@@ -818,6 +823,10 @@ export async function registerRoutes(
         }
         
         if (result.completed) {
+          if (alexaUserId) {
+            await storage.clearLastActiveBatch(alexaUserId);
+            console.log(`[advance] Batch completed, cleared persisted activeBatch for user`);
+          }
           const payload = speechRenderer.buildAdvancePayload(activeBatch, null, true);
           const speech = await speechRenderer.renderSpeech(payload);
           return { speech, shouldEndSession: false };
@@ -1040,14 +1049,18 @@ export async function registerRoutes(
     }
   }
 
-  async function resolveActiveBatch(sessionAttributes?: Record<string, any>) {
-    if (sessionAttributes?.activeBatchId) {
-      const batch = await batchService.getBatch(sessionAttributes.activeBatchId);
-      if (batch && (batch.status === "active" || (batch.status as string) === "in_progress")) {
-        console.log(`[resolveActiveBatch] Using session batch id=${batch.id} stage=${batch.currentStageId}`);
-        return batch;
+  async function resolveActiveBatch(userId: string | null) {
+    if (userId) {
+      const lastBatchId = await storage.getLastActiveBatch(userId);
+      if (lastBatchId) {
+        const batch = await batchService.getBatch(lastBatchId);
+        if (batch && (batch.status === "active" || (batch.status as string) === "in_progress")) {
+          console.log(`[resolveActiveBatch] Using persisted batch id=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
+          return batch;
+        }
+        console.log(`[resolveActiveBatch] Persisted batch id=${lastBatchId} not active, clearing for user=${userId.substring(0, 20)}...`);
+        await storage.clearLastActiveBatch(userId);
       }
-      console.log(`[resolveActiveBatch] Session batch id=${sessionAttributes.activeBatchId} not found or not active, falling back`);
     }
     const batch = await batchService.getActiveBatch();
     if (batch) {
@@ -1107,12 +1120,37 @@ export async function registerRoutes(
       const requestType = alexaRequest?.request?.type;
       const sessionAttributes: Record<string, any> = alexaRequest?.session?.attributes || {};
       const apiCtx = extractApiContext(alexaRequest);
-      console.log(`[ALEXA_REQ] type=${requestType} apiCtx=${apiCtx ? 'present' : 'NULL'} sessionActiveBatch=${sessionAttributes.activeBatchId || 'none'}`);
+      const userId: string | null = alexaRequest?.context?.System?.user?.userId || null;
+      console.log(`[ALEXA_REQ] type=${requestType} apiCtx=${apiCtx ? 'present' : 'NULL'} userId=${userId ? userId.substring(0, 20) + '...' : 'NULL'}`);
       
-      // --- LaunchRequest: Skill opening with batch selection ---
+      // --- LaunchRequest: Intelligent skill opening ---
       if (requestType === "LaunchRequest") {
+        if (userId) {
+          const lastBatchId = await storage.getLastActiveBatch(userId);
+          if (lastBatchId) {
+            const batch = await batchService.getBatch(lastBatchId);
+            if (batch && (batch.status === "active" || (batch.status as string) === "in_progress")) {
+              const stage = recipeManager.getStage(batch.currentStageId);
+              const recipeName = recipeManager.getRecipeName();
+              const speechText = `Etapa ${batch.currentStageId} do queijo ${recipeName}: ${stage?.name || 'em andamento'}. Continuar ou trocar de lote?`;
+              console.log(`[LaunchRequest] Resuming persisted batch=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
+              return res.status(200).json(buildAlexaResponse(
+                speechText,
+                false,
+                "Diga 'continuar' ou 'trocar lote'.",
+                { activeBatchId: batch.id }
+              ));
+            } else {
+              await storage.clearLastActiveBatch(userId);
+              console.log(`[LaunchRequest] Persisted batch=${lastBatchId} no longer active, cleared.`);
+            }
+          }
+        }
         const { speechText, repromptText, newSessionAttrs } = await buildBatchSelectionMenu(sessionAttributes);
-        console.log(`[LaunchRequest] activeBatchId=${newSessionAttrs.activeBatchId || 'none'} state=${newSessionAttrs.state || 'none'}`);
+        console.log(`[LaunchRequest] No persisted batch, showing menu. activeBatchId=${newSessionAttrs.activeBatchId || 'none'} state=${newSessionAttrs.state || 'none'}`);
+        if (userId && newSessionAttrs.activeBatchId) {
+          await storage.setLastActiveBatch(userId, newSessionAttrs.activeBatchId);
+        }
         return res.status(200).json(buildAlexaResponse(speechText, false, repromptText, newSessionAttrs));
       }
       
@@ -1133,17 +1171,17 @@ export async function registerRoutes(
         const slots = intent?.slots || {};
         const dialogState = alexaRequest?.request?.dialogState || 'N/A';
         
-        const activeBatchResolved = await resolveActiveBatch(sessionAttributes);
+        const activeBatchResolved = await resolveActiveBatch(userId);
         const stageForLog = activeBatchResolved?.currentStageId || 'no-batch';
         if (activeBatchResolved) {
           console.log(`[ACTIVE_BATCH] activeBatchId=${activeBatchResolved.id} stage=${stageForLog}`);
         }
         
-        console.log(`[ALEXA_REQ] intent=${intentName} stage=${stageForLog} activeBatchId=${sessionAttributes?.activeBatchId || 'none'} dialogState=${dialogState} slots=${JSON.stringify(Object.fromEntries(Object.entries(slots).map(([k, v]: [string, any]) => [k, v?.value || '?'])))}`);
+        console.log(`[ALEXA_REQ] intent=${intentName} stage=${stageForLog} activeBatchId=${activeBatchResolved?.id || 'none'} dialogState=${dialogState} slots=${JSON.stringify(Object.fromEntries(Object.entries(slots).map(([k, v]: [string, any]) => [k, v?.value || '?'])))}`);
         
         // --- ChangeBatchIntent: User wants to switch to a different batch ---
         if (intentName === "ChangeBatchIntent") {
-          console.log(`[ALEXA_REQ] intent=ChangeBatchIntent`);
+          console.log(`[ALEXA_REQ] intent=ChangeBatchIntent - ignoring persisted batch, showing full list`);
           const { speechText, repromptText, newSessionAttrs } = await buildBatchSelectionMenu(sessionAttributes);
           return res.status(200).json(buildAlexaResponse(speechText, false, repromptText, newSessionAttrs));
         }
@@ -1178,6 +1216,11 @@ export async function registerRoutes(
           
           const selected = choices.find(c => c.optionNumber === optionNumber)!;
           const dateStr = formatDatePtBr(selected.startedAt);
+          
+          if (userId) {
+            await storage.setLastActiveBatch(userId, selected.batchId);
+            console.log(`[SelectBatchIntent] Persisted activeBatch=${selected.batchId} for user=${userId.substring(0, 20)}...`);
+          }
           
           const newSessionAttrs = { ...sessionAttributes, activeBatchId: selected.batchId, state: undefined, batchChoices: undefined };
           
@@ -1914,11 +1957,35 @@ export async function registerRoutes(
             ));
           }
           
+          const lowerText = textToInterpret.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          
+          // --- "trocar lote" handling: show full batch list ---
+          if (lowerText.includes("trocar") && lowerText.includes("lote")) {
+            console.log(`[ProcessCommandIntent] "trocar lote" detected, showing batch list`);
+            const { speechText, repromptText, newSessionAttrs } = await buildBatchSelectionMenu(sessionAttributes);
+            return res.status(200).json(buildAlexaResponse(speechText, false, repromptText, newSessionAttrs));
+          }
+          
+          // --- "continuar"/"sim"/"prosseguir" handling: resume active batch ---
+          const continueWords = ["continuar", "sim", "seguir", "prosseguir", "continue"];
+          if (continueWords.some(w => lowerText === w || lowerText.startsWith(w + " "))) {
+            const activeBatch = activeBatchResolved;
+            if (activeBatch) {
+              const stage = recipeManager.getStage(activeBatch.currentStageId);
+              if (stage) {
+                const payload = speechRenderer.buildStatusPayload(activeBatch, stage);
+                const speech = await speechRenderer.renderSpeech(payload);
+                console.log(`[ProcessCommandIntent] "continuar" → rendering status for batch=${activeBatch.id} stage=${stage.id}`);
+                return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
+              }
+            }
+          }
+          
           // LLM interprets the command, backend executes
           const command = await interpretCommand(textToInterpret);
           console.log("LLM interpreted command:", JSON.stringify(command));
           // Pass pendingInputReminder from GATING to status/instructions handlers
-          const result = await executeIntent(command, pendingInputReminder, activeBatchResolved || undefined, apiCtx) as any;
+          const result = await executeIntent(command, pendingInputReminder, activeBatchResolved || undefined, apiCtx, userId) as any;
           
           return res.status(200).json(buildAlexaResponse(
             result.speech,

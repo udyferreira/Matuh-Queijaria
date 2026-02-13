@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { 
-  productionBatches, batchLogs, 
+  productionBatches, batchLogs, alexaUserState,
   type ProductionBatch, type InsertBatch,
   type InsertLog 
 } from "@shared/schema";
@@ -19,6 +19,11 @@ export interface IStorage extends IChatStorage {
   // Logging
   logBatchAction(log: InsertLog): Promise<void>;
   getBatchLogs(batchId: number): Promise<any[]>;
+
+  // Alexa User State
+  getLastActiveBatch(alexaUserId: string): Promise<number | null>;
+  setLastActiveBatch(alexaUserId: string, batchId: number): Promise<void>;
+  clearLastActiveBatch(alexaUserId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -79,6 +84,27 @@ export class DatabaseStorage implements IStorage {
       .from(batchLogs)
       .where(eq(batchLogs.batchId, batchId))
       .orderBy(desc(batchLogs.timestamp));
+  }
+
+  async getLastActiveBatch(alexaUserId: string): Promise<number | null> {
+    const [row] = await db.select()
+      .from(alexaUserState)
+      .where(eq(alexaUserState.alexaUserId, alexaUserId));
+    return row?.activeBatchId ?? null;
+  }
+
+  async setLastActiveBatch(alexaUserId: string, batchId: number): Promise<void> {
+    await db.insert(alexaUserState)
+      .values({ alexaUserId, activeBatchId: batchId, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: alexaUserState.alexaUserId,
+        set: { activeBatchId: batchId, updatedAt: new Date() },
+      });
+  }
+
+  async clearLastActiveBatch(alexaUserId: string): Promise<void> {
+    await db.delete(alexaUserState)
+      .where(eq(alexaUserState.alexaUserId, alexaUserId));
   }
 }
 
