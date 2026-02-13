@@ -1049,6 +1049,18 @@ export async function registerRoutes(
     }
   }
 
+  async function getActiveBatchForUser(userId: string) {
+    const lastId = await storage.getLastActiveBatch(userId);
+    if (!lastId) return null;
+    const batch = await batchService.getBatch(lastId);
+    if (!batch) return null;
+    if (batch.status !== "active" && (batch.status as string) !== "in_progress") {
+      await storage.clearLastActiveBatch(userId);
+      return null;
+    }
+    return batch;
+  }
+
   async function resolveActiveBatch(userId: string | null) {
     if (userId) {
       const lastBatchId = await storage.getLastActiveBatch(userId);
@@ -1138,7 +1150,7 @@ export async function registerRoutes(
                 speechText,
                 false,
                 "Diga 'continuar' ou 'trocar lote'.",
-                { activeBatchId: batch.id }
+                { activeBatchId: batch.id, state: "CONFIRM_CONTINUE_OR_SWITCH" }
               ));
             } else {
               await storage.clearLastActiveBatch(userId);
@@ -1179,9 +1191,29 @@ export async function registerRoutes(
         
         console.log(`[ALEXA_REQ] intent=${intentName} stage=${stageForLog} activeBatchId=${activeBatchResolved?.id || 'none'} dialogState=${dialogState} slots=${JSON.stringify(Object.fromEntries(Object.entries(slots).map(([k, v]: [string, any]) => [k, v?.value || '?'])))}`);
         
-        // --- ChangeBatchIntent: User wants to switch to a different batch ---
-        if (intentName === "ChangeBatchIntent") {
-          console.log(`[ALEXA_REQ] intent=ChangeBatchIntent - ignoring persisted batch, showing full list`);
+        // --- ContinueIntent / AMAZON.YesIntent: Continue with active batch ---
+        if (intentName === "ContinueIntent" || intentName === "AMAZON.YesIntent") {
+          const activeBatch = userId ? await getActiveBatchForUser(userId) : activeBatchResolved;
+          if (activeBatch) {
+            console.log(`[${intentName}] Continuing with batch=${activeBatch.id} stage=${activeBatch.currentStageId}`);
+            const stage = recipeManager.getStage(activeBatch.currentStageId);
+            const payload = speechRenderer.buildStatusPayload(activeBatch, stage, "status");
+            const speech = await speechRenderer.renderSpeech(payload);
+            return res.status(200).json(buildAlexaResponse(
+              speech,
+              false,
+              "O que deseja fazer?",
+              { ...sessionAttributes, activeBatchId: activeBatch.id, state: undefined }
+            ));
+          }
+          console.log(`[${intentName}] No active batch found, showing menu`);
+          const { speechText, repromptText, newSessionAttrs } = await buildBatchSelectionMenu(sessionAttributes);
+          return res.status(200).json(buildAlexaResponse(speechText, false, repromptText, newSessionAttrs));
+        }
+
+        // --- ChangeBatchIntent / AMAZON.NoIntent: Switch to different batch ---
+        if (intentName === "ChangeBatchIntent" || intentName === "AMAZON.NoIntent") {
+          console.log(`[${intentName}] Showing batch selection menu`);
           const { speechText, repromptText, newSessionAttrs } = await buildBatchSelectionMenu(sessionAttributes);
           return res.status(200).json(buildAlexaResponse(speechText, false, repromptText, newSessionAttrs));
         }
@@ -1249,6 +1281,25 @@ export async function registerRoutes(
         }
         
         if (intentName === "AMAZON.FallbackIntent") {
+          if (sessionAttributes?.state === "CONFIRM_CONTINUE_OR_SWITCH") {
+            console.log(`[FallbackIntent] In CONFIRM_CONTINUE_OR_SWITCH state, prompting user`);
+            return res.status(200).json(buildAlexaResponse(
+              "Diga 'continuar' para seguir com o lote atual, ou 'trocar lote' para ver outros lotes.",
+              false,
+              "Diga 'continuar' ou 'trocar lote'.",
+              sessionAttributes
+            ));
+          }
+          if (sessionAttributes?.state === "AWAITING_BATCH_SELECTION") {
+            const choices = sessionAttributes.batchChoices as Array<{ optionNumber: number }> | undefined;
+            const validRange = choices?.map(c => `'opção ${c.optionNumber}'`).join(', ') || "'opção 1'";
+            return res.status(200).json(buildAlexaResponse(
+              `Não entendi. Diga ${validRange}.`,
+              false,
+              `Diga ${validRange}.`,
+              sessionAttributes
+            ));
+          }
           const payload = speechRenderer.buildErrorPayload("Não entendi o comando.");
           payload.allowedUtterances = ["ajuda"];
           const speech = await speechRenderer.renderSpeech(payload);

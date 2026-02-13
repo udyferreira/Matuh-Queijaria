@@ -1,0 +1,169 @@
+Atualizar o backend da skill para suportar os novos intents:
+
+- ContinueIntent
+- AMAZON.YesIntent
+- AMAZON.NoIntent
+- AMAZON.FallbackIntent
+
+E integrar corretamente com a lógica já implementada de:
+- Persistência de lote ativo por userId
+- ChangeBatchIntent
+- SelectBatchIntent
+
+────────────────────────────
+OBJETIVO FUNCIONAL
+────────────────────────────
+
+Quando a skill abrir e existir um lote ativo in_progress, ela fala:
+
+"Etapa {stageNumber} do queijo {recipeName}. Continuar ou trocar de lote?"
+
+A partir daí:
+
+- ContinueIntent → continuar etapa atual
+- AMAZON.YesIntent → continuar etapa atual
+- ChangeBatchIntent → listar lotes
+- AMAZON.NoIntent → listar lotes
+- AMAZON.FallbackIntent → repetir pergunta
+
+Sem listar lotes automaticamente quando o usuário disser "continuar".
+
+────────────────────────────
+IMPLEMENTAÇÃO
+────────────────────────────
+
+1) IDENTIFICAR userId
+No webhook (routes.ts):
+
+const userId = request.context.System.user.userId;
+
+2) RECUPERAR LOTE ATIVO
+Criar helper:
+
+async function getActiveBatchForUser(userId) {
+   const lastId = await storage.getLastActiveBatch(userId);
+   if (!lastId) return null;
+
+   const batch = await storage.getBatch(lastId);
+   if (!batch) return null;
+
+   if (batch.status !== "in_progress") {
+       await storage.clearLastActiveBatch(userId);
+       return null;
+   }
+
+   return batch;
+}
+
+3) LAUNCHREQUEST
+No LaunchRequest:
+
+- const activeBatch = await getActiveBatchForUser(userId);
+
+Se existir:
+   responder:
+   "Etapa {stageNumber} do queijo {recipeName}. Continuar ou trocar de lote?"
+   setar sessionAttributes.state = "CONFIRM_CONTINUE_OR_SWITCH"
+
+Se NÃO existir:
+   executar fluxo normal de listagem de lotes.
+
+────────────────────────────
+4) HANDLER DOS INTENTS
+────────────────────────────
+
+Dentro de IntentRequest:
+
+const state = sessionAttributes?.state;
+
+────────────────────────────
+A) ContinueIntent
+────────────────────────────
+
+Se intentName === "ContinueIntent" OU "AMAZON.YesIntent":
+
+   const activeBatch = await getActiveBatchForUser(userId);
+
+   Se activeBatch existir:
+       limpar state
+       chamar fluxo normal de renderização da etapa atual
+       NÃO listar lotes
+   Se não existir:
+       cair para fluxo de listagem
+
+────────────────────────────
+B) ChangeBatchIntent
+────────────────────────────
+
+Se intentName === "ChangeBatchIntent" OU "AMAZON.NoIntent":
+
+   executar função buildBatchSelectionMenu()
+   setar state = "AWAITING_BATCH_SELECTION"
+
+────────────────────────────
+C) SelectBatchIntent
+────────────────────────────
+
+Se state === "AWAITING_BATCH_SELECTION":
+
+   selecionar batch pelo optionNumber
+   storage.setLastActiveBatch(userId, batchId)
+   limpar state
+   responder:
+   "Beleza, vamos continuar o lote do {recipeName} iniciado em {data}. Você está na etapa {stageNumber}: {stageName}."
+
+────────────────────────────
+D) AMAZON.FallbackIntent
+────────────────────────────
+
+Se state === "CONFIRM_CONTINUE_OR_SWITCH":
+
+   responder:
+   "Diga continuar ou trocar de lote."
+
+Caso contrário:
+   manter comportamento atual do fallback.
+
+────────────────────────────
+5) IMPORTANTE
+────────────────────────────
+
+- Nunca listar lotes automaticamente quando intent for ContinueIntent ou YesIntent.
+- Só listar lotes em:
+   - ChangeBatchIntent
+   - NoIntent
+   - ausência total de lote ativo
+- Não quebrar lógica existente de lembretes.
+- Não depender apenas de sessionAttributes para lote ativo (usar storage por userId).
+
+────────────────────────────
+6) TESTES ESPERADOS
+────────────────────────────
+
+Cenário 1:
+- Abrir skill
+- Existe lote ativo
+→ "Etapa X do queijo Y. Continuar ou trocar de lote?"
+- Dizer "continuar"
+→ Deve ir direto para etapa
+
+Cenário 2:
+- Dizer "sim"
+→ Deve ir direto para etapa
+
+Cenário 3:
+- Dizer "trocar lote"
+→ Deve listar lotes
+
+Cenário 4:
+- Dizer "não"
+→ Deve listar lotes
+
+Cenário 5:
+- Dizer algo estranho
+→ "Diga continuar ou trocar de lote."
+
+────────────────────────────
+
+Commit message:
+"Add ContinueIntent, Yes/No routing and improved launch confirmation flow"
