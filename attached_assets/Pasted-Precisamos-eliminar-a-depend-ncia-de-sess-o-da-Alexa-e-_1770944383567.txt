@@ -1,0 +1,152 @@
+Precisamos eliminar a dependência de sessão da Alexa e tornar o lote ativo persistente por usuário.
+
+OBJETIVO:
+- Quando o usuário escolher um lote, o sistema deve salvar o lote ativo associado ao userId da Alexa.
+- Ao abrir a skill novamente, se existir lote ativo "in_progress", a skill NÃO deve listar todos os lotes.
+- Deve falar apenas:
+
+"Etapa {stageNumber} do queijo {recipeName}. Continuar ou trocar de lote?"
+
+- Só listar todos os lotes se:
+  1) Não existir lote ativo
+  2) O lote estiver completed ou cancelled
+  3) O usuário disser explicitamente "trocar lote"
+
+ARQUITETURA DESEJADA:
+Alexa Session = stateless
+Backend = stateful
+
+────────────────────────────
+1) OBTER USER ID
+────────────────────────────
+
+No webhook (routes.ts), extrair:
+
+const userId = request.context.System.user.userId;
+
+Esse userId deve ser usado como chave de persistência.
+
+────────────────────────────
+2) PERSISTÊNCIA DO LOTE ATIVO
+────────────────────────────
+
+Criar estrutura persistente (em batchService ou storage layer):
+
+Interface:
+- setLastActiveBatch(userId: string, batchId: string)
+- getLastActiveBatch(userId: string): string | null
+- clearLastActiveBatch(userId: string)
+
+Implementação:
+- Pode usar o mesmo mecanismo de persistência atual dos batches.
+- Estrutura simples:
+
+{
+  lastActiveByUser: {
+     [userId]: batchId
+  }
+}
+
+Persistir junto com o storage atual.
+
+────────────────────────────
+3) AO SELECIONAR LOTE (SelectBatchIntent)
+────────────────────────────
+
+Após selecionar o batchId:
+
+- setLastActiveBatch(userId, batchId)
+
+────────────────────────────
+4) AO ABRIR A SKILL (LaunchRequest)
+────────────────────────────
+
+Novo fluxo:
+
+1) Recuperar lastActiveBatchId = getLastActiveBatch(userId)
+
+2) Se existir:
+   - Buscar batch
+   - Se batch.status == "in_progress":
+        - Obter stage atual
+        - Responder com:
+
+        "Etapa {stageNumber} do queijo {recipeName}. Continuar ou trocar de lote?"
+
+        - NÃO listar todos os lotes
+
+   - Se batch.status != "in_progress":
+        - clearLastActiveBatch(userId)
+        - Seguir fluxo normal de listagem
+
+3) Se NÃO existir:
+   - Executar fluxo atual de listagem de lotes
+
+────────────────────────────
+5) INTENT PARA CONTINUAR
+────────────────────────────
+
+Adicionar suporte no ProcessCommandIntent para palavras:
+- "continuar"
+- "sim"
+- "seguir"
+- "prosseguir"
+
+Se houver lastActiveBatch:
+- Ir direto para renderização da etapa atual.
+
+────────────────────────────
+6) INTENT PARA TROCAR LOTE
+────────────────────────────
+
+ChangeBatchIntent deve:
+
+- Ignorar lastActiveBatch temporariamente
+- Listar todos os lotes in_progress ordenados por startedAt asc
+- Após seleção via SelectBatchIntent:
+    - Atualizar lastActiveBatch(userId, novoBatchId)
+
+────────────────────────────
+7) AO CONCLUIR OU CANCELAR LOTE
+────────────────────────────
+
+Se status mudar para:
+- completed
+- cancelled
+
+Executar:
+clearLastActiveBatch(userId)
+
+────────────────────────────
+8) REGRAS IMPORTANTES
+────────────────────────────
+
+- Nunca depender de sessionAttributes para batch ativo.
+- Session pode morrer a qualquer momento.
+- Toda vez que receber request, verificar lastActiveBatch.
+- Código deve ser idempotente.
+- Não quebrar o fluxo atual de lembretes.
+
+────────────────────────────
+9) TESTES ESPERADOS
+────────────────────────────
+
+Cenário 1:
+- Usuário seleciona lote
+- Fecha skill
+- Reabre após 1 hora
+→ Deve cair direto na frase curta:
+"Etapa X do queijo Y. Continuar ou trocar de lote?"
+
+Cenário 2:
+- Usuário diz "trocar lote"
+→ Deve listar todos novamente.
+
+Cenário 3:
+- Lote é concluído
+→ Ao abrir skill, não deve reaparecer como ativo.
+
+────────────────────────────
+
+Commit message:
+"Persist active batch by userId and implement intelligent launch flow"
