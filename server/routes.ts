@@ -1366,6 +1366,54 @@ export async function registerRoutes(
           }
         }
         
+        // --- AdvanceStageIntent: Deterministic stage advancement (no LLM) ---
+        if (intentName === "AdvanceStageIntent") {
+          const activeBatch = activeBatchResolved || (userId ? await getActiveBatchForUser(userId) : null);
+          if (!activeBatch) {
+            console.log(`[AdvanceStageIntent] No active batch, showing menu`);
+            const { speechText, repromptText, newSessionAttrs } = await buildBatchSelectionMenu(sessionAttributes);
+            return res.status(200).json(buildAlexaResponse(speechText, false, repromptText, newSessionAttrs));
+          }
+
+          console.log(`[AdvanceStageIntent] Advancing batch=${activeBatch.id} from stage=${activeBatch.currentStageId}`);
+          const result = await batchService.advanceBatch(activeBatch.id, apiCtx);
+
+          if (!result.success) {
+            const stage = recipeManager.getStage(activeBatch.currentStageId);
+            const payload = speechRenderer.buildErrorPayload(result.error || "Não é possível avançar agora.", stage);
+            const speech = await speechRenderer.renderSpeech(payload);
+            return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
+          }
+
+          if (result.completed) {
+            if (userId) {
+              await storage.clearLastActiveBatch(userId);
+              console.log(`[AdvanceStageIntent] Batch completed, cleared persisted activeBatch`);
+            }
+            const payload = speechRenderer.buildAdvancePayload(activeBatch, null, true);
+            const speech = await speechRenderer.renderSpeech(payload);
+            return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
+          }
+
+          const updatedBatch = result.batch || activeBatch;
+          const nextStage = recipeManager.getStage(result.nextStage?.id || 0);
+          const payload = speechRenderer.buildAdvancePayload(updatedBatch, nextStage, false);
+          let speech = await speechRenderer.renderSpeech(payload);
+          let permCard: any = undefined;
+
+          if (result.reminderScheduled && result.waitDurationText) {
+            speech += ` Vou te avisar em ${result.waitDurationText}.`;
+          } else if (result.needsReminderPermission && result.waitDurationText) {
+            speech += ` Esta etapa dura ${result.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
+            permCard = buildPermissionCard().card;
+          } else if (result.needsReminderPermission) {
+            speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
+            permCard = buildPermissionCard().card;
+          }
+
+          return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", { ...sessionAttributes, activeBatchId: updatedBatch.id, state: undefined }, permCard));
+        }
+
         // --- LogTimeIntent: Structured time registration with AMAZON.TIME slot ---
         // This intent uses native Alexa time recognition for reliable parsing
         if (intentName === "LogTimeIntent") {

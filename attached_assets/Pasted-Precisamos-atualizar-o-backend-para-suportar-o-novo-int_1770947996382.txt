@@ -1,0 +1,115 @@
+Precisamos atualizar o backend para suportar o novo intent da Alexa:
+
+AdvanceStageIntent
+
+Este intent deve ter o mesmo comportamento que hoje ocorre quando o interpretador retorna:
+{"intent":"advance"}
+
+OBJETIVO
+- Quando o usuário disser:
+  "avançar etapa"
+  "avançar"
+  "próxima etapa"
+  "próxima"
+  "concluir etapa"
+  "concluir"
+  "finalizar etapa"
+  "terminar etapa"
+
+A Alexa deve:
+1) Resolver o lote ativo persistido por userId
+2) Avançar para a próxima etapa
+3) Renderizar a nova etapa normalmente
+4) Disparar lembrete se houver waitSpec
+5) Não passar pelo ProcessCommandIntent/LLM
+
+────────────────────────────
+IMPLEMENTAÇÃO
+────────────────────────────
+
+ARQUIVO: routes.ts
+
+Dentro do handler de IntentRequest:
+
+Adicionar bloco antes do ProcessCommandIntent:
+
+if (intentName === "AdvanceStageIntent") {
+
+    const userId = request.context.System.user.userId;
+
+    const activeBatch = await getActiveBatchForUser(userId);
+
+    if (!activeBatch) {
+        // Se não houver lote ativo, manter comportamento atual
+        return buildBatchSelectionMenu();
+    }
+
+    // Reutilizar mesma função usada quando LLM retorna {"intent":"advance"}
+    const result = await advanceBatch({
+        batchId: activeBatch.id,
+        apiContext: getApiContext(request)
+    });
+
+    // Renderizar nova etapa
+    return renderAdvanceResponse(result);
+}
+
+IMPORTANTE:
+- Não chamar interpretador LLM nesse fluxo.
+- Não depender de allowedUtterances.
+- Não depender de sessionAttributes.
+- Usar a mesma função advanceBatch já existente (confirmar assinatura).
+
+────────────────────────────
+REMOVER DEPENDÊNCIA DE FRASE FIXA
+────────────────────────────
+
+Não depender mais de:
+allowedUtterances = ["avançar etapa"]
+
+O LLM pode continuar sugerindo:
+"Quando terminar, diga 'próxima etapa'."
+
+Mas o comando real agora é tratado diretamente pelo intent da Alexa.
+
+────────────────────────────
+COMPATIBILIDADE
+────────────────────────────
+
+Manter funcionando também:
+- avanço via ProcessCommandIntent (se vier como utterance e cair no interpretador)
+- avanço via fallback exact match (se ainda existir)
+
+AdvanceStageIntent deve ser apenas o caminho prioritário e determinístico.
+
+────────────────────────────
+TESTES ESPERADOS
+────────────────────────────
+
+Cenário 1:
+Usuário diz "próxima etapa"
+→ Intent: AdvanceStageIntent
+→ Deve avançar imediatamente.
+
+Cenário 2:
+Usuário diz "avançar etapa"
+→ Intent: AdvanceStageIntent
+→ Deve avançar imediatamente.
+
+Cenário 3:
+Usuário diz "concluir"
+→ Intent: AdvanceStageIntent
+→ Deve avançar imediatamente.
+
+Cenário 4:
+Não existe lote ativo
+→ Deve listar lotes normalmente.
+
+Cenário 5:
+Etapa possui waitSpec
+→ Deve agendar lembrete corretamente.
+
+────────────────────────────
+
+Commit message:
+"Support AdvanceStageIntent for deterministic stage advancement"
