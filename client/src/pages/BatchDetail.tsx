@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useBatch, useAdvanceStage, useLogMeasurement, useLogCanonicalInput, useEditMeasurement, usePauseBatch, useResumeBatch, useCompleteBatch, useCancelBatch } from "@/hooks/use-batches";
 import { TimerWidget } from "@/components/widgets/TimerWidget";
 import { IngredientList } from "@/components/widgets/IngredientList";
-import { ChatAssistant } from "@/components/widgets/ChatAssistant";
+
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { getCheeseTypeName, formatBatchCode } from "@shared/schema";
@@ -417,8 +417,8 @@ export default function BatchDetail() {
           </div>
         )}
 
-        <div className="grid lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-6">
+        <div className="space-y-8">
+          <div className="space-y-6">
             
             <motion.div 
               layoutId="stage-card"
@@ -646,15 +646,13 @@ export default function BatchDetail() {
             )}
           </div>
 
-          <div className="space-y-6">
+          <div className="bg-card border border-border rounded-2xl p-6">
+            <h3 className="font-bold mb-4 flex items-center gap-2">
+              <Thermometer className="w-5 h-5 text-primary" />
+              Registro de Medições
+            </h3>
             
-            <div className="bg-card border border-border rounded-2xl p-6">
-              <h3 className="font-bold mb-4 flex items-center gap-2">
-                <Thermometer className="w-5 h-5 text-primary" />
-                Registro de Medições
-              </h3>
-              
-              <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+            <div className="space-y-4">
                 <div className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
                   <span className="text-muted-foreground">Iniciado</span>
                   <span className="font-mono">{new Date(batch.startedAt).toLocaleTimeString('pt-BR')}</span>
@@ -896,21 +894,12 @@ export default function BatchDetail() {
                     );
                   });
                 })()}
-              </div>
-            </div>
-
-            <div className="bg-primary/5 border border-primary/20 rounded-2xl p-6">
-              <h3 className="font-bold mb-2 text-primary">Precisa de Ajuda?</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                O Assistente Nete está ativo. Use o botão de chat para perguntas sobre ajustes da receita ou tempos.
-              </p>
             </div>
           </div>
         </div>
       </main>
 
       <Footer />
-      <ChatAssistant context={`Lote ${formatBatchCode(batch.startedAt)}, Etapa ${batch.currentStageId}`} />
     </div>
   );
 }

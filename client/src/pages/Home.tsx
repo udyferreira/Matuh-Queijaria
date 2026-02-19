@@ -4,7 +4,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { useBatches } from "@/hooks/use-batches";
-import { ChatAssistant } from "@/components/widgets/ChatAssistant";
+
 import { getCheeseTypeName, formatBatchCode } from "@shared/schema";
 
 export default function Home() {
@@ -105,7 +105,6 @@ export default function Home() {
       </main>
 
       <Footer />
-      <ChatAssistant />
     </div>
   );
 }
