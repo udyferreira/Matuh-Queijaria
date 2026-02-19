@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowRight, CheckCircle, AlertCircle, Thermometer, Scale, Pause, Play, XCircle, Flag } from "lucide-react";
+import { ArrowRight, CheckCircle, AlertCircle, Thermometer, Scale, Pause, Play, XCircle, Flag, Pencil, Check, X } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useBatch, useAdvanceStage, useLogMeasurement, useLogCanonicalInput, usePauseBatch, useResumeBatch, useCompleteBatch, useCancelBatch } from "@/hooks/use-batches";
+import { useBatch, useAdvanceStage, useLogMeasurement, useLogCanonicalInput, useEditMeasurement, usePauseBatch, useResumeBatch, useCompleteBatch, useCancelBatch } from "@/hooks/use-batches";
 import { TimerWidget } from "@/components/widgets/TimerWidget";
 import { IngredientList } from "@/components/widgets/IngredientList";
 import { ChatAssistant } from "@/components/widgets/ChatAssistant";
@@ -16,10 +16,10 @@ import { motion } from "framer-motion";
 import { getCheeseTypeName, formatBatchCode } from "@shared/schema";
 
 const STAGE_NAMES: Record<number, string> = {
-  1: "Separar o leite",
+  1: "Separar o leite e medir parâmetros iniciais",
   2: "Calcular fermentos e coalho",
-  3: "Aquecer o leite a 32°C",
-  4: "Adicionar fermentos LR e DX e mexer",
+  3: "Aquecer o leite",
+  4: "Adicionar fermentos LR e DX",
   5: "Adicionar fermento KL e coalho",
   6: "Anotar horário de floculação",
   7: "Anotar horário do ponto de corte",
@@ -28,14 +28,15 @@ const STAGE_NAMES: Record<number, string> = {
   10: "Mexedura progressiva da massa",
   11: "Enformagem com peneira e paninho",
   12: "Dessoragem em mesa",
-  13: "Medir e anotar pH inicial",
+  13: "Medir pH inicial e registrar quantidade de peças",
   14: "Colocar na prensa",
-  15: "Virar queijos e medir pH",
+  15: "Virar queijos e medir pH (loop controlado)",
   16: "Transferir para câmara de secagem",
   17: "Salga em tanque",
   18: "Secagem em prateleiras",
-  19: "Transferir para Câmara 2",
-  20: "Virar queijos diariamente na Câmara 2",
+  19: "Transferir para Câmara 2 (início da maturação)",
+  20: "Maturação em Câmara 2",
+  21: "Conclusão",
 };
 
 const STAGE_INSTRUCTIONS: Record<number, string[]> = {
@@ -70,6 +71,7 @@ export default function BatchDetail() {
   const { mutate: advance, isPending: isAdvancing } = useAdvanceStage();
   const { mutate: logInput, isPending: isLogging } = useLogMeasurement();
   const { mutate: logCanonical, isPending: isLoggingCanonical } = useLogCanonicalInput();
+  const { mutate: editMeasurement, isPending: isEditing } = useEditMeasurement();
   const { mutate: pauseBatch, isPending: isPausing } = usePauseBatch();
   const { mutate: resumeBatch, isPending: isResuming } = useResumeBatch();
   const { mutate: completeBatch, isPending: isCompleting } = useCompleteBatch();
@@ -80,6 +82,8 @@ export default function BatchDetail() {
   const [piecesQuantity, setPiecesQuantity] = useState("");
   const [cancelReason, setCancelReason] = useState("");
   const [pauseReason, setPauseReason] = useState("");
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [showPauseDialog, setShowPauseDialog] = useState(false);
   
@@ -310,7 +314,7 @@ export default function BatchDetail() {
                <div className="h-8 w-px bg-border" />
                <div className="text-right">
                  <div className="text-xs text-muted-foreground uppercase tracking-wider">Etapa</div>
-                 <div className="text-xl font-bold text-primary">{batch.currentStageId} <span className="text-muted-foreground text-sm font-normal">/ 20</span></div>
+                 <div className="text-xl font-bold text-primary">{batch.currentStageId} <span className="text-muted-foreground text-sm font-normal">/ 21</span></div>
                </div>
             </div>
             
@@ -592,9 +596,44 @@ export default function BatchDetail() {
                 </div>
                 
                 {batch.chamber2EntryDate && (
-                  <div className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
-                    <span className="text-muted-foreground">Entrada na Câmara 2</span>
-                    <span className="font-mono font-bold">{new Date(batch.chamber2EntryDate).toLocaleDateString('pt-BR')}</span>
+                  <div className="flex justify-between items-center py-2 border-b border-border/50 text-sm gap-2">
+                    <span className="text-muted-foreground flex-shrink-0">Entrada na Câmara 2</span>
+                    {editingKey === "chamber_2_entry_date" ? (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          data-testid="input-edit-chamber2"
+                          type="date"
+                          className="h-7 w-[140px] font-mono text-xs"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                        />
+                        <Button size="icon" variant="ghost" className="h-7 w-7" disabled={isEditing}
+                          data-testid="button-save-chamber2"
+                          onClick={() => {
+                            editMeasurement({ id, data: { key: "chamber_2_entry_date", value: editValue, stageId: 19 } }, {
+                              onSuccess: () => { setEditingKey(null); toast({ title: "Data atualizada" }); },
+                              onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+                            });
+                          }}>
+                          <Check className="w-3 h-3" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7" data-testid="button-cancel-chamber2"
+                          onClick={() => setEditingKey(null)}>
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <span className="font-mono font-bold">{new Date(batch.chamber2EntryDate).toLocaleDateString('pt-BR')}</span>
+                        <Button size="icon" variant="ghost" className="h-6 w-6" data-testid="button-edit-chamber2"
+                          onClick={() => {
+                            setEditingKey("chamber_2_entry_date");
+                            setEditValue(new Date(batch.chamber2EntryDate!).toISOString().split('T')[0]);
+                          }}>
+                          <Pencil className="w-3 h-3 text-muted-foreground" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
                 
@@ -609,7 +648,6 @@ export default function BatchDetail() {
                   const measurements = batch.measurements as Record<string, any> || {};
                   const history = measurements._history as Array<{key: string; value: any; stageId: number; timestamp: string}> || [];
                   
-                  // Mapa de tradução para labels
                   const labelMap: Record<string, string> = {
                     'ph_value': 'Medição de pH',
                     'ph_measurement': 'Medição de pH',
@@ -628,14 +666,20 @@ export default function BatchDetail() {
                     'turning_cycles_count': 'Quantidade de Viradas',
                     'loop_exit_reason': 'Motivo de Saída',
                   };
+
+                  const readOnlyKeys = new Set(['loop_exit_reason', 'turning_cycles_count']);
+                  const reasonMap: Record<string, string> = {
+                    "ph_reached": "pH ideal atingido",
+                    "time_limit": "Tempo limite atingido"
+                  };
                   
-                  const items: Array<{label: string; value: string}> = [];
+                  type MeasurementItem = { label: string; value: string; editKey: string; historyIndex?: number; stageId?: number; editable: boolean };
+                  const items: MeasurementItem[] = [];
                   
-                  // Se temos histórico, usar para contexto de etapa
                   if (history.length > 0) {
                     const phByStage: Record<number, number> = {};
                     
-                    history.forEach((entry) => {
+                    history.forEach((entry, idx) => {
                       let label: string;
                       
                       if (entry.key === 'ph_value' || entry.key === 'ph_measurement') {
@@ -648,48 +692,39 @@ export default function BatchDetail() {
                         label = `Etapa ${entry.stageId} - ${labelMap[entry.key] || entry.key.replace(/_/g, ' ')}`;
                       }
                       
-                      // Traduzir valores específicos
                       let displayValue = String(entry.value);
                       if (entry.key === 'loop_exit_reason') {
-                        const reasonMap: Record<string, string> = {
-                          "ph_reached": "pH ideal atingido",
-                          "time_limit": "Tempo limite atingido"
-                        };
                         displayValue = reasonMap[displayValue] || displayValue;
                       }
                       
-                      items.push({ label, value: displayValue });
+                      items.push({
+                        label,
+                        value: displayValue,
+                        editKey: entry.key,
+                        historyIndex: idx,
+                        stageId: entry.stageId,
+                        editable: !readOnlyKeys.has(entry.key),
+                      });
                     });
                   } else {
-                    // Fallback para dados sem histórico
-                    // Primeiro, processar medições de pH do array 'ph'
                     const phArray = measurements.ph as Array<{value: number; timestamp: string; stageId?: number}> || [];
-                    
-                    // Agrupar por etapa para numerar corretamente
                     const phByStage: Record<number, number> = {};
                     
                     phArray.forEach((entry, idx) => {
-                      // Inferir stageId: primeira medição é etapa 13, subsequentes são etapa 15
-                      // (a menos que já tenha stageId salvo)
                       const stageId = entry.stageId ?? (idx === 0 ? 13 : 15);
-                      
                       phByStage[stageId] = (phByStage[stageId] || 0) + 1;
                       const count = phByStage[stageId];
-                      
                       const label = count === 1
                         ? `Etapa ${stageId} - Medição de pH`
                         : `Etapa ${stageId} - ${count}ª Medição de pH`;
-                      items.push({ label, value: String(entry.value) });
+                      items.push({ label, value: String(entry.value), editKey: 'ph_value', stageId, editable: true });
                     });
                     
-                    // Depois, processar outros valores
                     Object.entries(measurements).forEach(([key, val]) => {
-                      // Ignorar campos internos e arrays de pH
                       if (key.startsWith('_') || key === 'ph_measurements' || key === 'ph' || key === 'ph_value') return;
-                      
                       const label = labelMap[key] || key.replace(/_/g, ' ');
                       const displayValue = typeof val === 'object' ? String(val?.value ?? val) : String(val);
-                      items.push({ label, value: displayValue });
+                      items.push({ label, value: displayValue, editKey: key, editable: !readOnlyKeys.has(key) });
                     });
                   }
                   
@@ -701,12 +736,66 @@ export default function BatchDetail() {
                     );
                   }
                   
-                  return items.map((item, idx) => (
-                    <div key={idx} className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
-                      <span className="text-muted-foreground">{item.label}</span>
-                      <span className="font-mono font-bold">{item.value}</span>
-                    </div>
-                  ));
+                  return items.map((item, idx) => {
+                    const uniqueKey = `${item.editKey}-${item.historyIndex ?? idx}`;
+                    const isEditingThis = editingKey === uniqueKey;
+
+                    return (
+                      <div key={idx} className="flex justify-between items-center py-2 border-b border-border/50 text-sm gap-2">
+                        <span className="text-muted-foreground flex-shrink-0 text-xs">{item.label}</span>
+                        {isEditingThis ? (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              data-testid={`input-edit-${uniqueKey}`}
+                              className="h-7 w-[100px] font-mono text-xs"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && editValue.trim()) {
+                                  const numVal = parseFloat(editValue);
+                                  const finalVal = isNaN(numVal) ? editValue : numVal;
+                                  editMeasurement({ id, data: { key: item.editKey, value: finalVal, historyIndex: item.historyIndex, stageId: item.stageId } }, {
+                                    onSuccess: () => { setEditingKey(null); toast({ title: "Medição atualizada" }); },
+                                    onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+                                  });
+                                }
+                                if (e.key === 'Escape') setEditingKey(null);
+                              }}
+                            />
+                            <Button size="icon" variant="ghost" className="h-7 w-7" disabled={isEditing || !editValue.trim()}
+                              data-testid={`button-save-${uniqueKey}`}
+                              onClick={() => {
+                                if (!editValue.trim()) return;
+                                const numVal = parseFloat(editValue);
+                                const finalVal = isNaN(numVal) ? editValue : numVal;
+                                editMeasurement({ id, data: { key: item.editKey, value: finalVal, historyIndex: item.historyIndex, stageId: item.stageId } }, {
+                                  onSuccess: () => { setEditingKey(null); toast({ title: "Medição atualizada" }); },
+                                  onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+                                });
+                              }}>
+                              <Check className="w-3 h-3" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-7 w-7"
+                              data-testid={`button-cancel-${uniqueKey}`}
+                              onClick={() => setEditingKey(null)}>
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <span className="font-mono font-bold">{item.value}</span>
+                            {item.editable && (
+                              <Button size="icon" variant="ghost" className="h-6 w-6"
+                                data-testid={`button-edit-${uniqueKey}`}
+                                onClick={() => { setEditingKey(uniqueKey); setEditValue(item.value); }}>
+                                <Pencil className="w-3 h-3 text-muted-foreground" />
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
                 })()}
               </div>
             </div>

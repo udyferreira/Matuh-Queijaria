@@ -10,26 +10,27 @@ import { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 
 const STAGE_NAMES: Record<number, string> = {
-  1: "Recepção do Leite",
-  2: "Adição de Fermento",
-  3: "Adição de Coalho",
-  4: "Coagulação",
-  5: "Corte da Coalhada",
-  6: "Primeira Mexedura",
-  7: "Repouso Inicial",
-  8: "Segunda Mexedura",
-  9: "Dessoragem Parcial",
-  10: "Aquecimento",
-  11: "Mexedura Final",
-  12: "Dessoragem Final",
-  13: "Enformagem",
-  14: "Primeira Viragem",
-  15: "Viragens Periódicas",
-  16: "Salga",
-  17: "Secagem",
-  18: "Câmara 1",
-  19: "Câmara 2",
-  20: "Maturação"
+  1: "Separar o leite e medir parâmetros iniciais",
+  2: "Calcular fermentos e coalho",
+  3: "Aquecer o leite",
+  4: "Adicionar fermentos LR e DX",
+  5: "Adicionar fermento KL e coalho",
+  6: "Anotar horário de floculação",
+  7: "Anotar horário do ponto de corte",
+  8: "Corte da massa com a Lira",
+  9: "Corte complementar com espátula",
+  10: "Mexedura progressiva da massa",
+  11: "Enformagem com peneira e paninho",
+  12: "Dessoragem em mesa",
+  13: "Medir pH inicial e registrar quantidade de peças",
+  14: "Colocar na prensa",
+  15: "Virar queijos e medir pH (loop controlado)",
+  16: "Transferir para câmara de secagem",
+  17: "Salga em tanque",
+  18: "Secagem em prateleiras",
+  19: "Transferir para Câmara 2 (início da maturação)",
+  20: "Maturação em Câmara 2",
+  21: "Conclusão",
 };
 
 const MEASUREMENT_LABELS: Record<string, string> = {
@@ -86,37 +87,29 @@ function getMeasurementLabel(key: string, stageId: number, measurementIndex?: nu
 
 function exportToExcel(batches: ProductionBatch[]) {
   const data: any[] = [];
+  const allStageIds = Array.from({ length: 21 }, (_, i) => i + 1);
   
   batches.forEach((batch) => {
     const measurements = batch.measurements as Record<string, any> || {};
     const history: MeasurementHistoryItem[] = measurements._history || [];
     
     const measurementsByStage = history.reduce((acc, item) => {
-      if (!acc[item.stageId]) {
-        acc[item.stageId] = [];
-      }
+      if (!acc[item.stageId]) acc[item.stageId] = [];
       acc[item.stageId].push(item);
       return acc;
     }, {} as Record<number, MeasurementHistoryItem[]>);
     
-    const stageIds = Object.keys(measurementsByStage).map(Number).sort((a, b) => a - b);
-    
-    stageIds.forEach((stageId) => {
-      const stageItems = measurementsByStage[stageId].sort((a, b) => 
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      );
-      
-      stageItems.forEach((item, idx) => {
+    allStageIds.forEach((stageId) => {
+      const stageRows = getStageData(batch, stageId, measurementsByStage);
+      stageRows.forEach((row) => {
         data.push({
           "Lote": formatBatchCode(batch.startedAt),
           "Tipo": getCheeseTypeName(batch.recipeId),
           "Volume (L)": batch.milkVolumeL,
           "Data Conclusão": batch.completedAt ? new Date(batch.completedAt).toLocaleDateString("pt-BR") : "N/A",
           "Etapa": `${stageId} - ${STAGE_NAMES[stageId] || `Etapa ${stageId}`}`,
-          "Medição": stageId === 15 ? `Medição ${idx + 1}` : "-",
-          "Campo": MEASUREMENT_LABELS[item.key] || item.key,
-          "Valor": formatValue(item.key, item.value),
-          "Data/Hora Registro": new Date(item.timestamp).toLocaleString("pt-BR")
+          "Campo": row.label,
+          "Valor": row.value,
         });
       });
     });
@@ -128,11 +121,99 @@ function exportToExcel(batches: ProductionBatch[]) {
   
   const colWidths = [
     { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 15 },
-    { wch: 25 }, { wch: 12 }, { wch: 25 }, { wch: 15 }, { wch: 20 }
+    { wch: 35 }, { wch: 25 }, { wch: 20 }
   ];
   ws["!cols"] = colWidths;
   
   XLSX.writeFile(wb, `relatorio_lotes_${new Date().toISOString().split("T")[0]}.xlsx`);
+}
+
+function getStageData(batch: ProductionBatch, stageId: number, measurementsByStage: Record<number, MeasurementHistoryItem[]>) {
+  const measurements = batch.measurements as Record<string, any> || {};
+  const calculatedInputs = batch.calculatedInputs as Record<string, number> || {};
+  const stageHistory = measurementsByStage[stageId] || [];
+  const rows: Array<{ label: string; value: string }> = [];
+
+  if (stageId === 1) {
+    if (batch.milkVolumeL) rows.push({ label: "Volume de Leite", value: `${batch.milkVolumeL} L` });
+    const historyTemp = stageHistory.find(h => h.key === 'milk_temperature_c');
+    const historyPh = stageHistory.find(h => h.key === 'milk_ph');
+    if (historyTemp) rows.push({ label: "Temperatura do Leite", value: `${historyTemp.value} °C` });
+    else if (measurements.milk_temperature_c) rows.push({ label: "Temperatura do Leite", value: `${measurements.milk_temperature_c} °C` });
+    if (historyPh) rows.push({ label: "pH do Leite", value: String(historyPh.value) });
+    else if (measurements.milk_ph) rows.push({ label: "pH do Leite", value: String(measurements.milk_ph) });
+  }
+
+  if (stageId === 2 && Object.keys(calculatedInputs).length > 0) {
+    const inputLabels: Record<string, string> = {
+      fermento_lr_ml: "Fermento LR (mL)", fermento_dx_ml: "Fermento DX (mL)",
+      fermento_kl_ml: "Fermento KL (mL)", coalho_ml: "Coalho (mL)",
+      cloreto_calcio_ml: "Cloreto de Cálcio (mL)", sal_kg: "Sal (kg)",
+    };
+    Object.entries(calculatedInputs).forEach(([k, v]) => {
+      rows.push({ label: inputLabels[k] || k.replace(/_/g, ' '), value: String(v) });
+    });
+  }
+
+  if (stageId === 6) {
+    const h = stageHistory.find(i => i.key === 'flocculation_time');
+    if (h) rows.push({ label: "Horário de Floculação", value: String(h.value) });
+    else if (measurements.flocculation_time) rows.push({ label: "Horário de Floculação", value: String(measurements.flocculation_time) });
+  }
+
+  if (stageId === 7) {
+    const h = stageHistory.find(i => i.key === 'cut_point_time');
+    if (h) rows.push({ label: "Horário do Ponto de Corte", value: String(h.value) });
+    else if (measurements.cut_point_time) rows.push({ label: "Horário do Ponto de Corte", value: String(measurements.cut_point_time) });
+  }
+
+  if (stageId === 13) {
+    const phItem = stageHistory.find(i => i.key === 'ph_value' || i.key === 'initial_ph');
+    const piecesItem = stageHistory.find(i => i.key === 'pieces_quantity');
+    if (phItem) rows.push({ label: "pH Inicial", value: String(phItem.value) });
+    else if (measurements.initial_ph) rows.push({ label: "pH Inicial", value: String(measurements.initial_ph) });
+    if (piecesItem) rows.push({ label: "Quantidade de Peças", value: String(piecesItem.value) });
+    else if (measurements.pieces_quantity) rows.push({ label: "Quantidade de Peças", value: String(measurements.pieces_quantity) });
+  }
+
+  if (stageId === 14) {
+    const h = stageHistory.find(i => i.key === 'press_start_time');
+    if (h) rows.push({ label: "Início da Prensagem", value: String(h.value) });
+    else if (measurements.press_start_time) rows.push({ label: "Início da Prensagem", value: String(measurements.press_start_time) });
+  }
+
+  if (stageId === 15) {
+    const phItems = stageHistory.filter(i => i.key === 'ph_value' || i.key === 'ph_measurement');
+    phItems.forEach((item, idx) => {
+      rows.push({ label: `${idx + 1}a Medição de pH`, value: String(item.value) });
+    });
+    const cycles = stageHistory.find(i => i.key === 'turning_cycles_count');
+    if (cycles) rows.push({ label: "Viradas Realizadas", value: String(cycles.value) });
+    else if (measurements.turning_cycles_count) rows.push({ label: "Viradas Realizadas", value: String(measurements.turning_cycles_count) });
+    const exitReason = stageHistory.find(i => i.key === 'loop_exit_reason');
+    const reason = exitReason?.value || measurements.loop_exit_reason;
+    if (reason) {
+      const reasonMap: Record<string, string> = { "ph_reached": "pH ideal atingido", "time_limit": "Tempo limite atingido" };
+      rows.push({ label: "Motivo de Saída", value: reasonMap[String(reason)] || String(reason) });
+    }
+  }
+
+  if (stageId === 19) {
+    if (batch.chamber2EntryDate) {
+      rows.push({ label: "Data de Entrada na Câmara 2", value: new Date(batch.chamber2EntryDate).toLocaleDateString("pt-BR") });
+    }
+    if (batch.maturationEndDate) {
+      rows.push({ label: "Fim da Maturação (90 dias)", value: new Date(batch.maturationEndDate).toLocaleDateString("pt-BR") });
+    }
+  }
+
+  if (stageId === 21) {
+    if (batch.completedAt) {
+      rows.push({ label: "Data de Conclusão", value: new Date(batch.completedAt).toLocaleDateString("pt-BR") });
+    }
+  }
+
+  return rows;
 }
 
 function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: React.RefObject<HTMLDivElement> }) {
@@ -148,8 +229,8 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
     acc[item.stageId].push(item);
     return acc;
   }, {} as Record<number, MeasurementHistoryItem[]>);
-  
-  const stageIds = Object.keys(measurementsByStage).map(Number).sort((a, b) => a - b);
+
+  const allStageIds = Array.from({ length: 21 }, (_, i) => i + 1);
 
   return (
     <Card className="mb-4 print:break-inside-avoid">
@@ -182,70 +263,33 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
       
       {(expanded || printRef) && (
         <CardContent data-testid={`content-batch-report-${batch.id}`}>
-          {stageIds.length === 0 && !batch.chamber2EntryDate ? (
-            <p className="text-muted-foreground text-center py-4">
-              Nenhuma medição registrada para este lote.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {stageIds.map((stageId) => {
-                const stageItems = measurementsByStage[stageId].sort((a, b) => 
-                  new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-                );
-                
-                return (
-                  <div key={stageId} className="border-l-2 border-primary/30 pl-4 print:border-gray-400">
-                    <h4 className="font-semibold text-sm mb-2">
-                      Etapa {stageId}: {STAGE_NAMES[stageId] || `Etapa ${stageId}`}
-                    </h4>
-                    <div className="flex flex-col gap-2">
-                      {stageItems.map((item, idx) => (
+          <div className="space-y-3">
+            {allStageIds.map((stageId) => {
+              const stageRows = getStageData(batch, stageId, measurementsByStage);
+              const hasData = stageRows.length > 0;
+
+              return (
+                <div key={stageId} className={`border-l-2 pl-4 print:border-gray-400 ${hasData ? 'border-primary/50' : 'border-border/30'}`}>
+                  <h4 className={`text-sm mb-1 ${hasData ? 'font-semibold' : 'font-normal text-muted-foreground'}`}>
+                    {stageId}. {STAGE_NAMES[stageId] || `Etapa ${stageId}`}
+                  </h4>
+                  {hasData && (
+                    <div className="flex flex-col gap-1">
+                      {stageRows.map((row, idx) => (
                         <div 
                           key={idx} 
-                          className="flex justify-between items-center bg-secondary/30 rounded-md px-3 py-2 text-sm print:bg-gray-100"
+                          className="flex justify-between items-center bg-secondary/30 rounded-md px-3 py-1.5 text-sm print:bg-gray-100"
                         >
-                          <span className="text-muted-foreground print:text-gray-600">
-                            {getMeasurementLabel(item.key, stageId, stageId === 15 ? idx : undefined)}
-                          </span>
-                          <span className="font-medium">
-                            {formatValue(item.key, item.value)}
-                          </span>
+                          <span className="text-muted-foreground print:text-gray-600">{row.label}</span>
+                          <span className="font-medium">{row.value}</span>
                         </div>
                       ))}
                     </div>
-                  </div>
-                );
-              })}
-              
-              {batch.chamber2EntryDate && (
-                <div className="border-l-2 border-primary/30 pl-4 print:border-gray-400">
-                  <h4 className="font-semibold text-sm mb-2">
-                    Etapa 19: {STAGE_NAMES[19]}
-                  </h4>
-                  <div className="flex flex-col gap-2">
-                    <div className="flex justify-between items-center bg-secondary/30 rounded-md px-3 py-2 text-sm print:bg-gray-100">
-                      <span className="text-muted-foreground print:text-gray-600">
-                        Data de Entrada na Câmara 2
-                      </span>
-                      <span className="font-medium">
-                        {new Date(batch.chamber2EntryDate).toLocaleDateString("pt-BR")}
-                      </span>
-                    </div>
-                    {batch.maturationEndDate && (
-                      <div className="flex justify-between items-center bg-secondary/30 rounded-md px-3 py-2 text-sm print:bg-gray-100">
-                        <span className="text-muted-foreground print:text-gray-600">
-                          Fim da Maturação (90 dias)
-                        </span>
-                        <span className="font-medium">
-                          {new Date(batch.maturationEndDate).toLocaleDateString("pt-BR")}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
+              );
+            })}
+          </div>
         </CardContent>
       )}
     </Card>
@@ -266,14 +310,12 @@ function PrintableReport({ batches }: { batches: ProductionBatch[] }) {
         const history: MeasurementHistoryItem[] = measurements._history || [];
         
         const measurementsByStage = history.reduce((acc, item) => {
-          if (!acc[item.stageId]) {
-            acc[item.stageId] = [];
-          }
+          if (!acc[item.stageId]) acc[item.stageId] = [];
           acc[item.stageId].push(item);
           return acc;
         }, {} as Record<number, MeasurementHistoryItem[]>);
-        
-        const stageIds = Object.keys(measurementsByStage).map(Number).sort((a, b) => a - b);
+
+        const allStageIds = Array.from({ length: 21 }, (_, i) => i + 1);
         
         return (
           <div key={batch.id} className="mb-8 break-inside-avoid">
@@ -283,36 +325,27 @@ function PrintableReport({ batches }: { batches: ProductionBatch[] }) {
                 {getCheeseTypeName(batch.recipeId)} - {batch.milkVolumeL}L - 
                 Concluído em {batch.completedAt ? new Date(batch.completedAt).toLocaleDateString("pt-BR") : "N/A"}
               </p>
-              {batch.chamber2EntryDate && (
-                <p className="text-sm">
-                  Entrada na Câmara 2: {new Date(batch.chamber2EntryDate).toLocaleDateString("pt-BR")}
-                </p>
-              )}
-              {batch.maturationEndDate && (
-                <p className="text-sm">
-                  Fim da Maturação: {new Date(batch.maturationEndDate).toLocaleDateString("pt-BR")}
-                </p>
-              )}
             </div>
             
-            {stageIds.map((stageId) => {
-              const stageItems = measurementsByStage[stageId].sort((a, b) => 
-                new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-              );
+            {allStageIds.map((stageId) => {
+              const stageRows = getStageData(batch, stageId, measurementsByStage);
+              const hasData = stageRows.length > 0;
               
               return (
-                <div key={stageId} className="mb-4 pl-4 border-l-2 border-gray-400">
-                  <h4 className="font-semibold text-sm mb-2">
-                    Etapa {stageId}: {STAGE_NAMES[stageId] || `Etapa ${stageId}`}
+                <div key={stageId} className={`mb-3 pl-4 border-l-2 ${hasData ? 'border-gray-400' : 'border-gray-200'}`}>
+                  <h4 className={`text-sm mb-1 ${hasData ? 'font-semibold' : 'text-gray-400'}`}>
+                    {stageId}. {STAGE_NAMES[stageId] || `Etapa ${stageId}`}
                   </h4>
-                  <div className="flex flex-col gap-1">
-                    {stageItems.map((item, idx) => (
-                      <div key={idx} className="flex justify-between text-sm bg-gray-100 px-2 py-1 rounded">
-                        <span>{getMeasurementLabel(item.key, stageId, stageId === 15 ? idx : undefined)}</span>
-                        <span className="font-medium">{formatValue(item.key, item.value)}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {hasData && (
+                    <div className="flex flex-col gap-1">
+                      {stageRows.map((row, idx) => (
+                        <div key={idx} className="flex justify-between text-sm bg-gray-100 px-2 py-1 rounded">
+                          <span>{row.label}</span>
+                          <span className="font-medium">{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}

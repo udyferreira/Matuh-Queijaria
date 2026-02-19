@@ -235,6 +235,37 @@ export type CanonicalInput = {
   notes?: string;
 };
 
+export type MeasurementEdit = {
+  key: string;
+  value: number | string;
+  historyIndex?: number;
+  stageId?: number;
+};
+
+export function useEditMeasurement() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: MeasurementEdit }) => {
+      const url = `/api/batches/${id}/measurements`;
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Erro ao editar medição");
+      }
+      return await res.json();
+    },
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: [api.batches.get.path, id] });
+      queryClient.invalidateQueries({ queryKey: [api.batches.status.path, id] });
+      queryClient.invalidateQueries({ queryKey: [api.batches.logs.path, id] });
+    },
+  });
+}
+
 export function useLogCanonicalInput() {
   const queryClient = useQueryClient();
   return useMutation({

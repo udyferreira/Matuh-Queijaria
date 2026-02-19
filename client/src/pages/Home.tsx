@@ -78,12 +78,12 @@ export default function Home() {
                       <div>
                         <div className="flex justify-between text-sm mb-2">
                           <span className="text-muted-foreground">Progresso</span>
-                          <span className="font-medium">{Math.round((batch.currentStageId / 20) * 100)}%</span>
+                          <span className="font-medium">{Math.round((batch.currentStageId / 21) * 100)}%</span>
                         </div>
                         <div className="h-2 bg-secondary rounded-full overflow-hidden">
                           <div 
                             className="h-full bg-primary transition-all duration-500" 
-                            style={{ width: `${(batch.currentStageId / 20) * 100}%` }} 
+                            style={{ width: `${(batch.currentStageId / 21) * 100}%` }} 
                           />
                         </div>
                       </div>

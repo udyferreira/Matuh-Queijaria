@@ -476,6 +476,68 @@ export async function registerRoutes(
     res.json(response);
   });
 
+  app.put("/api/batches/:id/measurements", async (req, res) => {
+    const batchId = Number(req.params.id);
+    const { key, value, historyIndex, stageId } = req.body;
+
+    if (!key || value === undefined) {
+      return res.status(400).json({ message: "key e value são obrigatórios" });
+    }
+
+    const batch = await storage.getBatch(batchId);
+    if (!batch) return res.status(404).json({ message: "Lote não encontrado" });
+
+    const measurements = (batch.measurements as any) || {};
+    const oldValue = measurements[key];
+
+    if (key === "chamber_2_entry_date") {
+      const entryDate = new Date(value);
+      if (isNaN(entryDate.getTime())) {
+        return res.status(400).json({ message: "Data inválida" });
+      }
+      const matEnd = new Date(entryDate);
+      matEnd.setDate(matEnd.getDate() + 90);
+      await storage.updateBatch(batchId, {
+        chamber2EntryDate: entryDate,
+        maturationEndDate: matEnd,
+      });
+    } else {
+      if (historyIndex !== undefined && measurements._history) {
+        const history = measurements._history as Array<{ key: string; value: any; stageId: number; timestamp: string }>;
+        if (historyIndex >= 0 && historyIndex < history.length && history[historyIndex].key === key) {
+          history[historyIndex].value = value;
+          history[historyIndex].timestamp = new Date().toISOString();
+        }
+      }
+
+      if (key === "ph_value" || key === "initial_ph") {
+        if (stageId === 13) {
+          measurements.initial_ph = value;
+        }
+        measurements[key] = value;
+        if (measurements.ph_measurements && stageId) {
+          const pmArr = measurements.ph_measurements as Array<{ value: any; stageId: number; timestamp: string }>;
+          const match = pmArr.find((m) => m.stageId === stageId);
+          if (match) match.value = value;
+        }
+      } else {
+        measurements[key] = value;
+      }
+
+      await storage.updateBatch(batchId, { measurements });
+    }
+
+    await storage.logBatchAction({
+      batchId,
+      stageId: stageId || batch.currentStageId,
+      action: "measurement_edit",
+      details: { key, oldValue, newValue: value, historyIndex },
+    });
+
+    const updated = await storage.getBatch(batchId);
+    res.json(updated);
+  });
+
   app.post(api.batches.advance.path, async (req, res) => {
     const batchId = Number(req.params.id);
     
