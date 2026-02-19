@@ -123,6 +123,7 @@ LOG_NUMBER (valores):
 "o pH agora é cinco ponto dois" → {"intent":"log_number","confidence":0.95,"entities":{"number_type":"ph_value","number_value":5.2}}
 "tem doze peças" → {"intent":"log_number","confidence":0.95,"entities":{"number_type":"pieces_quantity","number_value":12}}
 "a temperatura está em trinta graus" → {"intent":"log_number","confidence":0.95,"entities":{"number_type":"milk_temperature","number_value":30}}
+"temperatura seis vírgula nove graus" → {"intent":"log_number","confidence":0.95,"entities":{"number_type":"milk_temperature","number_value":6.9}}
 "são vinte e quatro peças" → {"intent":"log_number","confidence":0.95,"entities":{"number_type":"pieces_quantity","number_value":24}}
 
 QUERY_INPUT (consulta insumos) - PRIORIDADE ALTA:
@@ -150,8 +151,10 @@ OUTROS:
 
 START_BATCH (início de lote - SEMPRE exige volume, temperatura, pH na mesma fala):
 NOTA: O operador DEVE informar volume + temperatura + pH na mesma frase. Extraia TODAS as entidades mencionadas.
+NOTA: A temperatura pode ser decimal (ex: 6.9, 7.2). Se o ASR enviar "69", o backend normalizará para 6.9.
 "lote com 130 litros temperatura 32 graus pH 6 ponto 5" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":130,"milk_temperature":32,"ph_value":6.5}}
 "novo lote com 80 litros temperatura 35 graus pH 6.5" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":80,"milk_temperature":35,"ph_value":6.5}}
+"lote com 101 litros temperatura 6 vírgula 9 graus pH 6 ponto 88" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":101,"milk_temperature":6.9,"ph_value":6.88}}
 "lote com 130 litros" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":130}} (incompleto - backend pedirá os dados faltantes)
 
 Retorne APENAS o JSON, sem markdown, explicações ou texto adicional.`;
@@ -289,8 +292,9 @@ const QUERY_INDICATORS = /\b(quanto|qual|quantidade|proporção|proporcao|dose|m
 // High-priority pattern for start_batch
 // Matches: "lote com X litros", "novo lote com X litros"
 // Also extracts temperature and pH if present
+// Temperature can be: "32", "6,9", "6 ponto 9", "6 vírgula 9", "69" (ASR drops decimal)
 // pH can be: "6.5", "6,5", "6 ponto 5", "6 vírgula 5"
-const START_BATCH_PATTERN = /(?:novo\s+)?lote\s+com\s+(\d+)\s*litros?(?:.*?temperatura\s*(\d+)\s*graus?)?(?:.*?(?:ph|p\s*h)\s*(\d+\s*(?:ponto|virgula|vírgula)\s*\d+|\d+[.,]\d+|\d+))?/i;
+const START_BATCH_PATTERN = /(?:novo\s+)?lote\s+com\s+(\d+)\s*litros?(?:.*?temperatura\s*(\d+\s*(?:ponto|virgula|vírgula)\s*\d+|\d+[.,]\d+|\d+)\s*graus?)?(?:.*?(?:ph|p\s*h)\s*(\d+\s*(?:ponto|virgula|vírgula)\s*\d+|\d+[.,]\d+|\d+))?/i;
 
 function tryStartBatchFallback(text: string): InterpretedCommand | null {
   const normalized = text.toLowerCase().trim();
@@ -301,11 +305,12 @@ function tryStartBatchFallback(text: string): InterpretedCommand | null {
     const entities: InterpretedCommand["entities"] = { volume };
     
     if (match[2]) {
-      entities.milk_temperature = parseInt(match[2], 10);
+      let tempStr = match[2].replace(/\s*(ponto|virgula|vírgula)\s*/gi, '.');
+      tempStr = tempStr.replace(',', '.');
+      entities.milk_temperature = parseFloat(tempStr);
     }
     
     if (match[3]) {
-      // Parse pH value - handle "6 ponto 5", "6 vírgula 5", "6.5", "6,5"
       let phStr = match[3].replace(/\s*(ponto|virgula|vírgula)\s*/gi, '.');
       phStr = phStr.replace(',', '.');
       entities.ph_value = parseFloat(phStr);

@@ -76,6 +76,53 @@ export function normalizePHValue(rawValue: string | number): number | null {
   return result;
 }
 
+export function normalizeTemperatureValue(rawValue: string | number): number | null {
+  if (rawValue === undefined || rawValue === null || rawValue === '?' || rawValue === '') {
+    return null;
+  }
+
+  let valueStr = String(rawValue)
+    .replace(/\s+/g, ' ')
+    .replace(/graus?/gi, '')
+    .trim();
+
+  valueStr = valueStr.replace(',', '.');
+
+  const spacedPattern = /^(\d+)\s+(\d)$/;
+  const spacedMatch = valueStr.match(spacedPattern);
+  if (spacedMatch) {
+    valueStr = `${spacedMatch[1]}.${spacedMatch[2]}`;
+    console.log(`[normalizeTemp] "${rawValue}" matched spaced pattern -> ${valueStr}`);
+  }
+
+  const hyphenPattern = /^(\d+)-(\d)$/;
+  const hyphenMatch = valueStr.match(hyphenPattern);
+  if (hyphenMatch) {
+    valueStr = `${hyphenMatch[1]}.${hyphenMatch[2]}`;
+    console.log(`[normalizeTemp] "${rawValue}" matched hyphen pattern -> ${valueStr}`);
+  }
+
+  let num = parseFloat(valueStr);
+  if (isNaN(num)) {
+    console.log(`[normalizeTemp] "${rawValue}" -> NaN after parsing "${valueStr}"`);
+    return null;
+  }
+
+  if (num > 50 && num < 100) {
+    num = num / 10;
+    console.log(`[normalizeTemp] ${rawValue} -> ${num} (divided by 10, ASR likely dropped decimal)`);
+  }
+
+  if (num < 0 || num > 50) {
+    console.log(`[normalizeTemp] ${rawValue} -> ${num} is outside valid range 0-50°C`);
+    return null;
+  }
+
+  const result = Math.round(num * 10) / 10;
+  console.log(`[normalizeTemp] "${rawValue}" -> ${result}`);
+  return result;
+}
+
 export interface StartBatchParams {
   milkVolumeL: number;
   milkTemperatureC: number;
@@ -104,13 +151,16 @@ export interface AdvanceBatchResult {
 }
 
 export async function startBatch(params: StartBatchParams): Promise<StartBatchResult> {
-  const { milkVolumeL, milkTemperatureC, milkPh: rawMilkPh, recipeId: rawRecipeId = "QUEIJO_NETE" } = params;
+  const { milkVolumeL, milkTemperatureC: rawMilkTemp, milkPh: rawMilkPh, recipeId: rawRecipeId = "QUEIJO_NETE" } = params;
   
   // Normalize recipeId to uppercase for CHEESE_TYPES lookup
   const recipeId = rawRecipeId.toUpperCase();
   
   // Normalize milk pH (handles values like 66 → 6.6, 55 → 5.5)
   const milkPh = normalizePHValue(rawMilkPh);
+  
+  // Normalize milk temperature (handles values like 69 → 6.9, "6,9" → 6.9)
+  const milkTemperatureC = normalizeTemperatureValue(rawMilkTemp);
   
   const missingFields: string[] = [];
   if (milkVolumeL === undefined || milkVolumeL === null) missingFields.push("volume");

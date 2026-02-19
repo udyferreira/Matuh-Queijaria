@@ -970,10 +970,14 @@ export async function registerRoutes(
         }
         
         if (numberType === "milk_temperature") {
+          const normalizedTemp = batchService.normalizeTemperatureValue(numberValue);
+          if (normalizedTemp === null) {
+            return { speech: `Temperatura ${numberValue} não parece válida. Diga um valor entre 0 e 50 graus.`, shouldEndSession: false };
+          }
           const measurements = (activeBatch.measurements as Record<string, any>) || {};
-          measurements["current_temperature"] = numberValue;
+          measurements["current_temperature"] = normalizedTemp;
           await storage.updateBatch(activeBatch.id, { measurements });
-          return { speech: `Temperatura ${numberValue} graus registrada.`, shouldEndSession: false };
+          return { speech: `Temperatura ${normalizedTemp} graus registrada.`, shouldEndSession: false };
         }
         
         return { speech: "Tipo de valor não reconhecido.", shouldEndSession: false };

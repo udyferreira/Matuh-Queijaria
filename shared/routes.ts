@@ -46,7 +46,12 @@ export const api = {
       path: '/api/batches',
       input: z.object({
         milkVolumeL: z.number().min(10).max(200),
-        milkTemperatureC: z.number().min(0).max(50),
+        milkTemperatureC: z.number().min(0).max(100).transform((val) => {
+          if (val > 50 && val < 100) return val / 10;
+          return val;
+        }).refine((val) => val >= 0 && val <= 50, {
+          message: "Temperatura deve ser entre 0 e 50°C"
+        }),
         // Accept spoken pH values like 66 (→6.6), 55 (→5.5) before validation
         milkPh: z.number().min(0).max(100).transform((val) => {
           if (val > 14 && val < 100) return val / 10;
