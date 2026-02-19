@@ -95,9 +95,10 @@ REGRAS DE INTERPRETAÇÃO:
      - Perguntar por quantidade, proporção, valor, quanto, qual, me diga, deste lote
      - Mesmo que a frase seja curta ou informal
    - Mapear input_type OBRIGATORIAMENTE:
-     - "kl", "fermento kl" → "FERMENT_KL"
-     - "lr", "fermento lr" → "FERMENT_LR"
-     - "dx", "fermento dx" → "FERMENT_DX"
+     - "kl", "fermento kl", "fermento de kl" → "FERMENT_KL"
+     - "lr", "fermento lr", "fermento de lr" → "FERMENT_LR"
+     - "dx", "fermento dx", "fermento de x", "de x", "dex", "fermento d x" → "FERMENT_DX"
+     - ATENÇÃO: Alexa ASR transcreve "DX" como "de X" - SEMPRE mapear "de x" e "fermento de x" para FERMENT_DX
      - "coalho", "rennet" → "RENNET"
    - NUNCA retornar unknown se um input_type válido puder ser inferido
 
@@ -130,6 +131,9 @@ QUERY_INPUT (consulta insumos) - PRIORIDADE ALTA:
 "qual é o kl deste lote" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_KL"}}
 "me diga o lr" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_LR"}}
 "quanto de dx eu uso" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_DX"}}
+"fermento de x" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_DX"}}
+"de x" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_DX"}}
+"fermento de X" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_DX"}}
 "dose de coalho" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"RENNET"}}
 "kl deste lote" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_KL"}}
 "qual o coalho" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"RENNET"}}
@@ -237,10 +241,22 @@ const SIMPLE_COMMAND_MAP: Record<string, InterpretedCommand["intent"]> = {
 const INPUT_TYPE_MAP: Record<string, InterpretedCommand["entities"]["input_type"]> = {
   "kl": "FERMENT_KL",
   "fermento kl": "FERMENT_KL",
+  "fermento k l": "FERMENT_KL",
+  "fermento de kl": "FERMENT_KL",
+  "fermento de k l": "FERMENT_KL",
   "lr": "FERMENT_LR",
   "fermento lr": "FERMENT_LR",
+  "fermento l r": "FERMENT_LR",
+  "fermento de lr": "FERMENT_LR",
+  "fermento de l r": "FERMENT_LR",
   "dx": "FERMENT_DX",
   "fermento dx": "FERMENT_DX",
+  "fermento d x": "FERMENT_DX",
+  "de x": "FERMENT_DX",
+  "fermento de x": "FERMENT_DX",
+  "fermento dex": "FERMENT_DX",
+  "dex": "FERMENT_DX",
+  "fermento de xt": "FERMENT_DX",
   "coalho": "RENNET",
   "rennet": "RENNET",
 };
@@ -290,9 +306,11 @@ function tryQueryInputFallback(text: string): InterpretedCommand | null {
   // Verificar se tem indicador de consulta
   const hasQueryIndicator = QUERY_INDICATORS.test(normalized);
   
-  // Verificar se menciona algum insumo
-  for (const [keyword, inputType] of Object.entries(INPUT_TYPE_MAP)) {
-    const keywordPattern = new RegExp(`\\b${keyword}\\b`, 'i');
+  // Verificar se menciona algum insumo (testar keywords mais longas primeiro para prioridade)
+  const sortedInputEntries = Object.entries(INPUT_TYPE_MAP)
+    .sort((a, b) => b[0].length - a[0].length);
+  for (const [keyword, inputType] of sortedInputEntries) {
+    const keywordPattern = new RegExp(`\\b${keyword.replace(/\s+/g, '\\s+')}\\b`, 'i');
     if (keywordPattern.test(normalized)) {
       // Se menciona insumo com indicador de consulta, ou é uma frase curta sobre insumo
       if (hasQueryIndicator || normalized.split(/\s+/).length <= 4) {
