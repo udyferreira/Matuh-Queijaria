@@ -955,6 +955,10 @@ export async function registerRoutes(
         }
         
         if (numberType === "ph_value") {
+          if (activeBatch.currentStageId === 15) {
+            console.log(`[log_number] Redirecting pH registration at stage 15`);
+            return { speech: "Na etapa de viradas, diga: 'pH cinco vírgula dois'.", shouldEndSession: false };
+          }
           const result = await batchService.logPh(activeBatch.id, numberValue);
           if (!result.success) {
             return { speech: result.error || "Erro ao registrar pH.", shouldEndSession: false };
@@ -1869,6 +1873,25 @@ export async function registerRoutes(
                 result.error || "Erro ao registrar pH.",
                 false,
                 "Tente novamente.",
+                sessionAttributes
+              ));
+            }
+            
+            if (result.isDuplicate) {
+              console.log(`[Stage 15] Duplicate pH ${phValue} detected. Returning existing state.`);
+              const turningCycles = result.turningCyclesCount || 1;
+              if (result.shouldExitLoop) {
+                return res.status(200).json(buildAlexaResponse(
+                  `pH ${phValue} já registrado. Valor ideal atingido! Diga 'avançar etapa' para continuar.`,
+                  false,
+                  "Diga 'avançar etapa' para continuar.",
+                  sessionAttributes
+                ));
+              }
+              return res.status(200).json(buildAlexaResponse(
+                `pH ${phValue} já registrado. Queijos virados ${turningCycles} vez${turningCycles > 1 ? 'es' : ''}. Continue monitorando ou informe novo pH.`,
+                false,
+                "Informe o próximo pH ou diga 'qual é o status'.",
                 sessionAttributes
               ));
             }

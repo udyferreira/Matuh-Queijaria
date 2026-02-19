@@ -578,6 +578,7 @@ export interface LogPhResult {
   turningCyclesCount?: number;
   shouldExitLoop?: boolean;
   phReachedTarget?: boolean;
+  isDuplicate?: boolean;
 }
 
 /**
@@ -594,6 +595,32 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
   const inputHistory = measurements._history || [];
   const timestamp = new Date().toISOString();
   const stageId = batch.currentStageId;
+  
+  const DEDUP_WINDOW_MS = 30_000;
+  if (stageId === 15) {
+    const phMeasurements = measurements.ph_measurements || [];
+    if (phMeasurements.length > 0) {
+      const last = phMeasurements[phMeasurements.length - 1];
+      if (last.value === phValue && last.stageId === stageId) {
+        const elapsed = new Date(timestamp).getTime() - new Date(last.timestamp).getTime();
+        if (elapsed < DEDUP_WINDOW_MS) {
+          console.log(`[logPh] Dedup: pH ${phValue} already recorded ${elapsed}ms ago at stage ${stageId}. Skipping.`);
+          const currentCount = (batch as any).turningCyclesCount || 0;
+          const phReachedTarget = phValue <= TARGET_PH;
+          return { 
+            success: true, 
+            phValue, 
+            piecesQuantity, 
+            stageId,
+            turningCyclesCount: currentCount,
+            shouldExitLoop: phReachedTarget,
+            phReachedTarget,
+            isDuplicate: true
+          };
+        }
+      }
+    }
+  }
   
   // Stage 13: Store as initial_ph (per recipe.yml stored_values)
   if (stageId === 13) {
