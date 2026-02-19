@@ -752,8 +752,10 @@ export default function BatchDetail() {
                               onChange={(e) => setEditValue(e.target.value)}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' && editValue.trim()) {
+                                  const stringKeys = new Set(['flocculation_time', 'cut_point_time', 'press_start_time', 'chamber_2_entry_date']);
+                                  const keepAsString = stringKeys.has(item.editKey) || editValue.includes(':');
                                   const numVal = parseFloat(editValue);
-                                  const finalVal = isNaN(numVal) ? editValue : numVal;
+                                  const finalVal = keepAsString || isNaN(numVal) ? editValue : numVal;
                                   editMeasurement({ id, data: { key: item.editKey, value: finalVal, historyIndex: item.historyIndex, stageId: item.stageId } }, {
                                     onSuccess: () => { setEditingKey(null); toast({ title: "Medição atualizada" }); },
                                     onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
@@ -766,8 +768,10 @@ export default function BatchDetail() {
                               data-testid={`button-save-${uniqueKey}`}
                               onClick={() => {
                                 if (!editValue.trim()) return;
+                                const stringKeys = new Set(['flocculation_time', 'cut_point_time', 'press_start_time', 'chamber_2_entry_date']);
+                                const keepAsString = stringKeys.has(item.editKey) || editValue.includes(':');
                                 const numVal = parseFloat(editValue);
-                                const finalVal = isNaN(numVal) ? editValue : numVal;
+                                const finalVal = keepAsString || isNaN(numVal) ? editValue : numVal;
                                 editMeasurement({ id, data: { key: item.editKey, value: finalVal, historyIndex: item.historyIndex, stageId: item.stageId } }, {
                                   onSuccess: () => { setEditingKey(null); toast({ title: "Medição atualizada" }); },
                                   onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
