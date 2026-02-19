@@ -643,6 +643,33 @@ export default function BatchDetail() {
                     <span className="font-mono font-bold">{new Date(batch.maturationEndDate).toLocaleDateString('pt-BR')}</span>
                   </div>
                 )}
+
+                {(() => {
+                  const m = batch.measurements as Record<string, any> || {};
+                  const fmt = (iso: string) => {
+                    try {
+                      return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+                    } catch { return iso; }
+                  };
+                  const lrDx = m.ferment_lr_dx_add_time_iso;
+                  const klCoalho = m.ferment_kl_coalho_add_time_iso;
+                  if (lrDx || klCoalho) {
+                    return (
+                      <div className="mt-2 mb-2 p-3 rounded-md bg-muted/30 border border-border/50">
+                        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide" data-testid="text-traceability-header">Rastreabilidade Sanitária - Fermentos</span>
+                        <div className="flex justify-between items-center py-1.5 text-sm mt-2">
+                          <span className="text-muted-foreground text-xs">Adição fermentos LR/DX</span>
+                          <span className="font-mono font-bold text-xs" data-testid="text-ferment-lr-dx-time">{lrDx ? fmt(lrDx) : "Não registrado"}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-1.5 text-sm">
+                          <span className="text-muted-foreground text-xs">Adição fermento KL + coalho</span>
+                          <span className="font-mono font-bold text-xs" data-testid="text-ferment-kl-coalho-time">{klCoalho ? fmt(klCoalho) : "Não registrado"}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 
                 {(() => {
                   const measurements = batch.measurements as Record<string, any> || {};
@@ -665,9 +692,11 @@ export default function BatchDetail() {
                     'initial_ph': 'pH Inicial',
                     'turning_cycles_count': 'Quantidade de Viradas',
                     'loop_exit_reason': 'Motivo de Saída',
+                    'ferment_lr_dx_add_time_iso': 'Adição Fermentos LR/DX',
+                    'ferment_kl_coalho_add_time_iso': 'Adição Fermento KL + Coalho',
                   };
 
-                  const readOnlyKeys = new Set(['loop_exit_reason', 'turning_cycles_count']);
+                  const readOnlyKeys = new Set(['loop_exit_reason', 'turning_cycles_count', 'ferment_lr_dx_add_time_iso', 'ferment_kl_coalho_add_time_iso']);
                   const reasonMap: Record<string, string> = {
                     "ph_reached": "pH ideal atingido",
                     "time_limit": "Tempo limite atingido"
@@ -696,6 +725,11 @@ export default function BatchDetail() {
                       if (entry.key === 'loop_exit_reason') {
                         displayValue = reasonMap[displayValue] || displayValue;
                       }
+                      if (entry.key.endsWith('_time_iso')) {
+                        try {
+                          displayValue = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(entry.value));
+                        } catch { /* keep raw */ }
+                      }
                       
                       items.push({
                         label,
@@ -721,7 +755,7 @@ export default function BatchDetail() {
                     });
                     
                     Object.entries(measurements).forEach(([key, val]) => {
-                      if (key.startsWith('_') || key === 'ph_measurements' || key === 'ph' || key === 'ph_value') return;
+                      if (key.startsWith('_') || key === 'ph_measurements' || key === 'ph' || key === 'ph_value' || key.endsWith('_time_iso')) return;
                       const label = labelMap[key] || key.replace(/_/g, ' ');
                       const displayValue = typeof val === 'object' ? String(val?.value ?? val) : String(val);
                       items.push({ label, value: displayValue, editKey: key, editable: !readOnlyKeys.has(key) });

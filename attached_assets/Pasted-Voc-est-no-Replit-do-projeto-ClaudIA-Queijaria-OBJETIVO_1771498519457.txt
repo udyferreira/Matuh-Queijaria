@@ -1,0 +1,99 @@
+Você está no Replit do projeto ClaudIA / Queijaria.
+
+OBJETIVO (cirúrgico)
+Precisamos registrar automaticamente, no momento em que o sistema ENTRA na etapa, o horário (hora:minuto) das etapas em que os fermentos são adicionados, para constar no Relatório da Vigilância Sanitária.
+
+No recipe.yml atual:
+- Etapa 4 = “Adicionar fermentos LR e DX”
+- Etapa 5 = “Adicionar fermento KL e coalho”
+(Confirme no server/recipe.yml, mas implemente pelos IDs 4 e 5.)
+
+REGRA
+O “horário de adição” deve ser o timestamp exato do evento “start” da etapa (ou seja: quando avançamos e passamos a estar naquela etapa).
+Salvar em ISO (UTC) e converter para America/Sao_Paulo apenas na exibição do WEB/relatório.
+
+ONDE SALVAR (para já aparecer em “medições” e também no relatório)
+Salvar em batch.measurements com chaves explícitas:
+- ferment_lr_dx_add_time_iso
+- ferment_kl_coalho_add_time_iso
+
+Importante:
+- Registrar apenas na primeira vez (não sobrescrever se já existir).
+- Deve funcionar para lotes antigos (sem quebra).
+
+IMPLEMENTAÇÃO — BACKEND
+1) Arquivo: server/batchService.ts (o arquivo que você tem como batchService.ts)
+   No método advanceBatch(batchId,...), após definir `nextStage` e antes de `storage.updateBatch(batchId, updates)`:
+   - Carregar `const measurements = (batch.measurements as Record<string, any>) || {};`
+   - Criar `const nowIso = new Date().toISOString();`
+   - Se `nextStage.id === 4` e `measurements.ferment_lr_dx_add_time_iso` NÃO existe:
+        measurements.ferment_lr_dx_add_time_iso = nowIso
+        (Opcional, mas recomendado) também adicionar no measurements._history um entry com key/timestamp:
+           { key: 'ferment_lr_dx_add_time_iso', value: nowIso, stageId: 4, timestamp: nowIso }
+   - Se `nextStage.id === 5` e `measurements.ferment_kl_coalho_add_time_iso` NÃO existe:
+        measurements.ferment_kl_coalho_add_time_iso = nowIso
+        (Opcional, mas recomendado) entry equivalente no measurements._history
+   - Garantir que `updates.measurements = measurements` seja setado quando houver alteração.
+
+   Patch esperado (adapte ao estilo do arquivo):
+
+   --- inserir dentro de advanceBatch, depois de montar `updates` e `updatedHistory`, antes de updateBatch ---
+   const measurements = (batch.measurements as Record<string, any>) || {};
+   const nowIso = new Date().toISOString();
+   let touchedMeasurements = false;
+
+   if (nextStage.id === 4 && !measurements.ferment_lr_dx_add_time_iso) {
+     measurements.ferment_lr_dx_add_time_iso = nowIso;
+     const history = measurements._history || [];
+     history.push({ key: 'ferment_lr_dx_add_time_iso', value: nowIso, stageId: 4, timestamp: nowIso });
+     measurements._history = history;
+     touchedMeasurements = true;
+   }
+
+   if (nextStage.id === 5 && !measurements.ferment_kl_coalho_add_time_iso) {
+     measurements.ferment_kl_coalho_add_time_iso = nowIso;
+     const history = measurements._history || [];
+     history.push({ key: 'ferment_kl_coalho_add_time_iso', value: nowIso, stageId: 5, timestamp: nowIso });
+     measurements._history = history;
+     touchedMeasurements = true;
+   }
+
+   if (touchedMeasurements) {
+     updates.measurements = measurements;
+   }
+   --- fim ---
+
+2) Garanta que qualquer endpoint que retorna o batch para o frontend já inclua `batch.measurements` (isso normalmente já acontece). Não crie campos top-level no schema agora; manter no measurements evita migração de banco.
+
+IMPLEMENTAÇÃO — WEB (REGISTRO DE MEDIÇÕES + RELATÓRIO)
+3) Localize no frontend (client) os componentes:
+   - Página/aba de “Medições do Lote” (onde exibe batch.measurements)
+   - Componente/rota de “Relatório de Produção” (PDF/HTML)
+
+4) Na tela de “Medições”, adicionar um bloco “Rastreabilidade Sanitária – Fermentos” com:
+   - “Adição fermentos LR/DX” = formatar measurements.ferment_lr_dx_add_time_iso para pt-BR (HH:mm) em America/Sao_Paulo
+   - “Adição fermento KL + coalho” = formatar measurements.ferment_kl_coalho_add_time_iso idem
+   - Se não existir: “Não registrado”
+
+5) No “Relatório de Produção”, incluir seção obrigatória com os mesmos dois campos.
+   - Se o relatório for gerado no backend, faça a mesma formatação no backend (timezone America/Sao_Paulo).
+   - Se for no frontend, formatar no frontend.
+
+FORMATAÇÃO (timezone)
+- Use Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
+- Para data+hora, se precisar: adicionar day/month/year.
+
+TESTES RÁPIDOS
+6) Teste manual:
+   - Iniciar lote → avançar até entrar na etapa 4 → conferir que `measurements.ferment_lr_dx_add_time_iso` foi gravado.
+   - Avançar para etapa 5 → conferir `measurements.ferment_kl_coalho_add_time_iso`.
+   - Repetir avanço/voltar (se existir) ou chamar advance novamente: não deve sobrescrever valores.
+   - Conferir que aparece na tela de medições e no relatório.
+
+ENTREGA
+7) Subir PR/commit com:
+   - Alteração no server/batchService.ts
+   - Ajustes no(s) componente(s) do frontend (medições + relatório)
+   - (Se existir gerador de PDF) ajuste nele também
+
+OBS: Não criar intents Alexa nem pedir input do operador. É automático ao entrar na etapa.

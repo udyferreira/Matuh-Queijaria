@@ -144,6 +144,26 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
     else if (measurements.milk_ph) rows.push({ label: "pH do Leite", value: String(measurements.milk_ph) });
   }
 
+  if (stageId === 4) {
+    const isoVal = stageHistory.find(i => i.key === 'ferment_lr_dx_add_time_iso')?.value || measurements.ferment_lr_dx_add_time_iso;
+    if (isoVal) {
+      try {
+        const formatted = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(isoVal));
+        rows.push({ label: "Horário de Adição (Fermentos LR/DX)", value: formatted });
+      } catch { rows.push({ label: "Horário de Adição (Fermentos LR/DX)", value: String(isoVal) }); }
+    }
+  }
+
+  if (stageId === 5) {
+    const isoVal = stageHistory.find(i => i.key === 'ferment_kl_coalho_add_time_iso')?.value || measurements.ferment_kl_coalho_add_time_iso;
+    if (isoVal) {
+      try {
+        const formatted = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(isoVal));
+        rows.push({ label: "Horário de Adição (Fermento KL + Coalho)", value: formatted });
+      } catch { rows.push({ label: "Horário de Adição (Fermento KL + Coalho)", value: String(isoVal) }); }
+    }
+  }
+
   if (stageId === 2 && Object.keys(calculatedInputs).length > 0) {
     const inputLabels: Record<string, string> = {
       FERMENT_LR: "Fermento LR (mL)",

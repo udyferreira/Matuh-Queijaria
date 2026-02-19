@@ -396,6 +396,30 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     }
   }
 
+  const measurements = (batch.measurements as Record<string, any>) || {};
+  const nowIso = new Date().toISOString();
+  let touchedMeasurements = false;
+
+  if (nextStage.id === 4 && !measurements.ferment_lr_dx_add_time_iso) {
+    measurements.ferment_lr_dx_add_time_iso = nowIso;
+    const mHistory = measurements._history || [];
+    mHistory.push({ key: 'ferment_lr_dx_add_time_iso', value: nowIso, stageId: 4, timestamp: nowIso });
+    measurements._history = mHistory;
+    touchedMeasurements = true;
+  }
+
+  if (nextStage.id === 5 && !measurements.ferment_kl_coalho_add_time_iso) {
+    measurements.ferment_kl_coalho_add_time_iso = nowIso;
+    const mHistory = measurements._history || [];
+    mHistory.push({ key: 'ferment_kl_coalho_add_time_iso', value: nowIso, stageId: 5, timestamp: nowIso });
+    measurements._history = mHistory;
+    touchedMeasurements = true;
+  }
+
+  if (touchedMeasurements) {
+    updates.measurements = measurements;
+  }
+
   const updatedBatch = await storage.updateBatch(batchId, updates);
   
   await storage.logBatchAction({
