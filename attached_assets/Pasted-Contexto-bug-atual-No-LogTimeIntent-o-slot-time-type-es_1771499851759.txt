@@ -1,0 +1,100 @@
+Contexto (bug atual)
+No LogTimeIntent, o slot time_type está vindo SEM RESOLUÇÃO (ER_SUCCESS_NO_MATCH) e com valores “fortunação”, “flucoação” ou até vazio (“?”). O backend hoje rejeita porque `logTime(batchId, timeValue, timeType)` só aceita `timeType` canônico {flocculation, cut, press}. Resultado: “Tipo de horário inválido…”, impedindo registrar a hora da floculação na etapa 6.
+
+Objetivo
+Tornar o registro de horário (logTime) ROBUSTO a falhas de reconhecimento do Alexa:
+1) Aceitar entradas em PT-BR (com/sem acento) e variações comuns;
+2) Se `time_type` vier inválido ou vazio, INFERIR pelo stage atual do batch (ex.: stage 6 => floculação);
+3) Manter compatibilidade com o modelo atual (salvar em measurements flocculation_time / cut_point_time / press_start_time + _history);
+4) Não quebrar a validação/gating: registrar deve funcionar mesmo com slot ruim.
+
+Arquivos envolvidos (do repositório atual)
+- server/batchService.ts (existe função export async function logTime(...) )  ✅
+- (Se houver) server/api/alexa/webhook handler: garantir que passa `slots.time_type.value` mesmo sem resolução.
+Mas a correção principal deve ficar no batchService.logTime para ser “source of truth”.
+
+Implementação — PATCH CIRÚRGICO em server/batchService.ts
+1) Na função `export async function logTime(batchId: number, timeValue: string, timeType?: string) { ... }`
+   hoje existe:
+   - `timeTypeMapping` com apenas: flocculation, cut, cut_point, press, press_start
+   - `const mapping = timeType ? timeTypeMapping[timeType] : null;`
+   - se !mapping => retorna INVALID_TIME_TYPE
+
+   ALTERAR para:
+   A) Normalizar `timeType` para uma forma canônica (string)
+      - lowerCase
+      - trim
+      - remover acentos
+      - remover caracteres não-letras (manter só a-z)
+      Exemplo: “floculação” => “floculacao”, “ponto de corte” => “pontodecorte”
+
+      Crie helper local:
+        function normalize(s?: string): string | null { ... }
+
+   B) Expandir mapping para aceitar PT-BR + variações
+      timeTypeMapping deve aceitar chaves adicionais:
+        'floculacao' -> flocculation_time stage 6
+        'floculação' (se você mapear antes, nem precisa)
+        'flocoacao' (variação comum)
+        'flucoacao' (variação comum)
+        'fortunacao' (erro recorrente do log)
+        'corte' -> cut_point_time stage 7
+        'pontodecorte' -> cut_point_time stage 7
+        'ponto' (opcional) -> cut_point_time stage 7
+        'prensa' -> press_start_time stage 14
+        'prensagem' -> press_start_time stage 14
+
+      Importante: a chave usada no lookup deve ser a normalizada.
+
+   C) Se após normalização+mapping ainda não houver mapping, inferir pelo stage atual:
+      - Se batch.currentStageId === 6 => mapping = { key: 'flocculation_time', expectedStage: 6 }
+      - Se batch.currentStageId === 7 => mapping = { key: 'cut_point_time', expectedStage: 7 }
+      - Se batch.currentStageId === 14 => mapping = { key: 'press_start_time', expectedStage: 14 }
+      - Caso contrário, aí sim retornar INVALID_TIME_TYPE (como hoje)
+
+      Isso resolve:
+      - time_type = “?” (vazio) na etapa 6
+      - time_type sem match na etapa 6/7/14
+
+   D) (Opcional mas recomendado) Se você quiser uma camada extra:
+      - Implementar um “fuzzy contains” simples:
+          se normalized inclui 'floc' => flocculation
+          se inclui 'cort' => cut
+          se inclui 'prens' ou 'prens' => press
+        Use isso antes de cair na inferência por stage (ou junto).
+
+2) Manter o comportamento atual de persistência:
+   - measurements[key] = timeValue
+   - push no measurements._history
+   - storage.updateBatch(batchId, { measurements })
+   - storage.logBatchAction(...)
+
+3) Ajustar a mensagem de erro (quando realmente não der para inferir):
+   - Incluir também instrução “ou diga apenas ‘hora às HH:MM’ enquanto estiver na etapa correta”
+   Ex.: "Tipo de horário inválido. Use: floculação, corte, ou prensa. Se você estiver na etapa de floculação/corte/prensa, posso assumir automaticamente: diga 'hora às oito e dez'."
+
+Ajuste secundário (se existir handler Alexa)
+4) No webhook do Alexa (IntentRequest LogTimeIntent):
+   - Garanta que você está passando para `logTime()` o `slots.time_type.value` mesmo quando o slot não resolve (ER_SUCCESS_NO_MATCH).
+   - Se slots.time_type estiver ausente, passe undefined e deixe o batchService inferir.
+   - Logar os valores normalizados ajuda debug (uma linha de console).
+
+Critérios de aceite (testes rápidos)
+- Estando na stage 6:
+  “hora da floculação às 08:10” ✅ grava flocculation_time
+  “hora da fortunação às 08:10” ✅ grava flocculation_time (via normalize/mapping)
+  “hora às 08:10” ✅ grava flocculation_time (via inferência pelo stage)
+- Estando na stage 7:
+  “hora do corte às 08:10” ✅ grava cut_point_time
+  “hora às 08:10” ✅ grava cut_point_time
+- Estando na stage 14:
+  “hora da prensa às 08:10” ✅ grava press_start_time
+  “hora às 08:10” ✅ grava press_start_time
+- Estando em outros stages com time_type inválido:
+  retorna INVALID_TIME_TYPE (sem gravar), como hoje.
+
+Entrega
+- Commit contendo apenas:
+  - patch em server/batchService.ts (logTime robusto)
+  - (opcional) patch no handler Alexa para garantir passagem do slot bruto
+Sem mudanças de Interaction Model por enquanto (a correção deve funcionar mesmo com NLU ruim).

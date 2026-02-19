@@ -1601,8 +1601,8 @@ export async function registerRoutes(
             ));
           }
           
-          // Log the time
-          const logResult = await batchService.logTime(activeBatch.id, timeValue, timeType);
+          // Log the time - pass raw slot as fallback so batchService can try broader normalization
+          const logResult = await batchService.logTime(activeBatch.id, timeValue, timeType || timeTypeSlot);
           if (!logResult.success) {
             return res.status(200).json(buildAlexaResponse(
               logResult.error || "Erro ao registrar horário.",

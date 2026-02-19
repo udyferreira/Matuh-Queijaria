@@ -661,21 +661,61 @@ export async function logTime(batchId: number, timeValue: string, timeType?: str
   const batch = await storage.getBatch(batchId);
   if (!batch) return { success: false, error: "Lote não encontrado" };
   
-  // Map timeType to storage key - NO generic fallback
+  const normalizeTimeType = (s?: string): string | null => {
+    if (!s || s === '?' || !s.trim()) return null;
+    return s.toLowerCase().trim()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z]/g, '');
+  };
+
   const timeTypeMapping: Record<string, { key: string; expectedStage: number }> = {
     'flocculation': { key: 'flocculation_time', expectedStage: 6 },
     'cut': { key: 'cut_point_time', expectedStage: 7 },
     'cut_point': { key: 'cut_point_time', expectedStage: 7 },
     'press': { key: 'press_start_time', expectedStage: 14 },
-    'press_start': { key: 'press_start_time', expectedStage: 14 }
+    'press_start': { key: 'press_start_time', expectedStage: 14 },
+    'floculacao': { key: 'flocculation_time', expectedStage: 6 },
+    'flocoacao': { key: 'flocculation_time', expectedStage: 6 },
+    'flucoacao': { key: 'flocculation_time', expectedStage: 6 },
+    'fortunacao': { key: 'flocculation_time', expectedStage: 6 },
+    'flocuacao': { key: 'flocculation_time', expectedStage: 6 },
+    'corte': { key: 'cut_point_time', expectedStage: 7 },
+    'pontodecorte': { key: 'cut_point_time', expectedStage: 7 },
+    'ponto': { key: 'cut_point_time', expectedStage: 7 },
+    'prensa': { key: 'press_start_time', expectedStage: 14 },
+    'prensagem': { key: 'press_start_time', expectedStage: 14 },
+  };
+
+  const stageInferMap: Record<number, { key: string; expectedStage: number }> = {
+    6: { key: 'flocculation_time', expectedStage: 6 },
+    7: { key: 'cut_point_time', expectedStage: 7 },
+    14: { key: 'press_start_time', expectedStage: 14 },
   };
   
-  const mapping = timeType ? timeTypeMapping[timeType] : null;
+  const normalized = normalizeTimeType(timeType);
+  let mapping = normalized ? timeTypeMapping[normalized] : null;
+
+  if (!mapping && normalized) {
+    if (normalized.includes('floc') || normalized.includes('fluc') || normalized.includes('fort')) {
+      mapping = { key: 'flocculation_time', expectedStage: 6 };
+    } else if (normalized.includes('cort')) {
+      mapping = { key: 'cut_point_time', expectedStage: 7 };
+    } else if (normalized.includes('prens') || normalized.includes('prensa')) {
+      mapping = { key: 'press_start_time', expectedStage: 14 };
+    }
+  }
+
+  if (!mapping) {
+    mapping = stageInferMap[batch.currentStageId] || null;
+    if (mapping) {
+      console.log(`[logTime] Inferred timeType from stage ${batch.currentStageId} => ${mapping.key} (raw timeType: "${timeType}")`);
+    }
+  }
   
   if (!mapping) {
     return { 
       success: false, 
-      error: "Tipo de horário inválido. Use: floculação, corte, ou prensa.",
+      error: "Tipo de horário inválido. Use: floculação, corte, ou prensa. Se estiver na etapa correta, diga apenas 'hora às HH:MM'.",
       code: "INVALID_TIME_TYPE"
     };
   }
