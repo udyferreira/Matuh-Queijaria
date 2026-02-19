@@ -542,10 +542,75 @@ export default function BatchDetail() {
                   ) : (
                     <div className="space-y-4 text-lg">
                       <p>Siga o procedimento padrão para esta etapa.</p>
-                      {/* Mostrar ingredientes apenas nas etapas 4 e 5 (adicionar fermentos) */}
                       {[4, 5].includes(batch.currentStageId) && batch.calculatedInputs && (
                         <IngredientList inputs={batch.calculatedInputs as Record<string, number>} />
                       )}
+
+                      {[4, 5].includes(batch.currentStageId) && (() => {
+                        const m = batch.measurements as Record<string, any> || {};
+                        const fermentKey = batch.currentStageId === 4 ? 'ferment_lr_dx_add_time_iso' : 'ferment_kl_coalho_add_time_iso';
+                        const fermentLabel = batch.currentStageId === 4 ? 'Horário de adição dos fermentos LR/DX' : 'Horário de adição do fermento KL + coalho';
+                        const fermentValue = m[fermentKey];
+                        const fmtTime = (iso: string) => {
+                          try {
+                            return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+                          } catch { return iso; }
+                        };
+                        const editKey = `stage-${fermentKey}`;
+                        const isEditingThis = editingKey === editKey;
+
+                        return (
+                          <div className="bg-muted/30 border border-border/50 rounded-lg p-4 mt-2">
+                            <div className="flex justify-between items-center gap-2">
+                              <span className="text-sm text-muted-foreground">{fermentLabel}</span>
+                              {isEditingThis ? (
+                                <div className="flex items-center gap-1">
+                                  <Input
+                                    data-testid={`input-edit-stage-${fermentKey}`}
+                                    type="time"
+                                    className="h-8 w-[120px] font-mono text-sm"
+                                    value={editValue}
+                                    onChange={(e) => setEditValue(e.target.value)}
+                                  />
+                                  <Button size="icon" variant="ghost" className="h-8 w-8" disabled={isEditing}
+                                    data-testid={`button-save-stage-${fermentKey}`}
+                                    onClick={() => {
+                                      if (!editValue.trim()) return;
+                                      const batchDateStr = (batch.startedAt ? new Date(batch.startedAt) : new Date()).toISOString().split('T')[0];
+                                      const isoVal = new Date(`${batchDateStr}T${editValue}:00.000-03:00`).toISOString();
+                                      editMeasurement({ id, data: { key: fermentKey, value: isoVal, stageId: batch.currentStageId } }, {
+                                        onSuccess: () => { setEditingKey(null); toast({ title: "Horário atualizado" }); },
+                                        onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+                                      });
+                                    }}>
+                                    <Check className="w-4 h-4" />
+                                  </Button>
+                                  <Button size="icon" variant="ghost" className="h-8 w-8"
+                                    data-testid={`button-cancel-stage-${fermentKey}`}
+                                    onClick={() => setEditingKey(null)}>
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <span className={`font-mono text-sm ${fermentValue ? 'font-bold' : 'italic text-muted-foreground'}`}
+                                    data-testid={`text-stage-${fermentKey}`}>
+                                    {fermentValue ? fmtTime(fermentValue) : "Não registrado"}
+                                  </span>
+                                  <Button size="icon" variant="ghost" className="h-7 w-7"
+                                    data-testid={`button-edit-stage-${fermentKey}`}
+                                    onClick={() => {
+                                      setEditingKey(editKey);
+                                      setEditValue(fermentValue ? fmtTime(fermentValue) : '');
+                                    }}>
+                                    <Pencil className="w-3 h-3 text-muted-foreground" />
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                       
                       <div className="flex items-center gap-3 text-amber-400 bg-amber-400/10 p-4 rounded-lg mt-4 text-base border border-amber-400/20">
                         <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -644,82 +709,6 @@ export default function BatchDetail() {
                   </div>
                 )}
 
-                {(() => {
-                  const m = batch.measurements as Record<string, any> || {};
-                  const fmtTime = (iso: string) => {
-                    try {
-                      return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
-                    } catch { return iso; }
-                  };
-                  const lrDx = m.ferment_lr_dx_add_time_iso;
-                  const klCoalho = m.ferment_kl_coalho_add_time_iso;
-
-                  const fermentFields: Array<{ key: string; label: string; value: string | undefined; testId: string; stageId: number }> = [
-                    { key: 'ferment_lr_dx_add_time_iso', label: 'Adição fermentos LR/DX', value: lrDx, testId: 'text-ferment-lr-dx-time', stageId: 4 },
-                    { key: 'ferment_kl_coalho_add_time_iso', label: 'Adição fermento KL + coalho', value: klCoalho, testId: 'text-ferment-kl-coalho-time', stageId: 5 },
-                  ];
-
-                  return (
-                    <div className="mt-2 mb-2 p-3 rounded-md bg-muted/30 border border-border/50">
-                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide" data-testid="text-traceability-header">Rastreabilidade Sanitária - Fermentos</span>
-                      {fermentFields.map((field, idx) => {
-                        const isEditingThis = editingKey === field.key;
-                        return (
-                          <div key={field.key} className={`flex justify-between items-center py-1.5 text-sm gap-2 ${idx === 0 ? 'mt-2' : ''}`}>
-                            <span className="text-muted-foreground text-xs flex-shrink-0">{field.label}</span>
-                            {isEditingThis ? (
-                              <div className="flex items-center gap-1">
-                                <Input
-                                  data-testid={`input-edit-${field.key}`}
-                                  type="time"
-                                  className="h-7 w-[100px] font-mono text-xs"
-                                  value={editValue}
-                                  onChange={(e) => setEditValue(e.target.value)}
-                                />
-                                <Button size="icon" variant="ghost" className="h-7 w-7" disabled={isEditing}
-                                  data-testid={`button-save-${field.key}`}
-                                  onClick={() => {
-                                    if (!editValue.trim()) return;
-                                    const batchDateStr = (batch.startedAt ? new Date(batch.startedAt) : new Date()).toISOString().split('T')[0];
-                                    const isoVal = new Date(`${batchDateStr}T${editValue}:00.000-03:00`).toISOString();
-                                    editMeasurement({ id, data: { key: field.key, value: isoVal, stageId: field.stageId } }, {
-                                      onSuccess: () => { setEditingKey(null); toast({ title: "Horário atualizado" }); },
-                                      onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
-                                    });
-                                  }}>
-                                  <Check className="w-3 h-3" />
-                                </Button>
-                                <Button size="icon" variant="ghost" className="h-7 w-7"
-                                  data-testid={`button-cancel-${field.key}`}
-                                  onClick={() => setEditingKey(null)}>
-                                  <X className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1">
-                                <span className={`font-mono text-xs ${field.value ? 'font-bold' : 'italic text-muted-foreground'}`} data-testid={field.testId}>
-                                  {field.value ? fmtTime(field.value) : "Não informado"}
-                                </span>
-                                <Button size="icon" variant="ghost" className="h-6 w-6"
-                                  data-testid={`button-edit-${field.key}`}
-                                  onClick={() => {
-                                    setEditingKey(field.key);
-                                    if (field.value) {
-                                      setEditValue(fmtTime(field.value));
-                                    } else {
-                                      setEditValue('');
-                                    }
-                                  }}>
-                                  <Pencil className="w-3 h-3 text-muted-foreground" />
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
                 
                 {(() => {
                   const measurements = batch.measurements as Record<string, any> || {};
@@ -746,7 +735,7 @@ export default function BatchDetail() {
                     'ferment_kl_coalho_add_time_iso': 'Adição Fermento KL + Coalho',
                   };
 
-                  const readOnlyKeys = new Set(['loop_exit_reason', 'turning_cycles_count', 'ferment_lr_dx_add_time_iso', 'ferment_kl_coalho_add_time_iso']);
+                  const readOnlyKeys = new Set(['loop_exit_reason', 'turning_cycles_count']);
                   const reasonMap: Record<string, string> = {
                     "ph_reached": "pH ideal atingido",
                     "time_limit": "Tempo limite atingido"
@@ -805,9 +794,16 @@ export default function BatchDetail() {
                     });
                     
                     Object.entries(measurements).forEach(([key, val]) => {
-                      if (key.startsWith('_') || key === 'ph_measurements' || key === 'ph' || key === 'ph_value' || key.endsWith('_time_iso')) return;
+                      if (key.startsWith('_') || key === 'ph_measurements' || key === 'ph' || key === 'ph_value') return;
                       const label = labelMap[key] || key.replace(/_/g, ' ');
-                      const displayValue = typeof val === 'object' ? String(val?.value ?? val) : String(val);
+                      let displayValue: string;
+                      if (key.endsWith('_time_iso')) {
+                        try {
+                          displayValue = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(val as string));
+                        } catch { displayValue = String(val); }
+                      } else {
+                        displayValue = typeof val === 'object' ? String(val?.value ?? val) : String(val);
+                      }
                       items.push({ label, value: displayValue, editKey: key, editable: !readOnlyKeys.has(key) });
                     });
                   }
@@ -831,15 +827,23 @@ export default function BatchDetail() {
                           <div className="flex items-center gap-1">
                             <Input
                               data-testid={`input-edit-${uniqueKey}`}
+                              type={item.editKey.endsWith('_time_iso') ? 'time' : undefined}
                               className="h-7 w-[100px] font-mono text-xs"
                               value={editValue}
                               onChange={(e) => setEditValue(e.target.value)}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' && editValue.trim()) {
-                                  const stringKeys = new Set(['flocculation_time', 'cut_point_time', 'press_start_time', 'chamber_2_entry_date']);
-                                  const keepAsString = stringKeys.has(item.editKey) || editValue.includes(':');
-                                  const numVal = parseFloat(editValue);
-                                  const finalVal = keepAsString || isNaN(numVal) ? editValue : numVal;
+                                  const isIsoTimeKey = item.editKey.endsWith('_time_iso');
+                                  let finalVal: string | number;
+                                  if (isIsoTimeKey) {
+                                    const batchDateStr = (batch.startedAt ? new Date(batch.startedAt) : new Date()).toISOString().split('T')[0];
+                                    finalVal = new Date(`${batchDateStr}T${editValue}:00.000-03:00`).toISOString();
+                                  } else {
+                                    const stringKeys = new Set(['flocculation_time', 'cut_point_time', 'press_start_time', 'chamber_2_entry_date']);
+                                    const keepAsString = stringKeys.has(item.editKey) || editValue.includes(':');
+                                    const numVal = parseFloat(editValue);
+                                    finalVal = keepAsString || isNaN(numVal) ? editValue : numVal;
+                                  }
                                   editMeasurement({ id, data: { key: item.editKey, value: finalVal, historyIndex: item.historyIndex, stageId: item.stageId } }, {
                                     onSuccess: () => { setEditingKey(null); toast({ title: "Medição atualizada" }); },
                                     onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
@@ -852,10 +856,17 @@ export default function BatchDetail() {
                               data-testid={`button-save-${uniqueKey}`}
                               onClick={() => {
                                 if (!editValue.trim()) return;
-                                const stringKeys = new Set(['flocculation_time', 'cut_point_time', 'press_start_time', 'chamber_2_entry_date']);
-                                const keepAsString = stringKeys.has(item.editKey) || editValue.includes(':');
-                                const numVal = parseFloat(editValue);
-                                const finalVal = keepAsString || isNaN(numVal) ? editValue : numVal;
+                                const isIsoTimeKey = item.editKey.endsWith('_time_iso');
+                                let finalVal: string | number;
+                                if (isIsoTimeKey) {
+                                  const batchDateStr = (batch.startedAt ? new Date(batch.startedAt) : new Date()).toISOString().split('T')[0];
+                                  finalVal = new Date(`${batchDateStr}T${editValue}:00.000-03:00`).toISOString();
+                                } else {
+                                  const stringKeys = new Set(['flocculation_time', 'cut_point_time', 'press_start_time', 'chamber_2_entry_date']);
+                                  const keepAsString = stringKeys.has(item.editKey) || editValue.includes(':');
+                                  const numVal = parseFloat(editValue);
+                                  finalVal = keepAsString || isNaN(numVal) ? editValue : numVal;
+                                }
                                 editMeasurement({ id, data: { key: item.editKey, value: finalVal, historyIndex: item.historyIndex, stageId: item.stageId } }, {
                                   onSuccess: () => { setEditingKey(null); toast({ title: "Medição atualizada" }); },
                                   onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
