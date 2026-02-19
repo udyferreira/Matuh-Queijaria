@@ -146,12 +146,15 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
 
   if (stageId === 2 && Object.keys(calculatedInputs).length > 0) {
     const inputLabels: Record<string, string> = {
-      fermento_lr_ml: "Fermento LR (mL)", fermento_dx_ml: "Fermento DX (mL)",
-      fermento_kl_ml: "Fermento KL (mL)", coalho_ml: "Coalho (mL)",
-      cloreto_calcio_ml: "Cloreto de Cálcio (mL)", sal_kg: "Sal (kg)",
+      FERMENT_LR: "Fermento LR (mL)",
+      FERMENT_DX: "Fermento DX (mL)",
+      FERMENT_KL: "Fermento KL (mL)",
+      RENNET: "Coalho (mL)",
+      SALT: "Sal (g)",
+      CALCIUM: "Cloreto de Cálcio (mL)",
     };
     Object.entries(calculatedInputs).forEach(([k, v]) => {
-      rows.push({ label: inputLabels[k] || k.replace(/_/g, ' '), value: String(v) });
+      rows.push({ label: inputLabels[k] || k, value: String(v) });
     });
   }
 
@@ -231,6 +234,7 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
   }, {} as Record<number, MeasurementHistoryItem[]>);
 
   const allStageIds = Array.from({ length: 21 }, (_, i) => i + 1);
+  const stagesWithData = allStageIds.filter((stageId) => getStageData(batch, stageId, measurementsByStage).length > 0);
 
   return (
     <Card className="mb-4 print:break-inside-avoid">
@@ -263,17 +267,20 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
       
       {(expanded || printRef) && (
         <CardContent data-testid={`content-batch-report-${batch.id}`}>
-          <div className="space-y-3">
-            {allStageIds.map((stageId) => {
-              const stageRows = getStageData(batch, stageId, measurementsByStage);
-              const hasData = stageRows.length > 0;
+          {stagesWithData.length === 0 ? (
+            <p className="text-muted-foreground text-center py-4">
+              Nenhuma medição registrada para este lote.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {stagesWithData.map((stageId) => {
+                const stageRows = getStageData(batch, stageId, measurementsByStage);
 
-              return (
-                <div key={stageId} className={`border-l-2 pl-4 print:border-gray-400 ${hasData ? 'border-primary/50' : 'border-border/30'}`}>
-                  <h4 className={`text-sm mb-1 ${hasData ? 'font-semibold' : 'font-normal text-muted-foreground'}`}>
-                    {stageId}. {STAGE_NAMES[stageId] || `Etapa ${stageId}`}
-                  </h4>
-                  {hasData && (
+                return (
+                  <div key={stageId} className="border-l-2 border-primary/50 pl-4 print:border-gray-400">
+                    <h4 className="font-semibold text-sm mb-1">
+                      {stageId}. {STAGE_NAMES[stageId] || `Etapa ${stageId}`}
+                    </h4>
                     <div className="flex flex-col gap-1">
                       {stageRows.map((row, idx) => (
                         <div 
@@ -285,11 +292,11 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
                         </div>
                       ))}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       )}
     </Card>
@@ -329,23 +336,21 @@ function PrintableReport({ batches }: { batches: ProductionBatch[] }) {
             
             {allStageIds.map((stageId) => {
               const stageRows = getStageData(batch, stageId, measurementsByStage);
-              const hasData = stageRows.length > 0;
+              if (stageRows.length === 0) return null;
               
               return (
-                <div key={stageId} className={`mb-3 pl-4 border-l-2 ${hasData ? 'border-gray-400' : 'border-gray-200'}`}>
-                  <h4 className={`text-sm mb-1 ${hasData ? 'font-semibold' : 'text-gray-400'}`}>
+                <div key={stageId} className="mb-3 pl-4 border-l-2 border-gray-400">
+                  <h4 className="font-semibold text-sm mb-1">
                     {stageId}. {STAGE_NAMES[stageId] || `Etapa ${stageId}`}
                   </h4>
-                  {hasData && (
-                    <div className="flex flex-col gap-1">
-                      {stageRows.map((row, idx) => (
-                        <div key={idx} className="flex justify-between text-sm bg-gray-100 px-2 py-1 rounded">
-                          <span>{row.label}</span>
-                          <span className="font-medium">{row.value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <div className="flex flex-col gap-1">
+                    {stageRows.map((row, idx) => (
+                      <div key={idx} className="flex justify-between text-sm bg-gray-100 px-2 py-1 rounded">
+                        <span>{row.label}</span>
+                        <span className="font-medium">{row.value}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               );
             })}
