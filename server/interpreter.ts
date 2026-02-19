@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 
 export interface InterpretedCommand {
-  intent: "status" | "start_batch" | "advance" | "log_time" | "log_date" | "log_number" | "pause" | "resume" | "instructions" | "help" | "goodbye" | "timer" | "query_input" | "unknown";
+  intent: "status" | "start_batch" | "advance" | "log_time" | "log_date" | "log_number" | "pause" | "resume" | "instructions" | "help" | "goodbye" | "timer" | "query_input" | "repeat_doses" | "unknown";
   confidence: number;
   entities: {
     volume?: number | null;
@@ -138,6 +138,13 @@ QUERY_INPUT (consulta insumos) - PRIORIDADE ALTA:
 "kl deste lote" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_KL"}}
 "qual o coalho" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"RENNET"}}
 
+REPEAT_DOSES (repetir todas as doses calculadas):
+"repetir fermentos" → {"intent":"repeat_doses","confidence":0.95,"entities":{}}
+"quais os fermentos" → {"intent":"repeat_doses","confidence":0.95,"entities":{}}
+"me diga os fermentos" → {"intent":"repeat_doses","confidence":0.95,"entities":{}}
+"fermentos" → {"intent":"repeat_doses","confidence":0.95,"entities":{}}
+"todas as doses" → {"intent":"repeat_doses","confidence":0.95,"entities":{}}
+
 OUTROS:
 "avançar" → {"intent":"advance","confidence":0.95,"entities":{}}
 
@@ -228,6 +235,21 @@ const SIMPLE_COMMAND_MAP: Record<string, InterpretedCommand["intent"]> = {
   "tempo restante": "timer",
   "cronômetro": "timer",
   "cronometro": "timer",
+  
+  // Repeat doses
+  "repetir fermentos": "repeat_doses",
+  "repetir doses": "repeat_doses",
+  "repetir as doses": "repeat_doses",
+  "quais os fermentos": "repeat_doses",
+  "quais são os fermentos": "repeat_doses",
+  "me diga os fermentos": "repeat_doses",
+  "todos os fermentos": "repeat_doses",
+  "fermentos": "repeat_doses",
+  "todas as doses": "repeat_doses",
+  "repete os fermentos": "repeat_doses",
+  "repete as doses": "repeat_doses",
+  "repetir ingredientes": "repeat_doses",
+  "quais as quantidades": "repeat_doses",
   
   // Goodbye
   "tchau": "goodbye",

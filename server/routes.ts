@@ -1079,6 +1079,15 @@ export async function registerRoutes(
         return { speech, shouldEndSession: false };
       }
       
+      case "repeat_doses": {
+        if (!activeBatch) {
+          return { speech: "Não há lote ativo para consultar as doses.", shouldEndSession: false };
+        }
+        const payload = speechRenderer.buildRepeatDosesPayload(activeBatch);
+        const speech = await speechRenderer.renderSpeech(payload);
+        return { speech, shouldEndSession: false };
+      }
+      
       case "help": {
         const stage = activeBatch ? recipeManager.getStage(activeBatch.currentStageId) : undefined;
         const payload = speechRenderer.buildHelpPayload(stage, activeBatch);

@@ -20,6 +20,7 @@ export type SpeechContext =
   | "auto_advance"
   | "help" 
   | "query_input" 
+  | "repeat_doses"
   | "error" 
   | "start_batch"
   | "log_time"
@@ -101,10 +102,11 @@ REGRAS OBRIGATÓRIAS:
 10. Para error, diga a mensagem de erro de forma clara.
 11. Para query_input, diga "A quantidade de [tipo] é [valor] [unidade]."
 12. Para auto_advance: combine confirmation + próxima etapa numa narrativa fluida e curta. NÃO diga "confirmação".
-13. Para start_batch: mencione as doses calculadas e a instrução da etapa atual.
-14. Para log_time/log_ph/log_date: confirme o registro feito de forma curta.
-15. Máximo: 4 frases para auto_advance/start_batch, 3 para outros contextos.
-16. NUNCA repita o nome da etapa 2 vezes. Evitar "Etapa X… Prossiga com etapa X…"
+13. Para start_batch: primeiro anuncie "Fermentos e coalho calculados:" e liste TODAS as doses. Depois diga a instrução da etapa atual (ex: "Agora, etapa 3: Aqueça o leite até 32°C"). Termine com "Para ouvir novamente, diga 'repetir fermentos'." NÃO leia o campo notes literalmente.
+14. Para repeat_doses: liste TODAS as doses presentes dizendo "As doses deste lote são:" seguido de cada dose. Use os rótulos obrigatórios da regra 5.
+15. Para log_time/log_ph/log_date: confirme o registro feito de forma curta.
+16. Máximo: 5 frases para start_batch (doses + instrução), 4 para auto_advance, 3 para outros contextos.
+17. NUNCA repita o nome da etapa 2 vezes. Evitar "Etapa X… Prossiga com etapa X…"
 
 Responda APENAS com o texto de fala, sem aspas, sem explicações.`;
 
@@ -238,6 +240,13 @@ export async function renderSpeech(payload: SpeechRenderPayload): Promise<string
  */
 function getFallbackSpeech(payload: SpeechRenderPayload): string {
   const parts: string[] = [];
+  
+  if (payload.context === 'repeat_doses' && payload.doses) {
+    const doseTexts = Object.entries(payload.doses)
+      .map(([name, info]) => `${info.value} ${info.unit} de ${formatDoseName(name)}`)
+      .join(', ');
+    return `As doses deste lote são: ${doseTexts}.`;
+  }
   
   if (payload.confirmation) {
     parts.push(payload.confirmation);
@@ -543,7 +552,7 @@ export function buildErrorPayload(
 
 /**
  * Build a SpeechRenderPayload for start_batch context
- * Shows current stage (3 = Aquecer o leite) with all calculated doses
+ * Announces etapa 2 (calculated doses) then etapa 3 instruction (no doses)
  */
 export function buildStartBatchPayload(
   batch: any,
@@ -575,6 +584,27 @@ export function buildStartBatchPayload(
     instructions,
     doses: Object.keys(doses).length > 0 ? doses : undefined,
     allowedUtterances: getContextualUtterances(currentStage, batch)
+  };
+}
+
+/**
+ * Build a SpeechRenderPayload for repeat_doses context
+ * Lists all calculated doses for the active batch
+ */
+export function buildRepeatDosesPayload(
+  batch: any
+): SpeechRenderPayload {
+  const calculatedInputs = batch.calculatedInputs || {};
+  
+  const doses: Record<string, DoseInfo> = {};
+  if (calculatedInputs.FERMENT_LR) doses["FERMENT_LR"] = { value: calculatedInputs.FERMENT_LR, unit: "ml" };
+  if (calculatedInputs.FERMENT_DX) doses["FERMENT_DX"] = { value: calculatedInputs.FERMENT_DX, unit: "ml" };
+  if (calculatedInputs.FERMENT_KL) doses["FERMENT_KL"] = { value: calculatedInputs.FERMENT_KL, unit: "ml" };
+  if (calculatedInputs.RENNET) doses["RENNET"] = { value: calculatedInputs.RENNET, unit: "ml" };
+  
+  return {
+    context: "repeat_doses",
+    doses: Object.keys(doses).length > 0 ? doses : undefined,
   };
 }
 
@@ -764,6 +794,7 @@ export function getPendingInputs(batch: any, stageId: number, stage: any): strin
 /**
  * Get relevant doses for a stage based on stage name and instructions keywords
  * Instead of hardcoding by stage.id, uses keyword matching
+ * Stages 3 and 4 never show doses (doses are announced in etapa 2 at start_batch)
  */
 export function getRelevantDosesForStage(
   stage: any, 
@@ -772,6 +803,8 @@ export function getRelevantDosesForStage(
   const doses: Record<string, DoseInfo> = {};
   
   if (!stage || !calculatedInputs) return doses;
+  
+  if (stage.id === 3 || stage.id === 4) return doses;
   
   const stageText = [
     stage.name || '',
