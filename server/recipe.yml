@@ -247,6 +247,9 @@ stages:
   - id: 18
     name: "Secagem em prateleiras"
     type: "dry"
+    timer:
+      duration_hours: 36
+      blocking: true
 
   - id: 19
     name: "Transferir para Câmara 2 (início da maturação)"

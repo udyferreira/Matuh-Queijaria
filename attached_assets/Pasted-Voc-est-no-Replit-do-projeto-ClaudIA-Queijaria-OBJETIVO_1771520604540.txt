@@ -1,0 +1,47 @@
+Você está no Replit do projeto ClaudIA / Queijaria.
+
+OBJETIVO
+Adicionar um TIMER de 36 horas na Etapa 18 (“Secagem em prateleiras”) e, ao entrar nessa etapa, agendar automaticamente um REMINDER na Alexa para avisar quando as 36 horas terminarem.
+
+Base atual:
+- O backend já agenda reminders via Alexa quando a etapa tem `timer.duration_*`, usando `getWaitSpecForStage(stageId)` + `scheduleReminderForWait(...)` no `advanceBatch(...)`.
+- Hoje a Etapa 18 no recipe.yml não tem timer. Vamos incluir.
+
+IMPLEMENTAÇÃO (cirúrgica)
+
+1) Atualizar o arquivo: server/recipe.yml
+   Localize a etapa:
+     - id: 18
+       name: "Secagem em prateleiras"
+       type: "dry"
+
+   Adicione o timer de 36 horas (recomendado: blocking=true para impedir avanço antes do fim da secagem):
+
+   - id: 18
+     name: "Secagem em prateleiras"
+     type: "dry"
+     timer:
+       duration_hours: 36
+       blocking: true
+
+   Observação:
+   - Em TEST_MODE, o sistema já reduz timers para 1 minuto; não altere isso.
+
+2) Validar que o agendamento do reminder Alexa vai ocorrer automaticamente
+   Confirme em server/batchService.ts (função advanceBatch):
+   - Após atualizar batch para a próxima etapa, ele chama `getWaitSpecForStage(nextStage.id)`
+   - Se houver waitSpec (timer), chama `scheduleReminderForWait(apiCtx, batch, nextStage.id, waitSpec.seconds)` e persiste `scheduledAlerts["stage_18"]`.
+   Portanto: apenas adicionar timer na recipe.yml deve fazer o reminder acontecer ao entrar na etapa 18.
+
+3) Mensagem do reminder (ajuste se necessário)
+   Abra server/alexaReminders.ts e localize `scheduleReminderForWait(...)`.
+   Verifique se a mensagem falada/notificação usa o nome da etapa (stageName) ou é genérica.
+   Queremos que, para stageId=18, a mensagem final seja clara, por exemplo:
+     "Secagem em prateleiras concluída. Você pode avançar para a próxima etapa."
+   Se hoje a função já usa `stageName`, não precisa mudar.
+   Se hoje for genérico, adicione um branch específico para stageId=18.
+
+ENTREGA
+- Commit com: alteração em server/recipe.yml
+- Se necessário: ajuste em server/alexaReminders.ts para mensagem específica da etapa 18
+- Não alterar Interaction Model nem criar intents novos.
