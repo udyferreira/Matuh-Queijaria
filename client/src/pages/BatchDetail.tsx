@@ -646,29 +646,79 @@ export default function BatchDetail() {
 
                 {(() => {
                   const m = batch.measurements as Record<string, any> || {};
-                  const fmt = (iso: string) => {
+                  const fmtTime = (iso: string) => {
                     try {
                       return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
                     } catch { return iso; }
                   };
                   const lrDx = m.ferment_lr_dx_add_time_iso;
                   const klCoalho = m.ferment_kl_coalho_add_time_iso;
-                  if (lrDx || klCoalho) {
-                    return (
-                      <div className="mt-2 mb-2 p-3 rounded-md bg-muted/30 border border-border/50">
-                        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide" data-testid="text-traceability-header">Rastreabilidade Sanitária - Fermentos</span>
-                        <div className="flex justify-between items-center py-1.5 text-sm mt-2">
-                          <span className="text-muted-foreground text-xs">Adição fermentos LR/DX</span>
-                          <span className="font-mono font-bold text-xs" data-testid="text-ferment-lr-dx-time">{lrDx ? fmt(lrDx) : "Não registrado"}</span>
-                        </div>
-                        <div className="flex justify-between items-center py-1.5 text-sm">
-                          <span className="text-muted-foreground text-xs">Adição fermento KL + coalho</span>
-                          <span className="font-mono font-bold text-xs" data-testid="text-ferment-kl-coalho-time">{klCoalho ? fmt(klCoalho) : "Não registrado"}</span>
-                        </div>
-                      </div>
-                    );
-                  }
-                  return null;
+
+                  const fermentFields: Array<{ key: string; label: string; value: string | undefined; testId: string; stageId: number }> = [
+                    { key: 'ferment_lr_dx_add_time_iso', label: 'Adição fermentos LR/DX', value: lrDx, testId: 'text-ferment-lr-dx-time', stageId: 4 },
+                    { key: 'ferment_kl_coalho_add_time_iso', label: 'Adição fermento KL + coalho', value: klCoalho, testId: 'text-ferment-kl-coalho-time', stageId: 5 },
+                  ];
+
+                  return (
+                    <div className="mt-2 mb-2 p-3 rounded-md bg-muted/30 border border-border/50">
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide" data-testid="text-traceability-header">Rastreabilidade Sanitária - Fermentos</span>
+                      {fermentFields.map((field, idx) => {
+                        const isEditingThis = editingKey === field.key;
+                        return (
+                          <div key={field.key} className={`flex justify-between items-center py-1.5 text-sm gap-2 ${idx === 0 ? 'mt-2' : ''}`}>
+                            <span className="text-muted-foreground text-xs flex-shrink-0">{field.label}</span>
+                            {isEditingThis ? (
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  data-testid={`input-edit-${field.key}`}
+                                  type="time"
+                                  className="h-7 w-[100px] font-mono text-xs"
+                                  value={editValue}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                />
+                                <Button size="icon" variant="ghost" className="h-7 w-7" disabled={isEditing}
+                                  data-testid={`button-save-${field.key}`}
+                                  onClick={() => {
+                                    if (!editValue.trim()) return;
+                                    const batchDateStr = (batch.startedAt ? new Date(batch.startedAt) : new Date()).toISOString().split('T')[0];
+                                    const isoVal = new Date(`${batchDateStr}T${editValue}:00.000-03:00`).toISOString();
+                                    editMeasurement({ id, data: { key: field.key, value: isoVal, stageId: field.stageId } }, {
+                                      onSuccess: () => { setEditingKey(null); toast({ title: "Horário atualizado" }); },
+                                      onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+                                    });
+                                  }}>
+                                  <Check className="w-3 h-3" />
+                                </Button>
+                                <Button size="icon" variant="ghost" className="h-7 w-7"
+                                  data-testid={`button-cancel-${field.key}`}
+                                  onClick={() => setEditingKey(null)}>
+                                  <X className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <span className={`font-mono text-xs ${field.value ? 'font-bold' : 'italic text-muted-foreground'}`} data-testid={field.testId}>
+                                  {field.value ? fmtTime(field.value) : "Não informado"}
+                                </span>
+                                <Button size="icon" variant="ghost" className="h-6 w-6"
+                                  data-testid={`button-edit-${field.key}`}
+                                  onClick={() => {
+                                    setEditingKey(field.key);
+                                    if (field.value) {
+                                      setEditValue(fmtTime(field.value));
+                                    } else {
+                                      setEditValue('');
+                                    }
+                                  }}>
+                                  <Pencil className="w-3 h-3 text-muted-foreground" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
                 })()}
                 
                 {(() => {
