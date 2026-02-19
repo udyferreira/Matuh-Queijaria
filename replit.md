@@ -132,7 +132,8 @@ Preferred communication style: Simple, everyday language.
   - Etapa 7: cut_point_time
   - Etapa 14: press_start_time
   - Etapa 19: chamber_2_entry_date → calcula maturationEndDate (90 dias)
-- **Loop etapa 15**: Sai quando pH <= 5.2 OU após 2 horas (2 min em TEST_MODE)
+- **Loop etapa 15**: Sai quando pH <= 5.2 OU após 1h30 (2 min em TEST_MODE)
+- **Reminder re-scheduling no loop pH**: Após registro de pH que não atinge meta, cancela reminder atual e agenda novo para tempo restante
 - **UX amigável**: Mensagens claras informando qual input falta e como fornecê-lo
 
 ### Alexa Reminders API (`server/alexaReminders.ts`)

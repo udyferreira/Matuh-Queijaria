@@ -244,14 +244,14 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     const measurements = (batch.measurements as Record<string, any>) || {};
     const canExitByPh = recipeManager.checkLoopExitCondition(batch.currentStageId, measurements);
     
-    // Check 2-hour max duration for stage 15
+    // Check 1.5-hour max duration for stage 15
     let canExitByTime = false;
     if (batch.currentStageId === 15) {
       const history = (batch.history as any[]) || [];
       const stageStartEntry = history.find((h: any) => h.stageId === 15 && h.action === 'start');
       if (stageStartEntry) {
         const stageStartTime = new Date(stageStartEntry.timestamp);
-        const maxDurationMs = TEST_MODE ? 2 * 60 * 1000 : 2 * 60 * 60 * 1000; // 2 min in test, 2 hours in prod
+        const maxDurationMs = TEST_MODE ? 2 * 60 * 1000 : 1.5 * 60 * 60 * 1000; // 2 min in test, 1.5 hours in prod
         const elapsed = Date.now() - stageStartTime.getTime();
         canExitByTime = elapsed >= maxDurationMs;
       }
@@ -263,7 +263,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
         : 'pH ainda não medido';
       return {
         success: false,
-        error: `pH deve ser <= 5.2 para sair desta etapa (${phMessage}). Ou aguarde completar 2 horas.`,
+        error: `pH deve ser <= 5.2 para sair desta etapa (${phMessage}). Ou aguarde completar 1 hora e 30 minutos.`,
         code: "LOOP_CONDITION_NOT_MET"
       };
     }

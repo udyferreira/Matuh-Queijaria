@@ -8,7 +8,7 @@ import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import * as batchService from "./batchService";
 import * as speechRenderer from "./speechRenderer";
-import { getApiContext as extractApiContext, cancelAllBatchReminders, buildPermissionCard, type ApiContext, type ScheduledAlert } from "./alexaReminders";
+import { getApiContext as extractApiContext, cancelAllBatchReminders, scheduleReminderForWait, cancelReminder, buildPermissionCard, type ApiContext, type ScheduledAlert } from "./alexaReminders";
 import { z } from "zod";
 import { randomBytes } from "crypto";
 
@@ -470,7 +470,7 @@ export async function registerRoutes(
       response.ph_measurements = (updatedBatch?.measurements as any)?.ph_measurements || [];
       response.next_action = value <= 5.2 
         ? "pH atingiu 5.2. Pode avançar para próxima etapa."
-        : "Medir pH novamente ou aguardar até 2 horas";
+        : "Medir pH novamente ou aguardar até 1 hora e 30 minutos";
     }
 
     res.json(response);
@@ -1911,14 +1911,70 @@ export async function registerRoutes(
                 sessionAttributes
               ));
             } else {
-              // pH still above target - continue loop
+              // pH still above target - continue loop, schedule reminder for remaining time
               console.log(`[Stage 15] pH ${phValue} above target. Continue monitoring.`);
               
+              let reminderMsg = '';
+              let permCard: any = undefined;
+              if (apiCtx) {
+                try {
+                  const updatedBatchForReminder = await batchService.getBatch(activeBatch.id);
+                  const batchHistory = ((updatedBatchForReminder as any)?.history as any[]) || [];
+                  const stageStartEntry = batchHistory.find((h: any) => h.stageId === 15 && h.action === 'start');
+                  if (stageStartEntry) {
+                    const loopStage = recipeManager.getStage(15);
+                    const maxHours = loopStage?.max_loop_duration_hours || 1.5;
+                    const maxDurationMs = TEST_MODE ? 2 * 60 * 1000 : maxHours * 60 * 60 * 1000;
+                    const stageStartTime = new Date(stageStartEntry.timestamp).getTime();
+                    const elapsed = Date.now() - stageStartTime;
+                    const remainingMs = maxDurationMs - elapsed;
+                    
+                    if (remainingMs > 0) {
+                      const remainingSeconds = Math.ceil(remainingMs / 1000);
+                      const scheduledAlerts = ((updatedBatchForReminder as any)?.scheduledAlerts || {}) as Record<string, ScheduledAlert>;
+                      const alertKey = 'stage_15';
+                      if (scheduledAlerts[alertKey]) {
+                        await cancelReminder(apiCtx, scheduledAlerts[alertKey].reminderId);
+                        delete scheduledAlerts[alertKey];
+                        await storage.updateBatch(activeBatch.id, { scheduledAlerts });
+                      }
+                      const reminderResult = await scheduleReminderForWait(
+                        apiCtx,
+                        { id: activeBatch.id, recipeId: (updatedBatchForReminder as any).recipeId },
+                        15,
+                        remainingSeconds
+                      );
+                      if (reminderResult.reminderId) {
+                        scheduledAlerts[alertKey] = {
+                          reminderId: reminderResult.reminderId,
+                          stageId: 15,
+                          dueAtISO: new Date(Date.now() + remainingSeconds * 1000).toISOString(),
+                          kind: 'loop_timeout'
+                        };
+                        await storage.updateBatch(activeBatch.id, { scheduledAlerts });
+                        const remainingMin = Math.round(remainingSeconds / 60);
+                        reminderMsg = ` Vou te avisar em ${remainingMin} minuto${remainingMin !== 1 ? 's' : ''} se o tempo esgotar.`;
+                        console.log(`[Stage 15] Reminder rescheduled for ${remainingSeconds}s (${remainingMin}min remaining)`);
+                      } else if (reminderResult.permissionDenied) {
+                        console.log(`[Stage 15] Reminder permission denied after pH log`);
+                        reminderMsg = ' Para eu avisar quando o tempo acabar, habilite as permissões de lembrete no app da Alexa.';
+                        permCard = buildPermissionCard().card;
+                      }
+                    } else {
+                      console.log(`[Stage 15] Loop time already elapsed (${Math.round(-remainingMs/1000)}s past). No reminder scheduled.`);
+                    }
+                  }
+                } catch (err) {
+                  console.log(`[Stage 15] Error scheduling reminder after pH: ${err}`);
+                }
+              }
+              
               return res.status(200).json(buildAlexaResponse(
-                `pH ${phValue} registrado. Queijos virados ${turningCycles} vez${turningCycles > 1 ? 'es' : ''}. Continue monitorando ou informe novo pH.`,
+                `pH ${phValue} registrado. Queijos virados ${turningCycles} vez${turningCycles > 1 ? 'es' : ''}.${reminderMsg} Continue monitorando ou informe novo pH.`,
                 false,
                 "Informe o próximo pH ou diga 'qual é o status' para ver o progresso.",
-                sessionAttributes
+                sessionAttributes,
+                permCard
               ));
             }
           }

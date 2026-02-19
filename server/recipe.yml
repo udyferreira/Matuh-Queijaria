@@ -214,7 +214,7 @@ stages:
     type: "loop"
     loop_condition:
       until: "ph_value <= 5.2"
-    max_loop_duration_hours: 2
+    max_loop_duration_hours: 1.5
     loop_actions:
       - "virar_queijos"
       - "medir_ph"
@@ -227,7 +227,7 @@ stages:
     expected_intent: "RegisterPHAndPiecesIntent"
     input_prompt: "Informe o pH atual dos queijos dizendo: 'pH cinco vírgula dois'."
     llm_guidance: >
-      Se o pH atingir 5,2 antes de completar 2 horas,
+      Se o pH atingir 5,2 antes de completar 1 hora e 30 minutos,
       o loop pode ser encerrado imediatamente.
       Cada loop representa uma virada dos queijos.
 
