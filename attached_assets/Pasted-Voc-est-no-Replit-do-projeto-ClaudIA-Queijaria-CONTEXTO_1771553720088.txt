@@ -1,0 +1,161 @@
+Você está no Replit do projeto ClaudIA / Queijaria.
+
+CONTEXTO / OBJETIVO
+Alterar o fluxo de “iniciar novo lote” para ser multi-turn (guiado), coletando 3 variáveis em etapas:
+
+Novo fluxo desejado:
+1) Operador diz apenas o volume de leite (ex: “novo lote com 130 litros”).
+2) Alexa pergunta temperatura do leite.
+3) Operador responde a temperatura (ex: “32 graus”) -> agora temos o intent novo RegisterMilkTemperatureIntent.
+4) Alexa pergunta pH do leite.
+5) Operador responde o pH (ex: “pH 6,5”) -> agora temos o intent novo RegisterMilkPHIntent.
+6) Backend cria o lote com volume+temperatura+pH e continua fluxo normal (stage 3).
+
+IMPORTANTE
+- NÃO mudar a regra do backend: startBatch continua exigindo os 3 campos.
+- Implementação deve usar os novos intents criados na Alexa Console:
+  - RegisterMilkTemperatureIntent(temp_value: AMAZON.NUMBER)
+  - RegisterMilkPHIntent(ph_value: AMAZON.NUMBER)
+- Atualizar todas as falas/sugestões que hoje pedem as 3 infos na mesma frase.
+
+ARQUIVOS ALVO (do projeto)
+- routes.ts  (handler Alexa / roteamento intents e sessionAttributes)  <-- principal
+- speechRenderer.ts (textos de ajuda/sugestões/reprompts)
+- interpreter.ts (prompt/regras do interpretador: remover exigência de “3 infos juntas”)
+- recipe.yml (apenas referência: etapa 1 exige as 3 variáveis, não precisa mexer)
+
+=====================================================================
+PARTE 1 — STATE MACHINE no routes.ts (multi-turn guided start batch)
+=====================================================================
+
+1) Criar/usar sessionAttributes para rastrear coleta:
+- sessionAttributes.startBatchDraft: {
+    milk_volume_l?: number,
+    milk_temperature_c?: number,
+    milk_ph?: number
+  }
+- sessionAttributes.pending: "START_BATCH_TEMP" | "START_BATCH_PH" | undefined
+
+Regra: ao concluir e criar lote, limpar startBatchDraft e pending.
+
+2) Ajustar o fluxo de “start batch”
+Localize em routes.ts onde você trata “start_batch” (provavelmente vindo do interpretador via ProcessCommandIntent).
+Modificar para:
+
+CASE start_batch:
+- inicializar draft = sessionAttributes.startBatchDraft || {}
+- preencher draft.milk_volume_l se vier do interpretador (command.entities.volume / milk_volume_l etc.)
+- Se draft.milk_volume_l estiver vazio:
+    responder pedindo volume (somente volume), com exemplos.
+    (NÃO pedir temperatura e pH aqui.)
+- Se draft.milk_temperature_c estiver vazio:
+    set sessionAttributes.pending = "START_BATCH_TEMP"
+    perguntar: "Perfeito, {X} litros. Qual a temperatura do leite?"
+    reprompt: "Diga por exemplo: '32 graus'."
+- Se draft.milk_ph estiver vazio:
+    set pending = "START_BATCH_PH"
+    perguntar: "Temperatura registrada. Qual o pH do leite?"
+    reprompt: "Diga por exemplo: 'pH seis vírgula cinco'."
+- Se os 3 existirem:
+    chamar batchService.startBatch({ milkVolumeL, milkTemperatureC, milkPh, recipeId })
+    set activeBatchId
+    limpar pending + startBatchDraft
+    responder com a fala padrão de lote iniciado (como hoje)
+
+3) Tratar os NOVOS intents (RegisterMilkTemperatureIntent / RegisterMilkPHIntent)
+Adicionar no handler principal (routes.ts) cases explícitos:
+
+CASE RegisterMilkTemperatureIntent:
+- Se sessionAttributes.pending !== "START_BATCH_TEMP":
+    responder algo curto: "Certo. Para eu registrar a temperatura, primeiro me diga: 'novo lote com X litros'."
+    (não criar lote fora de contexto)
+- Caso pending == START_BATCH_TEMP:
+    pegar slot temp_value (number)
+    validar faixa plausível (ex: 0 < temp <= 60; escolha uma validação simples)
+    gravar em draft.milk_temperature_c
+    set pending = "START_BATCH_PH"
+    perguntar pH
+    reprompt pH
+
+CASE RegisterMilkPHIntent:
+- Se sessionAttributes.pending !== "START_BATCH_PH":
+    responder algo curto: "Certo. Para eu registrar o pH, primeiro me diga: 'novo lote com X litros'."
+- Caso pending == START_BATCH_PH:
+    pegar slot ph_value
+    normalizar (aceitar 6.5 etc.; AMAZON.NUMBER já entrega numérico, mas confirme)
+    validar faixa plausível (ex: 3.0 <= ph <= 8.0)
+    gravar em draft.milk_ph
+    AGORA chamar batchService.startBatch com draft completo
+    set activeBatchId
+    limpar pending + startBatchDraft
+    responder com sucesso (como hoje)
+
+Observação importante:
+- Alguns dispositivos/Alexa podem retornar temp_value como inteiro (32) e pH como 6.5 (float). Trate ambos.
+- Se o slot vier vazio, pedir de novo com reprompt específico.
+
+4) Fallback / ProcessCommandIntent durante pending
+Opcional (mas recomendado): enquanto pending START_BATCH_TEMP/PH, se cair em ProcessCommandIntent ou FallbackIntent (porque NLU falhou),
+tentar extrair número do texto bruto e aceitar como temperatura/pH.
+Mas como você já criou intents novos, mantenha isso simples:
+- Só faça fallback parsing se slot do intent novo vier vazio (ou se o intent novo não for acionado).
+
+=====================================================================
+PARTE 2 — Atualizar falas e sugestões (speechRenderer.ts)
+=====================================================================
+
+5) Encontrar todos os locais onde instruía falar 3 infos juntas e substituir.
+
+Buscar por textos tipo:
+- "iniciar novo lote com ... temperatura ... pH ..."
+- "diga volume, temperatura e pH"
+- "para iniciar, informe volume, temperatura e pH"
+
+Substituir por:
+- “Para iniciar um novo lote, diga apenas a quantidade de leite em litros. Exemplo: ‘novo lote com 130 litros’. Eu vou perguntar a temperatura e depois o pH.”
+
+6) Atualizar reprompt/ajuda quando não existe lote ativo (status sem activeBatchId):
+- Antigo: sugere 3 infos.
+- Novo: sugere só volume e menciona que Alexa perguntará o resto.
+
+=====================================================================
+PARTE 3 — Atualizar prompt/regras do interpretador (interpreter.ts)
+=====================================================================
+
+7) Atualizar o prompt do interpretador/LLM:
+- Remover exigência “start_batch só quando tiver volume+temp+pH”.
+- Permitir que “novo lote com 130 litros” gere start_batch mesmo incompleto.
+- NÃO obrigar o interpretador a pedir temperatura/pH; quem conduz isso é o state machine no routes.ts.
+
+Exemplos no prompt:
+- “novo lote com 130 litros” -> {intent: "start_batch", entities: { milk_volume_l: 130 } }
+- “32 graus” e “pH 6,5” NÃO precisam ser interpretados pelo LLM no fluxo guiado, pois serão capturados pelos intents novos.
+
+=====================================================================
+TESTES (Critérios de aceite)
+=====================================================================
+
+8) Fluxo principal:
+- Dizer: "novo lote com 130 litros"
+  -> Alexa pergunta temperatura e set pending START_BATCH_TEMP
+- Dizer: "32 graus"
+  -> dispara RegisterMilkTemperatureIntent
+  -> Alexa pergunta pH e set pending START_BATCH_PH
+- Dizer: "pH 6,5"
+  -> dispara RegisterMilkPHIntent
+  -> lote criado, activeBatchId setado, pending e draft limpos
+
+9) Fluxo “tudo junto” continua funcionando:
+- Dizer: “novo lote com 130 litros temperatura 32 graus pH 6,5”
+  -> cria direto (sem perguntas)
+
+10) Proteções:
+- Se o operador falar “32 graus” fora do pending:
+  -> Alexa orienta iniciar lote com volume primeiro.
+- Se falar pH fora do pending:
+  -> idem.
+
+ENTREGA
+- Commit com mudanças em routes.ts + speechRenderer.ts + interpreter.ts.
+- Nenhuma mudança obrigatória em batchService.ts além de manter chamadas existentes.
+- Validar logs no Replit mostrando pending state e slots recebidos nos novos intents.
