@@ -1452,8 +1452,10 @@ export async function registerRoutes(
             ? "RegisterMilkTemperatureIntent" 
             : "RegisterMilkPHIntent";
           const systemIntents = ['AMAZON.HelpIntent', 'AMAZON.StopIntent', 'AMAZON.CancelIntent', 'AMAZON.FallbackIntent'];
+          // RegisterPHAndPiecesIntent also accepted during START_BATCH_PH (Alexa often routes pH utterances there)
+          const phAlternateIntents = sessionAttributes.pending === "START_BATCH_PH" ? ['RegisterPHAndPiecesIntent'] : [];
           
-          if (intentName !== expectedIntent && !systemIntents.includes(intentName || '')) {
+          if (intentName !== expectedIntent && !systemIntents.includes(intentName || '') && !phAlternateIntents.includes(intentName || '')) {
             const promptMsg = sessionAttributes.pending === "START_BATCH_TEMP"
               ? "Estamos iniciando um novo lote. Diga a temperatura do leite. Por exemplo: '32 graus'."
               : "Estamos iniciando um novo lote. Diga o pH do leite. Por exemplo: 'pH seis vírgula cinco'.";
@@ -1737,6 +1739,62 @@ export async function registerRoutes(
         // CRITICAL: Decision based on stageId, NOT intent name alone
         if (intentName === "RegisterPHAndPiecesIntent") {
           console.log("RegisterPHAndPiecesIntent received:", JSON.stringify(slots, null, 2));
+          
+          // === GUIDED START BATCH REDIRECT ===
+          // During START_BATCH_PH, Alexa often routes pH utterances here instead of RegisterMilkPHIntent
+          if (sessionAttributes?.pending === "START_BATCH_PH") {
+            const phSlotForBatch = slots.ph_value?.value || slots.phValue?.value;
+            console.log(`[RegisterPHAndPiecesIntent→START_BATCH_PH] Redirecting pH=${phSlotForBatch} to batch creation`);
+            
+            const draft = sessionAttributes.startBatchDraft || {};
+            
+            if (!phSlotForBatch || phSlotForBatch === '?') {
+              return res.status(200).json(buildAlexaResponse(
+                "Não entendi o pH. Diga por exemplo: 'pH seis vírgula cinco'.",
+                false,
+                "Qual o pH do leite?",
+                sessionAttributes
+              ));
+            }
+            
+            const normalizedPh = batchService.normalizePHValue(phSlotForBatch);
+            if (normalizedPh === null) {
+              return res.status(200).json(buildAlexaResponse(
+                "pH inválido. Diga um valor entre 3,5 e 8,0. Por exemplo: 'pH seis vírgula cinco'.",
+                false,
+                "Qual o pH do leite?",
+                sessionAttributes
+              ));
+            }
+            
+            draft.milk_ph = normalizedPh;
+            
+            console.log(`[RegisterPHAndPiecesIntent→START_BATCH_PH] pH=${normalizedPh}. Creating batch: volume=${draft.milk_volume_l}, temp=${draft.milk_temperature_c}, pH=${draft.milk_ph}`);
+            
+            const result = await batchService.startBatch({
+              milkVolumeL: draft.milk_volume_l,
+              milkTemperatureC: draft.milk_temperature_c,
+              milkPh: draft.milk_ph,
+              recipeId: "QUEIJO_NETE"
+            });
+            
+            if (!result.success) {
+              const payload = speechRenderer.buildErrorPayload(result.error || "Erro ao iniciar lote.");
+              const speech = await speechRenderer.renderSpeech(payload);
+              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
+            }
+            
+            if (userId && result.batch?.id) {
+              await storage.setLastActiveBatch(userId, result.batch.id);
+              console.log(`[RegisterPHAndPiecesIntent→START_BATCH_PH] Persisted activeBatch=${result.batch.id} for user`);
+            }
+            
+            const newAttrs = { ...sessionAttributes, startBatchDraft: undefined, pending: undefined, activeBatchId: result.batch?.id };
+            const currentStage = recipeManager.getStage(result.batch.currentStageId || 3);
+            const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage);
+            const speech = await speechRenderer.renderSpeech(payload);
+            return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", newAttrs));
+          }
           
           // Extract pH value from slot with normalization (54 -> 5.4)
           const phSlot = slots.ph_value?.value || slots.phValue?.value;
