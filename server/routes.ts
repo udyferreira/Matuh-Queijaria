@@ -558,6 +558,21 @@ export async function registerRoutes(
     res.json(updated);
   });
 
+  // Temporary endpoint to import a batch (for dev→prod migration)
+  app.post("/api/admin/import-batch", async (req, res) => {
+    try {
+      const data = req.body;
+      if (!data || !data.recipe_id) {
+        return res.status(400).json({ message: "Missing batch data" });
+      }
+      const result = await storage.createBatchRaw(data);
+      return res.json({ success: true, id: result.id });
+    } catch (e: any) {
+      console.error("[import-batch] Error:", e);
+      return res.status(500).json({ message: e.message });
+    }
+  });
+
   app.post(api.batches.advance.path, async (req, res) => {
     const batchId = Number(req.params.id);
     

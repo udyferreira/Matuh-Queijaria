@@ -66,6 +66,33 @@ export class DatabaseStorage implements IStorage {
     return newBatch;
   }
 
+  async createBatchRaw(data: any): Promise<ProductionBatch> {
+    const [newBatch] = await db.insert(productionBatches).values({
+      recipeId: data.recipe_id,
+      currentStageId: data.current_stage_id,
+      milkVolumeL: String(data.milk_volume_l),
+      status: data.status,
+      calculatedInputs: data.calculated_inputs,
+      measurements: data.measurements,
+      activeTimers: data.active_timers,
+      history: data.history,
+      startedAt: data.started_at ? new Date(data.started_at) : new Date(),
+      updatedAt: data.updated_at ? new Date(data.updated_at) : new Date(),
+      activeReminders: data.active_reminders,
+      pausedAt: data.paused_at ? new Date(data.paused_at) : null,
+      pauseReason: data.pause_reason,
+      cancelledAt: data.cancelled_at ? new Date(data.cancelled_at) : null,
+      cancelReason: data.cancel_reason,
+      completedAt: data.completed_at ? new Date(data.completed_at) : null,
+      batchStatus: data.batch_status,
+      turningCyclesCount: data.turning_cycles_count ?? 0,
+      chamber2EntryDate: data.chamber_2_entry_date ? new Date(data.chamber_2_entry_date) : null,
+      maturationEndDate: data.maturation_end_date ? new Date(data.maturation_end_date) : null,
+      scheduledAlerts: data.scheduled_alerts,
+    }).returning();
+    return newBatch;
+  }
+
   async updateBatch(id: number, updates: Partial<ProductionBatch>): Promise<ProductionBatch> {
     const [updated] = await db.update(productionBatches)
       .set({ ...updates, updatedAt: new Date() })
