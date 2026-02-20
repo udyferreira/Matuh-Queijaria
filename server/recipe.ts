@@ -346,8 +346,8 @@ export class RecipeManager {
         case 'milk_volume_l':
         case 'milk_temperature_c':
         case 'milk_ph':
-          if (!messages.some(m => m.includes('iniciar novo lote'))) {
-            messages.push("Para iniciar um novo lote, diga: 'iniciar novo lote com 130 litros, temperatura 32 graus, pH seis vírgula cinco'");
+          if (!messages.some(m => m.includes('novo lote'))) {
+            messages.push("Para iniciar um novo lote, diga apenas a quantidade de leite. Por exemplo: 'novo lote com 130 litros'. Eu perguntarei a temperatura e o pH depois");
           }
           break;
         default:

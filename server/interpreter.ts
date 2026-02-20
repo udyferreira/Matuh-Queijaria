@@ -149,13 +149,15 @@ REPEAT_DOSES (repetir todas as doses calculadas):
 OUTROS:
 "avançar" → {"intent":"advance","confidence":0.95,"entities":{}}
 
-START_BATCH (início de lote - SEMPRE exige volume, temperatura, pH na mesma fala):
-NOTA: O operador DEVE informar volume + temperatura + pH na mesma frase. Extraia TODAS as entidades mencionadas.
+START_BATCH (início de lote):
+NOTA: O operador pode informar APENAS o volume. Temperatura e pH serão coletados pelo backend em etapas separadas.
+Se o operador informar as 3 variáveis juntas, extraia TODAS. Mas NÃO exija que sejam informadas juntas.
 NOTA: A temperatura pode ser decimal (ex: 6.9, 7.2). Se o ASR enviar "69", o backend normalizará para 6.9.
+"novo lote com 130 litros" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":130}}
+"lote com 130 litros" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":130}}
+"130 litros" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":130}}
 "lote com 130 litros temperatura 32 graus pH 6 ponto 5" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":130,"milk_temperature":32,"ph_value":6.5}}
 "novo lote com 80 litros temperatura 35 graus pH 6.5" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":80,"milk_temperature":35,"ph_value":6.5}}
-"lote com 101 litros temperatura 6 vírgula 9 graus pH 6 ponto 88" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":101,"milk_temperature":6.9,"ph_value":6.88}}
-"lote com 130 litros" → {"intent":"start_batch","confidence":0.95,"entities":{"volume":130}} (incompleto - backend pedirá os dados faltantes)
 
 Retorne APENAS o JSON, sem markdown, explicações ou texto adicional.`;
 }

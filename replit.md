@@ -76,6 +76,19 @@ Preferred communication style: Simple, everyday language.
 - Always returns HTTP 200 (errors communicated via speech)
 - Handles LaunchRequest, IntentRequest, SessionEndedRequest
 
+**Guided Multi-Turn Start Batch Flow**:
+- Início de lote via Alexa agora é fluxo guiado em 3 etapas separadas (não 3 dados de uma vez)
+- Etapa 1: Operador informa apenas volume → "novo lote com 130 litros"
+  - sessionAttributes.startBatchDraft = { milk_volume_l }, pending = "START_BATCH_TEMP"
+- Etapa 2: RegisterMilkTemperatureIntent captura temperatura → "32 graus"
+  - draft atualizado com milk_temperature_c, pending = "START_BATCH_PH"
+- Etapa 3: RegisterMilkPHIntent captura pH → "pH seis vírgula cinco"
+  - Lote criado com os 3 valores, draft e pending limpos
+- Backward compatible: se operador informar 3 valores de uma vez, funciona normalmente
+- FallbackIntent re-prompta com mensagem contextual durante pending states
+- Intents fora de contexto (sem pending correto) retornam orientação ao operador
+- Novos intents no interaction model: RegisterMilkTemperatureIntent (slot: temp_value AMAZON.NUMBER), RegisterMilkPHIntent (slot: ph_value AMAZON.NUMBER)
+
 **Speech Renderer Architecture** (`server/speechRenderer.ts`):
 - Backend builds structured `SpeechRenderPayload` JSON with all data
 - LLM (gpt-4o-mini) ONLY renders JSON to natural speech - never decides, calculates, or invents

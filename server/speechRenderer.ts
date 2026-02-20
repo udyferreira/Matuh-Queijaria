@@ -460,7 +460,7 @@ export function buildAdvancePayload(
       context: "advance",
       stage: { id: 21, name: "Conclusão" },
       notes: "Lote finalizado com sucesso! Todas as etapas foram concluídas.",
-      allowedUtterances: ["qual é o status", "iniciar novo lote"]
+      allowedUtterances: ["qual é o status", "novo lote com 130 litros"]
     };
   }
   
@@ -526,7 +526,7 @@ export function buildHelpPayload(
     utterances = [...contextual, "qual é o status", "ajuda"];
     utterances = Array.from(new Set(utterances));
   } else {
-    utterances = ["qual é o status", "iniciar novo lote com 130 litros, temperatura 32 graus, pH seis vírgula cinco"];
+    utterances = ["qual é o status", "novo lote com 130 litros"];
   }
   
   return {
@@ -615,7 +615,7 @@ export function buildLaunchPayload(): SpeechRenderPayload {
   return {
     context: "help",
     notes: "Bem-vindo à Matuh Queijaria!",
-    allowedUtterances: ["qual é o status", "iniciar novo lote com 130 litros, temperatura 32 graus, pH seis vírgula cinco"]
+    allowedUtterances: ["qual é o status", "novo lote com 130 litros"]
   };
 }
 

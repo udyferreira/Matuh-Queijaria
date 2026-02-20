@@ -844,22 +844,28 @@ export async function registerRoutes(
     
     switch (command.intent) {
       case "start_batch": {
-        // FIXED: Now requires volume + temperature + pH (same as web)
         const milkVolume = command.entities.volume;
         const milkTemperature = command.entities.milk_temperature;
         const milkPh = command.entities.ph_value;
         
-        // Check for missing fields and ask for them
-        const missing: string[] = [];
-        if (milkVolume === undefined || milkVolume === null) missing.push("volume de leite");
-        if (milkTemperature === undefined || milkTemperature === null) missing.push("temperatura do leite");
-        if (milkPh === undefined || milkPh === null) missing.push("pH do leite");
-        
-        if (missing.length > 0) {
+        if (milkVolume === undefined || milkVolume === null) {
           return {
-            speech: `Para iniciar o lote, faltam: ${missing.join(", ")}. Diga: 'iniciar novo lote com 130 litros, temperatura 32 graus, pH seis vírgula cinco'.`,
+            speech: "Para iniciar um novo lote, diga a quantidade de leite em litros. Por exemplo: 'novo lote com 130 litros'.",
             shouldEndSession: false
           };
+        }
+        
+        if (milkTemperature !== undefined && milkTemperature !== null &&
+            milkPh !== undefined && milkPh !== null) {
+          // All 3 provided in one utterance - proceed directly
+        } else {
+          // Multi-turn: volume provided, need temp and/or pH
+          // Return session attributes to trigger guided flow
+          return {
+            speech: `_GUIDED_START_BATCH_`,
+            shouldEndSession: false,
+            guidedDraft: { milk_volume_l: milkVolume, milk_temperature_c: milkTemperature ?? undefined, milk_ph: milkPh ?? undefined }
+          } as any;
         }
         
         const result = await batchService.startBatch({
@@ -891,7 +897,7 @@ export async function registerRoutes(
             "Não há lote ativo no momento.",
             undefined
           );
-          payload.allowedUtterances = ["iniciar novo lote com 130 litros, temperatura 32 graus, pH seis vírgula cinco"];
+          payload.allowedUtterances = ["novo lote com 130 litros"];
           const speech = await speechRenderer.renderSpeech(payload);
           return { speech, shouldEndSession: false };
         }
@@ -1201,8 +1207,8 @@ export async function registerRoutes(
 
     if (batches.length === 0) {
       return {
-        speechText: "Olá, não temos lotes em andamento. Vamos iniciar um novo lote? Para iniciar, diga: 'iniciar lote com cento e trinta litros temperatura trinta e dois graus pH seis vírgula cinco'.",
-        repromptText: "Você quer iniciar um novo lote?",
+        speechText: "Olá, não temos lotes em andamento. Para iniciar um novo lote, diga apenas a quantidade de leite. Por exemplo: 'novo lote com 130 litros'. Eu vou perguntar a temperatura e o pH depois.",
+        repromptText: "Diga 'novo lote com 130 litros' para começar.",
         newSessionAttrs: { ...sessionAttrs, activeBatchId: undefined, state: undefined, batchChoices: undefined },
       };
     }
@@ -1395,6 +1401,25 @@ export async function registerRoutes(
         }
         
         if (intentName === "AMAZON.FallbackIntent") {
+          // Handle guided start batch pending states
+          if (sessionAttributes?.pending === "START_BATCH_TEMP") {
+            console.log(`[FallbackIntent] In START_BATCH_TEMP state, re-prompting for temperature`);
+            return res.status(200).json(buildAlexaResponse(
+              "Não entendi. Diga a temperatura do leite em graus. Por exemplo: '32 graus'.",
+              false,
+              "Qual a temperatura do leite?",
+              sessionAttributes
+            ));
+          }
+          if (sessionAttributes?.pending === "START_BATCH_PH") {
+            console.log(`[FallbackIntent] In START_BATCH_PH state, re-prompting for pH`);
+            return res.status(200).json(buildAlexaResponse(
+              "Não entendi. Diga o pH do leite. Por exemplo: 'pH seis vírgula cinco'.",
+              false,
+              "Qual o pH do leite?",
+              sessionAttributes
+            ));
+          }
           if (sessionAttributes?.state === "CONFIRM_CONTINUE_OR_SWITCH") {
             console.log(`[FallbackIntent] In CONFIRM_CONTINUE_OR_SWITCH state, prompting user`);
             return res.status(200).json(buildAlexaResponse(
@@ -2198,6 +2223,130 @@ export async function registerRoutes(
           ));
         }
         
+        // --- RegisterMilkTemperatureIntent: Guided start batch - temperature step ---
+        if (intentName === "RegisterMilkTemperatureIntent") {
+          const tempSlot = slots.temp_value?.value || slots.tempValue?.value;
+          console.log(`[RegisterMilkTemperatureIntent] pending=${sessionAttributes?.pending} tempSlot=${tempSlot}`);
+          
+          if (sessionAttributes?.pending !== "START_BATCH_TEMP") {
+            return res.status(200).json(buildAlexaResponse(
+              "Para registrar a temperatura, primeiro inicie um novo lote dizendo a quantidade de leite. Por exemplo: 'novo lote com 130 litros'.",
+              false,
+              "Diga 'novo lote com 130 litros' para começar.",
+              sessionAttributes
+            ));
+          }
+          
+          const draft = sessionAttributes.startBatchDraft || {};
+          
+          if (!tempSlot || tempSlot === '?') {
+            return res.status(200).json(buildAlexaResponse(
+              "Não entendi a temperatura. Diga por exemplo: '32 graus'.",
+              false,
+              "Qual a temperatura do leite?",
+              sessionAttributes
+            ));
+          }
+          
+          let tempValue = parseFloat(String(tempSlot).replace(',', '.'));
+          if (isNaN(tempValue)) {
+            return res.status(200).json(buildAlexaResponse(
+              "Temperatura inválida. Diga por exemplo: '32 graus'.",
+              false,
+              "Qual a temperatura do leite?",
+              sessionAttributes
+            ));
+          }
+          
+          if (tempValue <= 0 || tempValue > 60) {
+            return res.status(200).json(buildAlexaResponse(
+              `Temperatura ${tempValue} graus não parece válida. Diga um valor entre 1 e 60 graus.`,
+              false,
+              "Qual a temperatura do leite?",
+              sessionAttributes
+            ));
+          }
+          
+          draft.milk_temperature_c = tempValue;
+          const newAttrs = { ...sessionAttributes, startBatchDraft: draft, pending: "START_BATCH_PH" };
+          console.log(`[RegisterMilkTemperatureIntent] Temperature=${tempValue} saved. Asking for pH.`);
+          
+          return res.status(200).json(buildAlexaResponse(
+            `Temperatura ${tempValue} graus registrada. Qual o pH do leite?`,
+            false,
+            "Diga o pH, por exemplo: 'pH seis vírgula cinco'.",
+            newAttrs
+          ));
+        }
+        
+        // --- RegisterMilkPHIntent: Guided start batch - pH step (creates the batch) ---
+        if (intentName === "RegisterMilkPHIntent") {
+          const phSlot = slots.ph_value?.value || slots.phValue?.value;
+          console.log(`[RegisterMilkPHIntent] pending=${sessionAttributes?.pending} phSlot=${phSlot}`);
+          
+          if (sessionAttributes?.pending !== "START_BATCH_PH") {
+            return res.status(200).json(buildAlexaResponse(
+              "Para registrar o pH, primeiro inicie um novo lote dizendo a quantidade de leite. Por exemplo: 'novo lote com 130 litros'.",
+              false,
+              "Diga 'novo lote com 130 litros' para começar.",
+              sessionAttributes
+            ));
+          }
+          
+          const draft = sessionAttributes.startBatchDraft || {};
+          
+          if (!phSlot || phSlot === '?') {
+            return res.status(200).json(buildAlexaResponse(
+              "Não entendi o pH. Diga por exemplo: 'pH seis vírgula cinco'.",
+              false,
+              "Qual o pH do leite?",
+              sessionAttributes
+            ));
+          }
+          
+          const normalizedPh = batchService.normalizePHValue(phSlot);
+          if (normalizedPh === null) {
+            return res.status(200).json(buildAlexaResponse(
+              "pH inválido. Diga um valor entre 3,5 e 8,0. Por exemplo: 'pH seis vírgula cinco'.",
+              false,
+              "Qual o pH do leite?",
+              sessionAttributes
+            ));
+          }
+          
+          draft.milk_ph = normalizedPh;
+          
+          // All 3 values collected - create the batch
+          console.log(`[RegisterMilkPHIntent] pH=${normalizedPh}. Creating batch: volume=${draft.milk_volume_l}, temp=${draft.milk_temperature_c}, pH=${draft.milk_ph}`);
+          
+          const result = await batchService.startBatch({
+            milkVolumeL: draft.milk_volume_l,
+            milkTemperatureC: draft.milk_temperature_c,
+            milkPh: draft.milk_ph,
+            recipeId: "QUEIJO_NETE"
+          });
+          
+          if (!result.success) {
+            const payload = speechRenderer.buildErrorPayload(result.error || "Erro ao iniciar lote.");
+            const speech = await speechRenderer.renderSpeech(payload);
+            return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
+          }
+          
+          // Persist active batch for user
+          if (userId && result.batch?.id) {
+            await storage.setLastActiveBatch(userId, result.batch.id);
+            console.log(`[RegisterMilkPHIntent] Persisted activeBatch=${result.batch.id} for user`);
+          }
+          
+          // Clear guided flow state
+          const newAttrs = { ...sessionAttributes, startBatchDraft: undefined, pending: undefined, activeBatchId: result.batch?.id };
+          
+          const currentStage = recipeManager.getStage(result.batch.currentStageId || 3);
+          const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage);
+          const speech = await speechRenderer.renderSpeech(payload);
+          return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", newAttrs));
+        }
+        
         // --- ProcessCommandIntent: Main voice command processing ---
         // This is the ONLY custom intent - all voice commands come through here
         if (intentName === "ProcessCommandIntent") {
@@ -2274,6 +2423,33 @@ export async function registerRoutes(
           console.log("LLM interpreted command:", JSON.stringify(command));
           // Pass pendingInputReminder from GATING to status/instructions handlers
           const result = await executeIntent(command, pendingInputReminder, activeBatchResolved || undefined, apiCtx, userId) as any;
+          
+          // Handle guided start_batch multi-turn flow
+          if (result.speech === '_GUIDED_START_BATCH_' && result.guidedDraft) {
+            const draft = result.guidedDraft;
+            const newAttrs = { ...sessionAttributes, startBatchDraft: draft };
+            
+            if (draft.milk_temperature_c === undefined) {
+              newAttrs.pending = "START_BATCH_TEMP";
+              console.log(`[GUIDED_START] Volume=${draft.milk_volume_l}L captured. Asking for temperature.`);
+              return res.status(200).json(buildAlexaResponse(
+                `Perfeito, ${draft.milk_volume_l} litros. Qual a temperatura do leite?`,
+                false,
+                "Diga a temperatura, por exemplo: '32 graus'.",
+                newAttrs
+              ));
+            }
+            if (draft.milk_ph === undefined) {
+              newAttrs.pending = "START_BATCH_PH";
+              console.log(`[GUIDED_START] Volume=${draft.milk_volume_l}L, Temp=${draft.milk_temperature_c}. Asking for pH.`);
+              return res.status(200).json(buildAlexaResponse(
+                `Temperatura ${draft.milk_temperature_c} graus registrada. Qual o pH do leite?`,
+                false,
+                "Diga o pH, por exemplo: 'pH seis vírgula cinco'.",
+                newAttrs
+              ));
+            }
+          }
           
           return res.status(200).json(buildAlexaResponse(
             result.speech,
