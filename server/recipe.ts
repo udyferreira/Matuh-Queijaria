@@ -189,7 +189,7 @@ export class RecipeManager {
     const stage = this.getStage(stageId);
     if (!stage?.loop_condition) return true;
     
-    // Parse the condition (e.g., "ph_value <= 5.2")
+    // Parse the condition (e.g., "ph_value < 5.3")
     const condition = stage.loop_condition.until;
     if (condition.includes('ph_value')) {
       const match = condition.match(/ph_value\s*(<=|<|>=|>|==)\s*([\d.]+)/);

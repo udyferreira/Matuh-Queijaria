@@ -163,7 +163,7 @@ Preferred communication style: Simple, everyday language.
   - Etapa 7: cut_point_time
   - Etapa 14: press_start_time
   - Etapa 19: chamber_2_entry_date → calcula maturationEndDate (90 dias)
-- **Loop etapa 15**: Sai SOMENTE quando pH <= 5.2 (sem saída automática por tempo)
+- **Loop etapa 15**: Sai SOMENTE quando pH < 5.3 (sem saída automática por tempo)
 - **Reminder re-scheduling no loop pH**: Após registro de pH que não atinge meta, cancela reminder atual e agenda novo para 1h30 (tempo completo de nova espera)
 - **UX amigável**: Mensagens claras informando qual input falta e como fornecê-lo
 

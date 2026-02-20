@@ -469,9 +469,9 @@ export async function registerRoutes(
     if (batch.currentStageId === 15) {
       response.turning_cycles_count = (updatedBatch as any).turningCyclesCount || 0;
       response.ph_measurements = (updatedBatch?.measurements as any)?.ph_measurements || [];
-      response.next_action = value <= 5.2 
-        ? "pH atingiu 5.2. Pode avançar para próxima etapa."
-        : "Medir pH novamente ou aguardar até 1 hora e 30 minutos";
+      response.next_action = value < 5.3 
+        ? "pH abaixo de 5.3 — ideal atingido! Pode avançar para próxima etapa."
+        : "pH ainda acima de 5.3. Continue monitorando.";
     }
 
     res.json(response);

@@ -80,7 +80,7 @@ inputs:
 process:
   target_temperature_c: 32
   temperature_tolerance_c: 1
-  target_final_ph: 5.2
+  target_final_ph: 5.3
   maturation_target_days: 90
 
 stages:
@@ -213,7 +213,7 @@ stages:
     name: "Virar queijos e medir pH (loop controlado)"
     type: "loop"
     loop_condition:
-      until: "ph_value <= 5.2"
+      until: "ph_value < 5.3"
     max_loop_duration_hours: 1.5
     loop_actions:
       - "virar_queijos"

@@ -108,7 +108,7 @@ export default function AlexaIntegration() {
                 <h4 className="text-sm font-medium text-primary mb-3">Registrar Medições</h4>
                 <div className="grid md:grid-cols-2 gap-3">
                   {[
-                    { cmd: 'Alexa, diga ao Nete que o pH é 5.2', desc: 'Registra valor de pH' },
+                    { cmd: 'Alexa, diga ao Nete que o pH é 5.1', desc: 'Registra valor de pH' },
                     { cmd: 'Alexa, diga ao Nete que floculou às 10:30', desc: 'Registra horário de floculação' },
                     { cmd: 'Alexa, diga ao Nete que cortou às 11:15', desc: 'Registra horário de corte' },
                     { cmd: 'Alexa, diga ao Nete que prensou às 14:00', desc: 'Registra início da prensa' },

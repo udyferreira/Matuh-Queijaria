@@ -250,7 +250,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
         : 'pH ainda não medido';
       return {
         success: false,
-        error: `pH deve ser <= 5.2 para sair desta etapa (${phMessage}). Continue monitorando o pH.`,
+        error: `pH deve ser menor que 5.3 para sair desta etapa (${phMessage}). Continue monitorando o pH.`,
         code: "LOOP_CONDITION_NOT_MET"
       };
     }
@@ -553,7 +553,7 @@ export async function getBatchStatus(batchId: number) {
   };
 }
 
-const TARGET_PH = 5.2;
+const TARGET_PH = 5.3;
 
 export interface LogPhResult {
   success: boolean;
@@ -592,7 +592,7 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
         if (elapsed < DEDUP_WINDOW_MS) {
           console.log(`[logPh] Dedup: pH ${phValue} already recorded ${elapsed}ms ago at stage ${stageId}. Skipping.`);
           const currentCount = (batch as any).turningCyclesCount || 0;
-          const phReachedTarget = phValue <= TARGET_PH;
+          const phReachedTarget = phValue < TARGET_PH;
           return { 
             success: true, 
             phValue, 
@@ -640,7 +640,7 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
     updates.turningCyclesCount = turningCyclesCount;
     
     // Check if pH reached target (loop exit condition)
-    if (phValue <= TARGET_PH) {
+    if (phValue < TARGET_PH) {
       shouldExitLoop = true;
       phReachedTarget = true;
     }

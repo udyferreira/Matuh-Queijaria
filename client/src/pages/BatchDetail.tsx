@@ -155,7 +155,7 @@ export default function BatchDetail() {
         onSuccess: () => {
           toast({ title: "Registrado", description: "Medição de pH registrada." });
           setInputVal("");
-          // Don't auto-advance - user clicks button when pH <= 5.2
+          // Don't auto-advance - user clicks button when pH < 5.3
         },
         onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
       });
@@ -533,7 +533,7 @@ export default function BatchDetail() {
                            </div>
                            {batch.currentStageId === 15 && (
                              <div className="text-sm text-muted-foreground mt-2">
-                               Registre o pH a cada 1 hora e 30 minutos. Quando o pH atingir 5.2 ou menos, clique em "Concluir Etapa" abaixo.
+                               Registre o pH a cada 1 hora e 30 minutos. Quando o pH ficar abaixo de 5.3, clique em "Concluir Etapa" abaixo.
                              </div>
                            )}
                          </>
