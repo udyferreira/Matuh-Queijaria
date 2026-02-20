@@ -1420,6 +1420,24 @@ export async function registerRoutes(
               sessionAttributes
             ));
           }
+          if (sessionAttributes?.pending === "STAGE13_PH") {
+            console.log(`[FallbackIntent] In STAGE13_PH state, re-prompting for pH`);
+            return res.status(200).json(buildAlexaResponse(
+              "Não entendi. Diga o pH inicial. Por exemplo: 'pH cinco vírgula dois'.",
+              false,
+              "Qual o pH inicial?",
+              sessionAttributes
+            ));
+          }
+          if (sessionAttributes?.pending === "STAGE13_PIECES") {
+            console.log(`[FallbackIntent] In STAGE13_PIECES state, re-prompting for pieces`);
+            return res.status(200).json(buildAlexaResponse(
+              "Não entendi. Quantas peças foram enformadas? Diga, por exemplo: 'doze peças'.",
+              false,
+              "Quantas peças?",
+              sessionAttributes
+            ));
+          }
           if (sessionAttributes?.state === "CONFIRM_CONTINUE_OR_SWITCH") {
             console.log(`[FallbackIntent] In CONFIRM_CONTINUE_OR_SWITCH state, prompting user`);
             return res.status(200).json(buildAlexaResponse(
@@ -1445,25 +1463,42 @@ export async function registerRoutes(
           return res.status(200).json(buildAlexaResponse(speech, false, "Diga 'ajuda' para ver os comandos.", sessionAttributes));
         }
         
-        // === GUIDED START BATCH PENDING STATE GUARD ===
-        // During multi-turn start batch flow, block all intents except the expected one
-        if (sessionAttributes?.pending === "START_BATCH_TEMP" || sessionAttributes?.pending === "START_BATCH_PH") {
-          const expectedIntent = sessionAttributes.pending === "START_BATCH_TEMP" 
-            ? "RegisterMilkTemperatureIntent" 
-            : "RegisterMilkPHIntent";
+        // === GUIDED PENDING STATE GUARD ===
+        // During multi-turn flows, block all intents except the expected one
+        const pendingState = sessionAttributes?.pending;
+        if (pendingState === "START_BATCH_TEMP" || pendingState === "START_BATCH_PH" || pendingState === "STAGE13_PH" || pendingState === "STAGE13_PIECES") {
+          const pendingConfig: Record<string, { expected: string; alternates: string[]; prompt: string; reprompt: string }> = {
+            "START_BATCH_TEMP": {
+              expected: "RegisterMilkTemperatureIntent",
+              alternates: [],
+              prompt: "Estamos iniciando um novo lote. Diga a temperatura do leite. Por exemplo: '32 graus'.",
+              reprompt: "Qual a temperatura do leite?"
+            },
+            "START_BATCH_PH": {
+              expected: "RegisterMilkPHIntent",
+              alternates: ["RegisterPHAndPiecesIntent"],
+              prompt: "Estamos iniciando um novo lote. Diga o pH do leite. Por exemplo: 'pH seis vírgula cinco'.",
+              reprompt: "Qual o pH do leite?"
+            },
+            "STAGE13_PH": {
+              expected: "RegisterPHAndPiecesIntent",
+              alternates: ["ProcessCommandIntent"],
+              prompt: "Estamos registrando dados da etapa 13. Diga o pH inicial. Por exemplo: 'pH cinco vírgula dois'.",
+              reprompt: "Qual o pH inicial?"
+            },
+            "STAGE13_PIECES": {
+              expected: "RegisterPHAndPiecesIntent",
+              alternates: ["ProcessCommandIntent"],
+              prompt: "Estamos registrando dados da etapa 13. Quantas peças foram enformadas? Diga, por exemplo: 'doze peças'.",
+              reprompt: "Quantas peças?"
+            }
+          };
+          const cfg = pendingConfig[pendingState];
           const systemIntents = ['AMAZON.HelpIntent', 'AMAZON.StopIntent', 'AMAZON.CancelIntent', 'AMAZON.FallbackIntent'];
-          // RegisterPHAndPiecesIntent also accepted during START_BATCH_PH (Alexa often routes pH utterances there)
-          const phAlternateIntents = sessionAttributes.pending === "START_BATCH_PH" ? ['RegisterPHAndPiecesIntent'] : [];
           
-          if (intentName !== expectedIntent && !systemIntents.includes(intentName || '') && !phAlternateIntents.includes(intentName || '')) {
-            const promptMsg = sessionAttributes.pending === "START_BATCH_TEMP"
-              ? "Estamos iniciando um novo lote. Diga a temperatura do leite. Por exemplo: '32 graus'."
-              : "Estamos iniciando um novo lote. Diga o pH do leite. Por exemplo: 'pH seis vírgula cinco'.";
-            const reprompt = sessionAttributes.pending === "START_BATCH_TEMP"
-              ? "Qual a temperatura do leite?"
-              : "Qual o pH do leite?";
-            console.log(`[GUIDED_GUARD] Blocked intent=${intentName} during pending=${sessionAttributes.pending}. Expected=${expectedIntent}`);
-            return res.status(200).json(buildAlexaResponse(promptMsg, false, reprompt, sessionAttributes));
+          if (cfg && intentName !== cfg.expected && !systemIntents.includes(intentName || '') && !cfg.alternates.includes(intentName || '')) {
+            console.log(`[GUIDED_GUARD] Blocked intent=${intentName} during pending=${pendingState}. Expected=${cfg.expected}`);
+            return res.status(200).json(buildAlexaResponse(cfg.prompt, false, cfg.reprompt, sessionAttributes));
           }
         }
         
@@ -1802,44 +1837,37 @@ export async function registerRoutes(
           
           // === INTENT MISROUTE GUARD ===
           // If BOTH ph_value AND pieces_quantity are absent/undefined/"?", this is likely a misroute
-          // User probably said "avançar etapa" or "status" but Alexa sent wrong intent
+          // EXCEPT at stages 13/15 where empty slots trigger the multi-turn guided flow
           const phEmpty = !phSlot || phSlot === '?';
           const piecesEmpty = !piecesSlot || piecesSlot === '?';
           
           if (phEmpty && piecesEmpty) {
             const activeBatch = activeBatchResolved;
             const stageId = activeBatch?.currentStageId || 0;
-            const currentStage = recipeManager.getStage(stageId);
             
-            console.log(`[MISROUTE] intent=RegisterPHAndPiecesIntent stage=${stageId} missingSlots=ph_value,pieces_quantity dialogState=${alexaRequest?.request?.dialogState || 'N/A'}`);
-            
-            // Build contextual help based on current stage's pending inputs
-            let helpMessage: string;
-            if (activeBatch && currentStage) {
-              const measurements = (activeBatch.measurements as Record<string, any>) || {};
-              const requiredInputs = currentStage.operator_input_required || [];
+            // At stage 13, let empty slots fall through to start multi-turn guided flow
+            // Stage 15 keeps misroute guard (its handler already elicits pH via ElicitSlot)
+            if (stageId !== 13) {
+              const currentStage = recipeManager.getStage(stageId);
               
-              // Check what's actually needed at this stage
-              if (stageId === 13 && measurements["initial_ph"] === undefined) {
-                helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Para registrar o pH, diga: "pH cinco vírgula dois com doze peças".`;
-              } else if (stageId === 15) {
-                helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Para informar o pH, diga: "pH cinco vírgula dois".`;
-              } else {
-                // Stage doesn't require pH - suggest what IS valid
+              console.log(`[MISROUTE] intent=RegisterPHAndPiecesIntent stage=${stageId} missingSlots=ph_value,pieces_quantity dialogState=${alexaRequest?.request?.dialogState || 'N/A'}`);
+              
+              let helpMessage: string;
+              if (activeBatch && currentStage) {
                 const utterances = speechRenderer.getContextualUtterances(currentStage, activeBatch);
                 const examples = utterances.slice(0, 2).map(u => `"${u}"`).join(' ou ');
                 helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Você pode dizer ${examples}.`;
+              } else {
+                helpMessage = "Não há lote ativo. Diga 'qual é o status' para verificar.";
               }
-            } else {
-              helpMessage = "Não há lote ativo. Diga 'qual é o status' para verificar.";
+              
+              return res.status(200).json(buildAlexaResponse(
+                helpMessage,
+                false,
+                "O que mais posso ajudar?",
+                sessionAttributes
+              ));
             }
-            
-            return res.status(200).json(buildAlexaResponse(
-              helpMessage,
-              false,
-              "O que mais posso ajudar?",
-              sessionAttributes
-            ));
           }
           
           const activeBatch = activeBatchResolved;
@@ -1860,7 +1888,7 @@ export async function registerRoutes(
           // Normalize pH value using centralized function
           let phValue: number | undefined;
           let phError: string | undefined;
-          if (phSlot) {
+          if (phSlot && phSlot !== '?') {
             const normalized = batchService.normalizePHValue(phSlot);
             if (normalized !== null) {
               phValue = normalized;
@@ -1871,9 +1899,10 @@ export async function registerRoutes(
           
           // ============================================
           // STAGE 13: pH inicial + quantidade de peças
+          // Multi-turn guided flow using pending states
           // ============================================
           if (stageId === 13) {
-            console.log(`[Stage 13] Processing pH and pieces registration`);
+            console.log(`[Stage 13] Processing pH and pieces registration. pending=${sessionAttributes?.pending}`);
             
             const measurements = (activeBatch.measurements as Record<string, any>) || {};
             const existingPh = measurements["initial_ph"];
@@ -1892,47 +1921,127 @@ export async function registerRoutes(
             
             console.log(`[Stage 13] Parsed values - pH: ${phValue}, pieces: ${piecesQuantity}`);
             
-            // Determine effective values (prefer new over existing)
-            const effectivePh = phValue ?? existingPh;
-            const effectivePieces = piecesQuantity ?? existingPieces;
-            
-            // Step 1: If we have no pH at all, elicit it
-            if (effectivePh === undefined) {
-              const prompt = phError 
-                ? `${phError}. Qual é o pH inicial? Diga, por exemplo: 'cinco vírgula dois'.`
-                : "Qual é o pH inicial? Diga, por exemplo: 'cinco vírgula dois'.";
-              console.log(`[Stage 13] Eliciting pH`);
-              return res.status(200).json(buildAlexaElicitSlotResponse(
-                "ph_value",
-                "RegisterPHAndPiecesIntent",
-                prompt,
-                "Qual é o pH inicial?",
-                slots,
-                sessionAttributes
+            // === MULTI-TURN STAGE 13: PIECES STEP ===
+            if (sessionAttributes?.pending === "STAGE13_PIECES") {
+              if (piecesQuantity === undefined && phValue !== undefined) {
+                // User said pH again instead of pieces - accept it as update, re-ask pieces
+                measurements["initial_ph"] = phValue;
+                await storage.updateBatch(activeBatch.id, { measurements });
+                console.log(`[Stage 13] pH updated to ${phValue} during STAGE13_PIECES. Re-asking pieces.`);
+                return res.status(200).json(buildAlexaResponse(
+                  `pH atualizado para ${phValue}. Agora, quantas peças foram enformadas? Diga, por exemplo: 'doze peças'.`,
+                  false,
+                  "Quantas peças?",
+                  sessionAttributes
+                ));
+              }
+              if (piecesQuantity === undefined) {
+                console.log(`[Stage 13] STAGE13_PIECES: no pieces parsed. Re-prompting.`);
+                return res.status(200).json(buildAlexaResponse(
+                  "Não entendi a quantidade. Quantas peças foram enformadas? Diga, por exemplo: 'doze peças'.",
+                  false,
+                  "Quantas peças?",
+                  sessionAttributes
+                ));
+              }
+              // Got pieces - complete the registration
+              const effectivePh = phValue ?? existingPh;
+              const newAttrs = { ...sessionAttributes, pending: undefined };
+              if (effectivePh === undefined) {
+                console.log(`[Stage 13] STAGE13_PIECES: pH missing from measurements. Restarting flow.`);
+                const restartAttrs = { ...sessionAttributes, pending: "STAGE13_PH" };
+                return res.status(200).json(buildAlexaResponse(
+                  "Antes de registrar as peças, preciso do pH. Qual é o pH inicial? Diga, por exemplo: 'pH cinco vírgula dois'.",
+                  false,
+                  "Qual o pH inicial?",
+                  restartAttrs
+                ));
+              }
+              const result = await batchService.logPh(activeBatch.id, effectivePh, piecesQuantity);
+              if (!result.success) {
+                return res.status(200).json(buildAlexaResponse(
+                  result.error || "Erro ao registrar valores.",
+                  false,
+                  "Tente novamente.",
+                  newAttrs
+                ));
+              }
+              console.log(`[Stage 13] Complete: pH ${effectivePh}, ${piecesQuantity} pieces saved. Clearing pending.`);
+              const confirmationMsg = `${piecesQuantity} peças registradas. pH ${effectivePh} e ${piecesQuantity} peças confirmados.`;
+              const advanceResult = await batchService.advanceBatch(activeBatch.id, apiCtx);
+              if (advanceResult.success && advanceResult.nextStage) {
+                const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
+                const updatedBatch = await batchService.getBatch(activeBatch.id);
+                console.log(`[Stage 13] Auto-advancing to stage ${advanceResult.nextStage.id}.`);
+                if (nextStage && updatedBatch) {
+                  const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
+                  let speech = await speechRenderer.renderSpeech(payload);
+                  let permCard: any = undefined;
+                  if (advanceResult.reminderScheduled && advanceResult.waitDurationText) {
+                    speech += ` Vou te avisar em ${advanceResult.waitDurationText}.`;
+                  } else if (advanceResult.needsReminderPermission && advanceResult.waitDurationText) {
+                    speech += ` Esta etapa dura ${advanceResult.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
+                    permCard = buildPermissionCard().card;
+                  } else if (advanceResult.needsReminderPermission) {
+                    speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
+                    permCard = buildPermissionCard().card;
+                  }
+                  return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", newAttrs, permCard));
+                }
+              }
+              return res.status(200).json(buildAlexaResponse(
+                `${confirmationMsg} Diga 'avançar etapa' para continuar.`,
+                false,
+                "Diga 'avançar etapa' para continuar.",
+                newAttrs
               ));
             }
             
-            // Step 2: If we have pH but no pieces, save pH and elicit pieces
-            if (effectivePieces === undefined) {
+            // === MULTI-TURN STAGE 13: pH STEP (or first entry) ===
+            if (sessionAttributes?.pending === "STAGE13_PH" || (existingPh === undefined && phValue === undefined)) {
+              if (phValue !== undefined) {
+                // Got pH - save it and move to pieces step
+                measurements["initial_ph"] = phValue;
+                await storage.updateBatch(activeBatch.id, { measurements });
+                const newAttrs = { ...sessionAttributes, pending: "STAGE13_PIECES" };
+                console.log(`[Stage 13] pH ${phValue} saved. Moving to STAGE13_PIECES.`);
+                return res.status(200).json(buildAlexaResponse(
+                  `pH ${phValue} registrado. Agora, quantas peças foram enformadas? Diga, por exemplo: 'doze peças'.`,
+                  false,
+                  "Quantas peças?",
+                  newAttrs
+                ));
+              }
+              // No pH yet - ask for it
+              const newAttrs = { ...sessionAttributes, pending: "STAGE13_PH" };
+              const prompt = phError 
+                ? `${phError}. Qual é o pH inicial? Diga, por exemplo: 'pH cinco vírgula dois'.`
+                : "Qual é o pH inicial? Diga, por exemplo: 'pH cinco vírgula dois'.";
+              console.log(`[Stage 13] No pH yet. Setting STAGE13_PH.`);
+              return res.status(200).json(buildAlexaResponse(prompt, false, "Qual o pH inicial?", newAttrs));
+            }
+            
+            // === pH already exists, pieces missing - ask for pieces ===
+            if (existingPieces === undefined) {
               if (phValue !== undefined) {
                 measurements["initial_ph"] = phValue;
                 await storage.updateBatch(activeBatch.id, { measurements });
-                console.log(`[Stage 13] pH ${phValue} saved. Eliciting pieces.`);
+                console.log(`[Stage 13] pH updated to ${phValue}.`);
               }
-              
               const savedPh = phValue ?? existingPh;
-              const prompt = `pH ${savedPh} registrado. Quantas peças foram enformadas? Diga, por exemplo: seis peças.`;
-              return res.status(200).json(buildAlexaElicitSlotResponse(
-                "pieces_quantity",
-                "RegisterPHAndPiecesIntent",
-                prompt,
-                "Quantas peças? Diga, por exemplo: seis peças.",
-                slots,
-                sessionAttributes
+              const newAttrs = { ...sessionAttributes, pending: "STAGE13_PIECES" };
+              console.log(`[Stage 13] pH exists (${savedPh}). Moving to STAGE13_PIECES.`);
+              return res.status(200).json(buildAlexaResponse(
+                `pH ${savedPh} registrado. Quantas peças foram enformadas? Diga, por exemplo: 'doze peças'.`,
+                false,
+                "Quantas peças?",
+                newAttrs
               ));
             }
             
-            // Step 3: Both values present - use centralized logPh
+            // === Both already exist (re-registration) - use centralized logPh ===
+            const effectivePh = phValue ?? existingPh;
+            const effectivePieces = piecesQuantity ?? existingPieces;
             const result = await batchService.logPh(activeBatch.id, effectivePh, effectivePieces);
             
             if (!result.success) {

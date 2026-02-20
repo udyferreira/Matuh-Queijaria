@@ -113,8 +113,14 @@ Preferred communication style: Simple, everyday language.
   - Normaliza formatos: T15:30, HH:MM, "now", períodos (MO/AF/EV/NI)
 - **RegisterPHAndPiecesIntent** (etapa 13): Registro de pH e quantidade de peças
   - Slots: ph_value (AMAZON.NUMBER), pieces_quantity (AMAZON.NUMBER)
-  - Só aceito na etapa 13, rejeitado em outras
-  - **Intent Misroute Guard**: Se ALL slots vazios/"?", retorna ajuda contextual para etapa atual
+  - Só aceito nas etapas 13 e 15, rejeitado em outras
+  - **Fluxo Multi-Turn Etapa 13**: Coleta pH e peças em perguntas separadas
+    - Etapa 1: Sistema pergunta pH → operador responde → pending = "STAGE13_PH"
+    - Etapa 2: pH registrado, sistema pergunta peças → pending = "STAGE13_PIECES"
+    - Etapa 3: Peças registradas → auto-advance para próxima etapa, pending limpo
+    - GUIDED_GUARD bloqueia intents não-relacionados durante STAGE13_PH/STAGE13_PIECES
+    - FallbackIntent re-prompta contextualmente durante pending states
+  - **Intent Misroute Guard**: Se ALL slots vazios/"?" em etapas != 13, retorna ajuda contextual
 - **RegisterChamberEntryDateIntent** (etapa 19): Registro de data de entrada na câmara 2
   - Slot: entry_date (AMAZON.DATE)
   - Só aceito na etapa 19, rejeitado em outras
