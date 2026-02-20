@@ -103,6 +103,7 @@ export default function BatchDetail() {
 
   const activeTimers = (batch.activeTimers as any[]) || [];
   const currentStageTimer = activeTimers.find((t: any) => t.stageId === batch.currentStageId);
+  const isBlockingTimer = currentStageTimer?.blocking === true;
   const isTimerStage = !!currentStageTimer;
   const isTimerComplete = currentStageTimer?.isComplete || (currentStageTimer ? new Date(currentStageTimer.endTime) <= new Date() : false);
   const isInputStage = [6, 7, 13, 14, 15, 19].includes(batch.currentStageId);
@@ -451,7 +452,7 @@ export default function BatchDetail() {
                     </div>
                   )}
 
-                  {isTimerStage && currentStageTimer ? (
+                  {isTimerStage && currentStageTimer && isBlockingTimer ? (
                     <div className="space-y-4">
                       <TimerWidget 
                         durationMinutes={currentStageTimer.durationMinutes || Math.round((new Date(currentStageTimer.endTime).getTime() - new Date(currentStageTimer.startTime).getTime()) / 60000)} 
@@ -534,6 +535,20 @@ export default function BatchDetail() {
                            {batch.currentStageId === 15 && (
                              <div className="text-sm text-muted-foreground mt-2">
                                Registre o pH a cada 1 hora e 30 minutos. Quando o pH ficar abaixo de 5.3, clique em "Concluir Etapa" abaixo.
+                             </div>
+                           )}
+                           {isTimerStage && currentStageTimer && !isBlockingTimer && (
+                             <div className="mt-4">
+                               <TimerWidget 
+                                 durationMinutes={currentStageTimer.durationMinutes || Math.round((new Date(currentStageTimer.endTime).getTime() - new Date(currentStageTimer.startTime).getTime()) / 60000)} 
+                                 startTime={currentStageTimer.startTime} 
+                                 label={timerLabel} 
+                               />
+                               {isTimerComplete && (
+                                 <div className="text-center text-amber-400 font-medium mt-2">
+                                   Tempo de espera concluído. Hora de medir o pH!
+                                 </div>
+                               )}
                              </div>
                            )}
                          </>
@@ -625,10 +640,10 @@ export default function BatchDetail() {
                     size="lg" 
                     className="w-full h-16 text-lg font-bold premium-gradient shadow-lg text-amber-400"
                     onClick={handleAdvance}
-                    disabled={isAdvancing || (isTimerStage && !isTimerComplete)}
+                    disabled={isAdvancing || (isTimerStage && isBlockingTimer && !isTimerComplete)}
                     data-testid="button-complete-step"
                   >
-                    {isAdvancing ? "Processando..." : isTimerStage && !isTimerComplete ? "Aguarde o Timer..." : batch.currentStageId === 15 ? "Concluir Viragem (pH atingido)" : "Marcar Etapa como Concluída"} 
+                    {isAdvancing ? "Processando..." : isTimerStage && isBlockingTimer && !isTimerComplete ? "Aguarde o Timer..." : batch.currentStageId === 15 ? "Concluir Viragem (pH atingido)" : "Marcar Etapa como Concluída"} 
                     <ArrowRight className="ml-2 w-5 h-5" />
                   </Button>
                 )}
