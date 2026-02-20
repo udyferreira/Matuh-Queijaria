@@ -52,6 +52,13 @@ function toLocalISOString(date: Date, tz: string): string {
   }
 }
 
+function alexaProofText(text: string): string {
+  return text
+    .replace(/\bDX\b/g, 'D. X.')
+    .replace(/\bLR\b/g, 'L. R.')
+    .replace(/\bKL\b/g, 'K. L.');
+}
+
 export async function scheduleReminderForWait(
   apiCtx: ApiContext,
   batch: { id: number; recipeId: string },
@@ -61,7 +68,7 @@ export async function scheduleReminderForWait(
 ): Promise<ReminderResult> {
   const stage = recipeManager.getStage(stageId);
   const recipeName = recipeManager.getRecipeName();
-  const stageName = stage?.name || `Etapa ${stageId}`;
+  const stageName = alexaProofText(stage?.name || `Etapa ${stageId}`);
   const tz = timezone || 'America/Sao_Paulo';
 
   const now = new Date();
