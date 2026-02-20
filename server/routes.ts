@@ -490,7 +490,27 @@ export async function registerRoutes(
     const measurements = (batch.measurements as any) || {};
     const oldValue = measurements[key];
 
-    if (key === "chamber_2_entry_date") {
+    if (key === "turning_cycles_count") {
+      const numVal = parseInt(value, 10);
+      if (isNaN(numVal) || numVal < 0) {
+        return res.status(400).json({ message: "Valor inválido para quantidade de viradas" });
+      }
+      await storage.updateBatch(batchId, { turningCyclesCount: numVal });
+
+      if (measurements._history) {
+        const history = measurements._history as Array<{ key: string; value: any; stageId: number; timestamp: string }>;
+        const existingIdx = history.findIndex(h => h.key === 'turning_cycles_count');
+        if (existingIdx >= 0) {
+          history[existingIdx].value = numVal;
+          history[existingIdx].timestamp = new Date().toISOString();
+        }
+        await storage.updateBatch(batchId, { measurements });
+      }
+
+      await storage.logBatchAction({ batchId, stageId: batch.currentStageId, action: 'edit_measurement', details: { key, oldValue: oldValue ?? batch.turningCyclesCount, newValue: numVal } });
+      const updated = await storage.getBatch(batchId);
+      return res.json(updated);
+    } else if (key === "chamber_2_entry_date") {
       const entryDate = new Date(value);
       if (isNaN(entryDate.getTime())) {
         return res.status(400).json({ message: "Data inválida" });

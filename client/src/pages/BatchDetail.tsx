@@ -733,7 +733,7 @@ export default function BatchDetail() {
                     'ferment_kl_coalho_add_time_iso': 'Adição Fermento KL + Coalho',
                   };
 
-                  const readOnlyKeys = new Set(['loop_exit_reason', 'turning_cycles_count']);
+                  const readOnlyKeys = new Set(['loop_exit_reason']);
                   const reasonMap: Record<string, string> = {
                     "ph_reached": "pH ideal atingido",
                     "time_limit": "Tempo limite atingido"
