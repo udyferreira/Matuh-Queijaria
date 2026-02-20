@@ -1202,6 +1202,48 @@ export async function registerRoutes(
     return batch;
   }
 
+  function buildStage15Context(batch: any): string {
+    if (batch.currentStageId !== 15) return '';
+    
+    const parts: string[] = [];
+    const turningCycles = (batch as any).turningCyclesCount || 0;
+    const measurements = (batch.measurements as any) || {};
+    const phMeasurements = measurements.ph_measurements || [];
+    const lastPh = phMeasurements.length > 0 ? phMeasurements[phMeasurements.length - 1].value : null;
+    
+    if (turningCycles > 0) {
+      parts.push(`${turningCycles} virada${turningCycles > 1 ? 's' : ''} feita${turningCycles > 1 ? 's' : ''}`);
+    }
+    if (lastPh !== null) {
+      parts.push(`último pH: ${lastPh}`);
+    }
+    
+    const activeTimers = (batch.activeTimers as any[]) || [];
+    const stage15Timer = activeTimers.find((t: any) => t.stageId === 15);
+    if (stage15Timer?.endTime) {
+      const remainingMs = new Date(stage15Timer.endTime).getTime() - Date.now();
+      if (remainingMs > 0) {
+        const remainingMin = Math.ceil(remainingMs / 60000);
+        if (remainingMin >= 60) {
+          const hours = Math.floor(remainingMin / 60);
+          const mins = remainingMin % 60;
+          parts.push(mins > 0 ? `faltam ${hours} hora${hours > 1 ? 's' : ''} e ${mins} minutos para medir o pH` : `falta ${hours} hora${hours > 1 ? 's' : ''} para medir o pH`);
+        } else {
+          parts.push(`faltam ${remainingMin} minuto${remainingMin > 1 ? 's' : ''} para medir o pH`);
+        }
+      } else {
+        parts.push('já passou o tempo de medir o pH');
+      }
+    }
+    
+    let context = '';
+    if (parts.length > 0) {
+      context = ' ' + parts.join(', ') + '.';
+    }
+    context += " Informe o pH dizendo: 'pH é X ponto X'.";
+    return context;
+  }
+
   async function buildBatchSelectionMenu(sessionAttrs: Record<string, any>): Promise<{ speechText: string; repromptText: string; newSessionAttrs: Record<string, any> }> {
     const batches = await batchService.listInProgressBatches();
     console.log(`[BATCH_MENU] count=${batches.length}`);
@@ -1217,9 +1259,14 @@ export async function registerRoutes(
     if (batches.length === 1) {
       const b = batches[0];
       const dateStr = formatDatePtBr(b.startedAt);
+      let stage15Ctx = '';
+      if (b.currentStageId === 15) {
+        const fullBatch = await batchService.getBatch(b.batchId);
+        if (fullBatch) stage15Ctx = buildStage15Context(fullBatch);
+      }
       return {
-        speechText: `Beleza, vamos continuar o lote do ${b.recipeName} iniciado em ${dateStr}. Você está na etapa ${b.currentStageId}: ${b.currentStageName}.`,
-        repromptText: "O que deseja fazer?",
+        speechText: `Beleza, vamos continuar o lote do ${b.recipeName} iniciado em ${dateStr}. Você está na etapa ${b.currentStageId}: ${b.currentStageName}.${stage15Ctx}`,
+        repromptText: b.currentStageId === 15 ? "Informe o pH ou diga 'qual é o status'." : "O que deseja fazer?",
         newSessionAttrs: { ...sessionAttrs, activeBatchId: b.batchId, state: undefined, batchChoices: undefined },
       };
     }
@@ -1293,12 +1340,13 @@ export async function registerRoutes(
             if (batch && (batch.status === "active" || (batch.status as string) === "in_progress")) {
               const stage = recipeManager.getStage(batch.currentStageId);
               const recipeName = recipeManager.getRecipeName();
-              const speechText = `Etapa ${batch.currentStageId} do queijo ${recipeName}: ${stage?.name || 'em andamento'}. Continuar ou trocar de lote?`;
+              const stage15Ctx = buildStage15Context(batch);
+              const speechText = `Etapa ${batch.currentStageId} do queijo ${recipeName}: ${stage?.name || 'em andamento'}.${stage15Ctx} Continuar ou trocar de lote?`;
               console.log(`[LaunchRequest] Resuming persisted batch=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
               return res.status(200).json(buildAlexaResponse(
                 speechText,
                 false,
-                "Diga 'continuar' ou 'trocar lote'.",
+                batch.currentStageId === 15 ? "Informe o pH ou diga 'continuar' ou 'trocar lote'." : "Diga 'continuar' ou 'trocar lote'.",
                 { activeBatchId: batch.id, state: "CONFIRM_CONTINUE_OR_SWITCH" }
               ));
             } else {
@@ -1405,13 +1453,19 @@ export async function registerRoutes(
           
           const newSessionAttrs = { ...sessionAttributes, activeBatchId: selected.batchId, state: undefined, batchChoices: undefined };
           
-          const speech = `Beleza, vamos continuar o lote do ${selected.recipeName} iniciado em ${dateStr}. Você está na etapa ${selected.currentStageId}: ${selected.currentStageName}.`;
+          let stage15Ctx = '';
+          if (selected.currentStageId === 15) {
+            const fullBatch = await batchService.getBatch(selected.batchId);
+            if (fullBatch) stage15Ctx = buildStage15Context(fullBatch);
+          }
+          
+          const speech = `Beleza, vamos continuar o lote do ${selected.recipeName} iniciado em ${dateStr}. Você está na etapa ${selected.currentStageId}: ${selected.currentStageName}.${stage15Ctx}`;
           console.log(`[BATCH_SELECT] option=${optionNumber} batchId=${selected.batchId}`);
           
           return res.status(200).json(buildAlexaResponse(
             speech,
             false,
-            "O que deseja fazer?",
+            selected.currentStageId === 15 ? "Informe o pH ou diga 'qual é o status'." : "O que deseja fazer?",
             newSessionAttrs
           ));
         }

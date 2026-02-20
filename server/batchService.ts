@@ -316,6 +316,21 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     scheduledAlerts
   };
 
+  if (nextStage.id === 15) {
+    const phTimerMinutes = TEST_MODE ? 2 : 90;
+    const timerDesc = TEST_MODE ? "2 minuto(s) (TESTE)" : "1 hora e 30 minutos";
+    activeTimers.push({
+      id: generateId(),
+      stageId: 15,
+      durationMinutes: phTimerMinutes,
+      startTime: new Date().toISOString(),
+      endTime: new Date(Date.now() + phTimerMinutes * 60000).toISOString(),
+      description: timerDesc,
+      blocking: false
+    });
+    updates.activeTimers = activeTimers;
+  }
+
   if (nextStage.timer) {
     const durationMinutes = getTimerDurationMinutes(nextStage);
     const intervalMinutes = getIntervalDurationMinutes(nextStage);
@@ -633,7 +648,7 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
   let shouldExitLoop = false;
   let phReachedTarget = false;
   
-  // Stage 15: Increment turning cycles count and check loop exit condition
+  // Stage 15: Increment turning cycles count, check loop exit, and manage timer
   if (stageId === 15) {
     const currentCount = (batch as any).turningCyclesCount || 0;
     turningCyclesCount = currentCount + 1;
@@ -644,6 +659,28 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
       shouldExitLoop = true;
       phReachedTarget = true;
     }
+    
+    // Manage stage 15 timer: cancel current, create new if pH not reached
+    let activeTimers = (batch.activeTimers as any[]) || [];
+    activeTimers = activeTimers.filter(t => t.stageId !== 15);
+    
+    if (!phReachedTarget) {
+      const phTimerMinutes = TEST_MODE ? 2 : 90;
+      const timerDesc = TEST_MODE ? "2 minuto(s) (TESTE)" : "1 hora e 30 minutos";
+      activeTimers.push({
+        id: generateId(),
+        stageId: 15,
+        durationMinutes: phTimerMinutes,
+        startTime: new Date().toISOString(),
+        endTime: new Date(Date.now() + phTimerMinutes * 60000).toISOString(),
+        description: timerDesc,
+        blocking: false
+      });
+      console.log(`[logPh] Stage 15: pH ${phValue} not ideal. New 1h30 timer started.`);
+    } else {
+      console.log(`[logPh] Stage 15: pH ${phValue} reached target. Timer cleared.`);
+    }
+    updates.activeTimers = activeTimers;
   }
   
   await storage.updateBatch(batchId, updates);
