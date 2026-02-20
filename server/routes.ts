@@ -412,17 +412,33 @@ export async function registerRoutes(
     inputHistory.push({ key, value, unit, notes, timestamp, stageId: batch.currentStageId });
     measurements._history = inputHistory;
 
-    // Special handling for pH measurements array (Stage 15 loop)
+    // Stage 15 pH: delegate to centralized logPh for timer management
+    if (key === 'ph_value' && batch.currentStageId === 15) {
+      const result = await batchService.logPh(batchId, value);
+      if (!result.success) {
+        return res.status(400).json({ message: result.error, code: "LOG_PH_FAILED" });
+      }
+      await storage.logBatchAction({
+        batchId,
+        stageId: batch.currentStageId,
+        action: "canonical_input",
+        details: { key, value, unit, notes }
+      });
+      const updatedBatch = await storage.getBatch(batchId);
+      const response: any = { ...updatedBatch };
+      response.turning_cycles_count = (updatedBatch as any).turningCyclesCount || 0;
+      response.ph_measurements = (updatedBatch?.measurements as any)?.ph_measurements || [];
+      response.next_action = value < 5.3
+        ? "pH abaixo de 5.3 — ideal atingido! Pode avançar para próxima etapa."
+        : "pH ainda acima de 5.3. Continue monitorando.";
+      return res.json(response);
+    }
+
+    // Special handling for pH measurements array
     if (key === 'ph_value') {
       const phMeasurements = measurements.ph_measurements || [];
       phMeasurements.push({ value, timestamp, stageId: batch.currentStageId });
       measurements.ph_measurements = phMeasurements;
-      
-      // Stage 15: Increment turning cycles count
-      if (batch.currentStageId === 15) {
-        const currentCount = (batch as any).turningCyclesCount || 0;
-        updates.turningCyclesCount = currentCount + 1;
-      }
     }
 
     // Store pieces_quantity (Stage 13)
@@ -441,7 +457,6 @@ export async function registerRoutes(
       if (!result.success) {
         return res.status(400).json({ message: result.error, code: result.code });
       }
-      // recordChamber2Entry handles all updates including measurements, so skip inline update
       await storage.logBatchAction({
         batchId,
         stageId: batch.currentStageId,
@@ -462,19 +477,8 @@ export async function registerRoutes(
       details: { key, value, unit, notes }
     });
 
-    // Return updated batch with additional loop info for Stage 15
     const updatedBatch = await storage.getBatch(batchId);
-    const response: any = { ...updatedBatch };
-    
-    if (batch.currentStageId === 15) {
-      response.turning_cycles_count = (updatedBatch as any).turningCyclesCount || 0;
-      response.ph_measurements = (updatedBatch?.measurements as any)?.ph_measurements || [];
-      response.next_action = value < 5.3 
-        ? "pH abaixo de 5.3 — ideal atingido! Pode avançar para próxima etapa."
-        : "pH ainda acima de 5.3. Continue monitorando.";
-    }
-
-    res.json(response);
+    res.json(updatedBatch);
   });
 
   app.put("/api/batches/:id/measurements", async (req, res) => {
