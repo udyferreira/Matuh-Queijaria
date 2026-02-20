@@ -1445,6 +1445,26 @@ export async function registerRoutes(
           return res.status(200).json(buildAlexaResponse(speech, false, "Diga 'ajuda' para ver os comandos.", sessionAttributes));
         }
         
+        // === GUIDED START BATCH PENDING STATE GUARD ===
+        // During multi-turn start batch flow, block all intents except the expected one
+        if (sessionAttributes?.pending === "START_BATCH_TEMP" || sessionAttributes?.pending === "START_BATCH_PH") {
+          const expectedIntent = sessionAttributes.pending === "START_BATCH_TEMP" 
+            ? "RegisterMilkTemperatureIntent" 
+            : "RegisterMilkPHIntent";
+          const systemIntents = ['AMAZON.HelpIntent', 'AMAZON.StopIntent', 'AMAZON.CancelIntent', 'AMAZON.FallbackIntent'];
+          
+          if (intentName !== expectedIntent && !systemIntents.includes(intentName || '')) {
+            const promptMsg = sessionAttributes.pending === "START_BATCH_TEMP"
+              ? "Estamos iniciando um novo lote. Diga a temperatura do leite. Por exemplo: '32 graus'."
+              : "Estamos iniciando um novo lote. Diga o pH do leite. Por exemplo: 'pH seis vírgula cinco'.";
+            const reprompt = sessionAttributes.pending === "START_BATCH_TEMP"
+              ? "Qual a temperatura do leite?"
+              : "Qual o pH do leite?";
+            console.log(`[GUIDED_GUARD] Blocked intent=${intentName} during pending=${sessionAttributes.pending}. Expected=${expectedIntent}`);
+            return res.status(200).json(buildAlexaResponse(promptMsg, false, reprompt, sessionAttributes));
+          }
+        }
+        
         // === STAGE-AWARE INTENT GATING ===
         const activeBatchForGating = activeBatchResolved;
         let pendingInputReminder: string | undefined;
@@ -2256,6 +2276,27 @@ export async function registerRoutes(
               "Qual a temperatura do leite?",
               sessionAttributes
             ));
+          }
+          
+          // Normalize ASR-mangled temperature values
+          // "6,69" → ASR sends 669 → divide by 100 → 6.69
+          // "6,5" → ASR sends 65 → divide by 10 → 6.5
+          // "32" → valid as-is
+          if (tempValue > 60) {
+            if (tempValue >= 100 && tempValue < 10000) {
+              const divided100 = tempValue / 100;
+              if (divided100 >= 1 && divided100 <= 60) {
+                console.log(`[normalizeTemp] ${tempValue} -> ${divided100} (divided by 100)`);
+                tempValue = divided100;
+              }
+            }
+            if (tempValue > 60 && tempValue >= 10 && tempValue < 100) {
+              const divided10 = tempValue / 10;
+              if (divided10 >= 1 && divided10 <= 60) {
+                console.log(`[normalizeTemp] ${tempValue} -> ${divided10} (divided by 10)`);
+                tempValue = divided10;
+              }
+            }
           }
           
           if (tempValue <= 0 || tempValue > 60) {

@@ -102,7 +102,7 @@ REGRAS OBRIGATÓRIAS:
 10. Para error, diga a mensagem de erro de forma clara.
 11. Para query_input, diga "A quantidade de [tipo] é [valor] [unidade]."
 12. Para auto_advance: combine confirmation + próxima etapa numa narrativa fluida e curta. NÃO diga "confirmação".
-13. Para start_batch: primeiro anuncie "Fermentos e coalho calculados:" e liste TODAS as doses. Depois diga a instrução da etapa atual (ex: "Agora, etapa 3: Aqueça o leite até 32°C"). Termine com "Para ouvir novamente, diga 'repetir fermentos'." NÃO leia o campo notes literalmente.
+13. Para start_batch: primeiro anuncie "Fermentos e coalho calculados:" e liste TODAS as doses. Depois OBRIGATORIAMENTE diga "Agora, etapa [stage.id]: [stage.name]." seguido da instrução. NÃO omita o número da etapa. Termine com nextAction.phrase se presente. NÃO leia o campo notes literalmente.
 14. Para repeat_doses: liste TODAS as doses presentes dizendo "As doses deste lote são:" seguido de cada dose. Use os rótulos obrigatórios da regra 5.
 15. Para log_time/log_ph/log_date: confirme o registro feito de forma curta.
 16. Máximo: 5 frases para start_batch (doses + instrução), 4 para auto_advance, 3 para outros contextos.
@@ -583,7 +583,8 @@ export function buildStartBatchPayload(
     },
     instructions,
     doses: Object.keys(doses).length > 0 ? doses : undefined,
-    allowedUtterances: getContextualUtterances(currentStage, batch)
+    allowedUtterances: getContextualUtterances(currentStage, batch),
+    notes: `Lote iniciado. A primeira etapa operacional é a Etapa ${currentStage.id}: ${currentStage.name}.`
   };
 }
 
