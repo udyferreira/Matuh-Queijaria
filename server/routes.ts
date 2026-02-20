@@ -11,6 +11,7 @@ import * as speechRenderer from "./speechRenderer";
 import { getApiContext as extractApiContext, cancelAllBatchReminders, scheduleReminderForWait, cancelReminder, buildPermissionCard, type ApiContext, type ScheduledAlert } from "./alexaReminders";
 import { z } from "zod";
 import { randomBytes } from "crypto";
+import { logAlexaWebhook, logWebRequest, queryAlexaLogs, queryWebLogs, scheduleDailyPurge, purgeOldLogs } from "./logService";
 
 // Helper to generate unique IDs
 const generateId = () => randomBytes(8).toString('hex');
@@ -1247,6 +1248,14 @@ export async function registerRoutes(
   }
 
   app.post("/api/alexa/webhook", async (req, res) => {
+    const webhookStartTime = Date.now();
+    const origJson = res.json.bind(res);
+    let capturedSpeech: string | undefined;
+    let errorLogged = false;
+    res.json = function(body: any) {
+      capturedSpeech = body?.response?.outputSpeech?.ssml || body?.response?.outputSpeech?.text;
+      return origJson(body);
+    } as any;
     try {
       const alexaRequest = req.body;
       const requestType = alexaRequest?.request?.type;
@@ -1254,6 +1263,26 @@ export async function registerRoutes(
       const apiCtx = extractApiContext(alexaRequest);
       const userId: string | null = alexaRequest?.context?.System?.user?.userId || null;
       console.log(`[ALEXA_REQ] type=${requestType} apiCtx=${apiCtx ? 'present' : 'NULL'} userId=${userId ? userId.substring(0, 20) + '...' : 'NULL'}`);
+      
+      const intentName = alexaRequest?.request?.intent?.name || requestType;
+      const slots = alexaRequest?.request?.intent?.slots || {};
+      const batchIdForLog = sessionAttributes.activeBatchId || null;
+      const stageIdForLog = sessionAttributes.currentStageId || null;
+      
+      res.on("finish", () => {
+        if (errorLogged) return;
+        logAlexaWebhook({
+          alexaUserId: userId || undefined,
+          intentName,
+          stageId: stageIdForLog,
+          batchId: batchIdForLog,
+          requestType,
+          slots,
+          sessionAttributes,
+          responseSpeech: capturedSpeech,
+          durationMs: Date.now() - webhookStartTime,
+        });
+      });
       
       // --- LaunchRequest: Intelligent skill opening ---
       if (requestType === "LaunchRequest") {
@@ -2181,7 +2210,7 @@ export async function registerRoutes(
                 sessionAttributes
               ));
             } else {
-              // pH still above target - continue loop, schedule reminder for remaining time
+              // pH still above target - continue loop, schedule new 1h30 reminder
               console.log(`[Stage 15] pH ${phValue} above target. Continue monitoring.`);
               
               let reminderMsg = '';
@@ -2189,50 +2218,38 @@ export async function registerRoutes(
               if (apiCtx) {
                 try {
                   const updatedBatchForReminder = await batchService.getBatch(activeBatch.id);
-                  const batchHistory = ((updatedBatchForReminder as any)?.history as any[]) || [];
-                  const stageStartEntry = batchHistory.find((h: any) => h.stageId === 15 && h.action === 'start');
-                  if (stageStartEntry) {
-                    const loopStage = recipeManager.getStage(15);
-                    const maxHours = loopStage?.max_loop_duration_hours || 1.5;
-                    const maxDurationMs = TEST_MODE ? 2 * 60 * 1000 : maxHours * 60 * 60 * 1000;
-                    const stageStartTime = new Date(stageStartEntry.timestamp).getTime();
-                    const elapsed = Date.now() - stageStartTime;
-                    const remainingMs = maxDurationMs - elapsed;
-                    
-                    if (remainingMs > 0) {
-                      const remainingSeconds = Math.ceil(remainingMs / 1000);
-                      const scheduledAlerts = ((updatedBatchForReminder as any)?.scheduledAlerts || {}) as Record<string, ScheduledAlert>;
-                      const alertKey = 'stage_15';
-                      if (scheduledAlerts[alertKey]) {
-                        await cancelReminder(apiCtx, scheduledAlerts[alertKey].reminderId);
-                        delete scheduledAlerts[alertKey];
-                        await storage.updateBatch(activeBatch.id, { scheduledAlerts });
-                      }
-                      const reminderResult = await scheduleReminderForWait(
-                        apiCtx,
-                        { id: activeBatch.id, recipeId: (updatedBatchForReminder as any).recipeId },
-                        15,
-                        remainingSeconds
-                      );
-                      if (reminderResult.reminderId) {
-                        scheduledAlerts[alertKey] = {
-                          reminderId: reminderResult.reminderId,
-                          stageId: 15,
-                          dueAtISO: new Date(Date.now() + remainingSeconds * 1000).toISOString(),
-                          kind: 'loop_timeout'
-                        };
-                        await storage.updateBatch(activeBatch.id, { scheduledAlerts });
-                        const remainingMin = Math.round(remainingSeconds / 60);
-                        reminderMsg = ` Vou te avisar em ${remainingMin} minuto${remainingMin !== 1 ? 's' : ''} se o tempo esgotar.`;
-                        console.log(`[Stage 15] Reminder rescheduled for ${remainingSeconds}s (${remainingMin}min remaining)`);
-                      } else if (reminderResult.permissionDenied) {
-                        console.log(`[Stage 15] Reminder permission denied after pH log`);
-                        reminderMsg = ' Para eu avisar quando o tempo acabar, habilite as permissões de lembrete no app da Alexa.';
-                        permCard = buildPermissionCard().card;
-                      }
-                    } else {
-                      console.log(`[Stage 15] Loop time already elapsed (${Math.round(-remainingMs/1000)}s past). No reminder scheduled.`);
-                    }
+                  const loopStage = recipeManager.getStage(15);
+                  const maxHours = loopStage?.max_loop_duration_hours || 1.5;
+                  const reminderSeconds = TEST_MODE ? 2 * 60 : maxHours * 60 * 60;
+                  
+                  const scheduledAlerts = ((updatedBatchForReminder as any)?.scheduledAlerts || {}) as Record<string, ScheduledAlert>;
+                  const alertKey = 'stage_15';
+                  if (scheduledAlerts[alertKey]) {
+                    await cancelReminder(apiCtx, scheduledAlerts[alertKey].reminderId);
+                    delete scheduledAlerts[alertKey];
+                    await storage.updateBatch(activeBatch.id, { scheduledAlerts });
+                  }
+                  const reminderResult = await scheduleReminderForWait(
+                    apiCtx,
+                    { id: activeBatch.id, recipeId: (updatedBatchForReminder as any).recipeId },
+                    15,
+                    reminderSeconds
+                  );
+                  if (reminderResult.reminderId) {
+                    scheduledAlerts[alertKey] = {
+                      reminderId: reminderResult.reminderId,
+                      stageId: 15,
+                      dueAtISO: new Date(Date.now() + reminderSeconds * 1000).toISOString(),
+                      kind: 'ph_check_reminder'
+                    };
+                    await storage.updateBatch(activeBatch.id, { scheduledAlerts });
+                    const reminderMin = Math.round(reminderSeconds / 60);
+                    reminderMsg = ` Vou te lembrar em ${reminderMin} minuto${reminderMin !== 1 ? 's' : ''} para medir o pH novamente.`;
+                    console.log(`[Stage 15] Reminder scheduled for ${reminderSeconds}s (${reminderMin}min) for next pH check`);
+                  } else if (reminderResult.permissionDenied) {
+                    console.log(`[Stage 15] Reminder permission denied after pH log`);
+                    reminderMsg = ' Para eu lembrar de medir o pH, habilite as permissões de lembrete no app da Alexa.';
+                    permCard = buildPermissionCard().card;
                   }
                 } catch (err) {
                   console.log(`[Stage 15] Error scheduling reminder after pH: ${err}`);
@@ -2687,7 +2704,16 @@ export async function registerRoutes(
       
     } catch (error) {
       console.error("Alexa webhook error:", error);
+      errorLogged = true;
       const catchSessionAttrs = req.body?.session?.attributes || {};
+      logAlexaWebhook({
+        alexaUserId: req.body?.context?.System?.user?.userId || undefined,
+        intentName: req.body?.request?.intent?.name || req.body?.request?.type,
+        requestType: req.body?.request?.type,
+        batchId: catchSessionAttrs.activeBatchId || undefined,
+        durationMs: Date.now() - webhookStartTime,
+        error: String(error),
+      });
       return res.status(200).json(buildAlexaResponse(
         "Ocorreu um erro. Tente novamente.",
         false,
@@ -2697,6 +2723,55 @@ export async function registerRoutes(
     }
   });
   
+  // === LOG QUERY ENDPOINTS ===
+  
+  app.get("/api/logs/alexa", async (req, res) => {
+    try {
+      const result = await queryAlexaLogs({
+        batchId: req.query.batchId ? Number(req.query.batchId) : undefined,
+        intentName: req.query.intent as string | undefined,
+        startDate: req.query.startDate as string | undefined,
+        endDate: req.query.endDate as string | undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+        offset: req.query.offset ? Number(req.query.offset) : undefined,
+      });
+      res.json(result);
+    } catch (err) {
+      console.error("Error querying alexa logs:", err);
+      res.status(500).json({ error: "Erro ao consultar logs Alexa" });
+    }
+  });
+
+  app.get("/api/logs/web", async (req, res) => {
+    try {
+      const result = await queryWebLogs({
+        method: req.query.method as string | undefined,
+        path: req.query.path as string | undefined,
+        startDate: req.query.startDate as string | undefined,
+        endDate: req.query.endDate as string | undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+        offset: req.query.offset ? Number(req.query.offset) : undefined,
+      });
+      res.json(result);
+    } catch (err) {
+      console.error("Error querying web logs:", err);
+      res.status(500).json({ error: "Erro ao consultar logs Web" });
+    }
+  });
+
+  app.post("/api/logs/purge", async (_req, res) => {
+    try {
+      const result = await purgeOldLogs();
+      res.json({ success: true, ...result });
+    } catch (err) {
+      console.error("Error purging logs:", err);
+      res.status(500).json({ error: "Erro ao limpar logs" });
+    }
+  });
+
+  // Start daily log purge scheduler (3:00 AM BRT)
+  scheduleDailyPurge();
+
   // Basic Seed
   const existingBatches = await storage.getActiveBatches();
   if (existingBatches.length === 0) {

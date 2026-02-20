@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { logWebRequest } from "./logService";
 
 const app = express();
 const httpServer = createServer(app);
@@ -33,6 +34,16 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
+const POLLING_PATHS = [
+  "/api/batches",
+  "/api/batch/",
+];
+
+function isPollingRequest(method: string, path: string): boolean {
+  if (method !== "GET") return false;
+  return POLLING_PATHS.some(p => path === p || path.startsWith(p));
+}
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -53,6 +64,17 @@ app.use((req, res, next) => {
       }
 
       log(logLine);
+
+      if (!isPollingRequest(req.method, path) && path !== "/api/alexa/webhook") {
+        logWebRequest({
+          method: req.method,
+          path,
+          statusCode: res.statusCode,
+          durationMs: duration,
+          requestBody: req.body && Object.keys(req.body).length > 0 ? req.body : undefined,
+          responseBody: capturedJsonResponse,
+        });
+      }
     }
   });
 

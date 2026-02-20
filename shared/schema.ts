@@ -58,6 +58,35 @@ export const batchLogs = pgTable("batch_logs", {
   timestamp: timestamp("timestamp").defaultNow().notNull(),
 });
 
+// === LOG TABLES (7-day retention, daily purge at 3am BRT) ===
+
+export const alexaWebhookLogs = pgTable("alexa_webhook_logs", {
+  id: serial("id").primaryKey(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  alexaUserId: text("alexa_user_id"),
+  intentName: text("intent_name"),
+  stageId: integer("stage_id"),
+  batchId: integer("batch_id"),
+  requestType: text("request_type"),
+  slots: jsonb("slots").default({}),
+  sessionAttributes: jsonb("session_attributes").default({}),
+  responseSpeech: text("response_speech"),
+  durationMs: integer("duration_ms"),
+  error: text("error"),
+});
+
+export const webRequestLogs = pgTable("web_request_logs", {
+  id: serial("id").primaryKey(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  method: text("method").notNull(),
+  path: text("path").notNull(),
+  statusCode: integer("status_code"),
+  durationMs: integer("duration_ms"),
+  requestBody: jsonb("request_body").default({}),
+  responseBody: jsonb("response_body").default({}),
+  error: text("error"),
+});
+
 // === RELATIONS ===
 export const batchRelations = relations(productionBatches, ({ many }) => ({
   logs: many(batchLogs),

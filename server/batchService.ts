@@ -244,31 +244,17 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     const measurements = (batch.measurements as Record<string, any>) || {};
     const canExitByPh = recipeManager.checkLoopExitCondition(batch.currentStageId, measurements);
     
-    // Check 1.5-hour max duration for stage 15
-    let canExitByTime = false;
-    if (batch.currentStageId === 15) {
-      const history = (batch.history as any[]) || [];
-      const stageStartEntry = history.find((h: any) => h.stageId === 15 && h.action === 'start');
-      if (stageStartEntry) {
-        const stageStartTime = new Date(stageStartEntry.timestamp);
-        const maxDurationMs = TEST_MODE ? 2 * 60 * 1000 : 1.5 * 60 * 60 * 1000; // 2 min in test, 1.5 hours in prod
-        const elapsed = Date.now() - stageStartTime.getTime();
-        canExitByTime = elapsed >= maxDurationMs;
-      }
-    }
-    
-    if (!canExitByPh && !canExitByTime) {
+    if (!canExitByPh) {
       const phMessage = measurements.ph_value 
         ? `pH atual: ${measurements.ph_value}` 
         : 'pH ainda não medido';
       return {
         success: false,
-        error: `pH deve ser <= 5.2 para sair desta etapa (${phMessage}). Ou aguarde completar 1 hora e 30 minutos.`,
+        error: `pH deve ser <= 5.2 para sair desta etapa (${phMessage}). Continue monitorando o pH.`,
         code: "LOOP_CONDITION_NOT_MET"
       };
     }
 
-    // Record final state for stage 15
     if (batch.currentStageId === 15) {
       const freshBatch = await storage.getBatch(batchId);
       if (freshBatch) {
@@ -277,7 +263,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
         const timestamp = new Date().toISOString();
         const historyEntries = [
           { key: 'turning_cycles_count', value: turningCount, stageId: 15, timestamp },
-          { key: 'loop_exit_reason', value: canExitByPh ? 'ph_reached' : 'time_limit', stageId: 15, timestamp }
+          { key: 'loop_exit_reason', value: 'ph_reached', stageId: 15, timestamp }
         ];
         const history = freshMeasurements._history || [];
         history.push(...historyEntries);

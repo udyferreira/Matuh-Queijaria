@@ -54,10 +54,22 @@ Preferred communication style: Simple, everyday language.
   - `production_batches` - Batch state with JSONB for calculated inputs, measurements, timers, history
   - `batch_logs` - Audit trail of all production actions
   - `conversations` / `messages` - Chat history for LLM assistant
+  - `alexa_webhook_logs` - Logs de todas as chamadas ao webhook Alexa (7 dias de retenção)
+  - `web_request_logs` - Logs de requisições API web não-polling (7 dias de retenção)
+
+### Persistent Logging System (`server/logService.ts`)
+- **Retenção**: 7 dias para ambas as tabelas
+- **Expurgo automático**: Rotina diária executada às 3:00 AM horário de Brasília (6:00 AM UTC), via setTimeout recursivo
+- **alexa_webhook_logs**: Registra cada chamada ao webhook Alexa com: userId, intentName, stageId, batchId, requestType, slots, sessionAttributes, responseSpeech (max 2000 chars), durationMs, error
+- **web_request_logs**: Registra chamadas API REST (excluindo GET polling em /api/batches e /api/batch/ e o próprio /api/alexa/webhook que tem tabela própria) com: method, path, statusCode, durationMs, requestBody, responseBody (truncado a 2000 chars)
+- **Endpoints de consulta**:
+  - `GET /api/logs/alexa` - Filtros: batchId, intent, startDate, endDate, limit, offset
+  - `GET /api/logs/web` - Filtros: method, path, startDate, endDate, limit, offset
+  - `POST /api/logs/purge` - Força expurgo manual de logs > 7 dias
 
 ### API Structure
 - Typed API contracts in `/shared/routes.ts` with Zod schemas
-- Endpoints: `/api/batches` (CRUD + status), `/api/conversations` (chat), `/api/generate-image`
+- Endpoints: `/api/batches` (CRUD + status), `/api/conversations` (chat), `/api/generate-image`, `/api/logs/alexa`, `/api/logs/web`
 - Error handling with standardized error schemas
 
 ## External Dependencies
@@ -151,8 +163,8 @@ Preferred communication style: Simple, everyday language.
   - Etapa 7: cut_point_time
   - Etapa 14: press_start_time
   - Etapa 19: chamber_2_entry_date → calcula maturationEndDate (90 dias)
-- **Loop etapa 15**: Sai quando pH <= 5.2 OU após 1h30 (2 min em TEST_MODE)
-- **Reminder re-scheduling no loop pH**: Após registro de pH que não atinge meta, cancela reminder atual e agenda novo para tempo restante
+- **Loop etapa 15**: Sai SOMENTE quando pH <= 5.2 (sem saída automática por tempo)
+- **Reminder re-scheduling no loop pH**: Após registro de pH que não atinge meta, cancela reminder atual e agenda novo para 1h30 (tempo completo de nova espera)
 - **UX amigável**: Mensagens claras informando qual input falta e como fornecê-lo
 
 ### Alexa Reminders API (`server/alexaReminders.ts`)
