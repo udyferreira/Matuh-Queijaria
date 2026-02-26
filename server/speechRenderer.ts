@@ -481,7 +481,7 @@ export function buildAdvancePayload(
     }
   }
   
-  const instructions = nextStage.instructions || [];
+  const instructions = nextStage.id === 19 ? [] : (nextStage.instructions || []);
   
   const stageName = nextStage.id === 19 ? "Transferir para Câmara 2" : nextStage.name;
   
@@ -692,14 +692,15 @@ export function buildAutoAdvancePayload(
     }
   }
   
-  const instructions = nextStage.instructions || [];
+  const instructions = nextStage.id === 19 ? [] : (nextStage.instructions || []);
+  const stageName = nextStage.id === 19 ? "Transferir para Câmara 2" : nextStage.name;
   
   return {
     context: "auto_advance",
     confirmation: confirmationMessage,
     stage: {
       id: nextStage.id,
-      name: nextStage.name
+      name: stageName
     },
     instructions,
     doses: Object.keys(doses).length > 0 ? doses : undefined,

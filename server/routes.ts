@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import { CHEESE_TYPES, getCheeseTypeName, formatBatchCode } from "@shared/schema";
+import { CHEESE_TYPES, getCheeseTypeName } from "@shared/schema";
 import { recipeManager, getTimerDurationMinutes, getIntervalDurationMinutes, TEST_MODE } from "./recipe";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
@@ -1345,7 +1345,8 @@ export async function registerRoutes(
               const stage = recipeManager.getStage(batch.currentStageId);
               const recipeName = recipeManager.getRecipeName();
               const stage15Ctx = buildStage15Context(batch);
-              const speechText = `Etapa ${batch.currentStageId} do queijo ${recipeName}: ${stage?.name || 'em andamento'}.${stage15Ctx} Continuar ou trocar de lote?`;
+              const alexaStageName = stage?.id === 19 ? "Transferir para Câmara 2" : (stage?.name || 'em andamento');
+              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${alexaStageName}.${stage15Ctx} Continuar ou trocar de lote?`;
               console.log(`[LaunchRequest] Resuming persisted batch=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
               return res.status(200).json(buildAlexaResponse(
                 speechText,
@@ -2449,8 +2450,7 @@ export async function registerRoutes(
           const matDateParts = maturationEndDate.split('-');
           const formattedMatDate = `${parseInt(matDateParts[2])} de ${getMonthName(parseInt(matDateParts[1]))} de ${matDateParts[0]}`;
           
-          const batchCode = formatBatchCode(new Date(activeBatch.startedAt));
-          const speech = `Lote ${batchCode} concluído. Data de entrada na câmara dois: ${formattedDate}. Fim da maturação: ${formattedMatDate}. Até o próximo queijo!`;
+          const speech = `Lote concluído. Data de entrada na câmara dois: ${formattedDate}. Fim da maturação: ${formattedMatDate}. Até o próximo queijo!`;
           
           return res.status(200).json(buildAlexaResponse(
             speech,
