@@ -70,8 +70,11 @@ export default function Home() {
                     </div>
 
                     <h3 className="text-2xl font-bold mb-1">Queijo {getCheeseTypeName(batch.recipeId)}</h3>
-                    <div className="text-sm text-muted-foreground mb-6">
+                    <div className="text-sm text-muted-foreground">
                       Vol: <span className="text-foreground font-medium">{batch.milkVolumeL}L</span> • Iniciado em {new Date(batch.startedAt).toLocaleDateString('pt-BR')}
+                    </div>
+                    <div className="text-sm text-muted-foreground mb-6">
+                      Etapa <span className="text-foreground font-medium">{batch.currentStageId}</span> de 19
                     </div>
 
                     <div className="space-y-4">
