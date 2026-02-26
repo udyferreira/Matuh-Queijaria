@@ -252,7 +252,7 @@ stages:
       blocking: true
 
   - id: 19
-    name: "Transferir para Câmara 2 e Conclusão"
+    name: "Transferir para Câmara 2"
     type: "transfer"
     operator_input_required:
       - chamber_2_entry_date
