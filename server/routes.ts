@@ -976,7 +976,7 @@ export async function registerRoutes(
         const dateValue = command.entities.date_value;
         const dateType = command.entities.date_type;
         if (!dateValue) {
-          return { speech: "Não entendi a data. Diga algo como 'entrada na câmara dois hoje'.", shouldEndSession: false };
+          return { speech: "Não entendi a data. Diga algo como 'coloquei na câmara dois agora'.", shouldEndSession: false };
         }
         
         if (dateType === "chamber_2_entry") {
@@ -2358,7 +2358,7 @@ export async function registerRoutes(
             let helpMessage: string;
             if (activeBatch && currentStage) {
               if (stageId === 19) {
-                helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Para registrar a data, diga: "coloquei na câmara dois hoje". Ou diga "qual é o status".`;
+                helpMessage = `Estamos na etapa ${stageId}: Transferir para Câmara 2. Quando transferir, diga: "coloquei na câmara dois agora". Ou diga "qual é o status".`;
               } else {
                 // Stage doesn't require date - suggest what IS valid
                 const utterances = speechRenderer.getContextualUtterances(currentStage, activeBatch);
@@ -2419,7 +2419,7 @@ export async function registerRoutes(
           
           if (!dateValue) {
             return res.status(200).json(buildAlexaResponse(
-              "Por favor, informe a data de entrada na câmara 2. Diga: 'entrada na câmara dois hoje' ou 'entrada na câmara dois dia quinze de janeiro'.",
+              "Por favor, informe a data de entrada na câmara 2. Diga: 'coloquei na câmara dois agora'.",
               false,
               "Qual a data de entrada na câmara 2?",
               sessionAttributes
@@ -2428,8 +2428,7 @@ export async function registerRoutes(
           
           console.log(`[Stage 19] chamber2EntryDate BEFORE: ${(activeBatch as any).chamber2EntryDate || 'null'}`);
           
-          // Use centralized function for chamber 2 entry
-          const result = await batchService.recordChamber2Entry(activeBatch.id, dateValue);
+          const result = await batchService.recordChamber2Entry(activeBatch.id, dateValue, undefined, apiCtx);
           
           console.log(`[Stage 19] chamber2EntryDate AFTER: dateValue=${dateValue} success=${result.success}`);
           
@@ -2451,12 +2450,7 @@ export async function registerRoutes(
           const formattedMatDate = `${parseInt(matDateParts[2])} de ${getMonthName(parseInt(matDateParts[1]))} de ${matDateParts[0]}`;
           
           const batchCode = formatBatchCode(new Date(activeBatch.startedAt));
-          const completionPayload = speechRenderer.buildCompletionPayload(
-            batchCode,
-            formattedDate,
-            formattedMatDate
-          );
-          const speech = await speechRenderer.renderSpeech(completionPayload);
+          const speech = `Lote ${batchCode} concluído. Data de entrada na câmara dois: ${formattedDate}. Fim da maturação: ${formattedMatDate}. Até o próximo queijo!`;
           
           return res.status(200).json(buildAlexaResponse(
             speech,

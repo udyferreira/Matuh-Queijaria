@@ -259,7 +259,7 @@ stages:
     stored_values:
       - chamber_2_entry_date
     expected_intent: "RegisterChamberEntryDateIntent"
-    input_prompt: "Registre a data de entrada na câmara 2 dizendo: 'entrada na câmara dois hoje' ou 'entrada na câmara dois dia quinze de janeiro'."
+    input_prompt: "Quando transferir, diga: 'coloquei na câmara dois agora'."
     instructions:
       - "Colocar plaquinha com data de produção na tábua"
       - "Virar os queijos diariamente na câmara 2"

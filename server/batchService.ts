@@ -807,7 +807,8 @@ export function getMaturationEndDate(batchStartDate: Date): Date {
 export async function recordChamber2Entry(
   batchId: number, 
   entryDateValue: string,
-  options?: { unit?: string; notes?: string }
+  options?: { unit?: string; notes?: string },
+  apiCtx?: any
 ): Promise<{
   success: boolean;
   error?: string;
@@ -846,10 +847,11 @@ export async function recordChamber2Entry(
   measurements._history = inputHistory;
   
   const alerts = (batch.scheduledAlerts as Record<string, any>) || {};
-  if (Object.keys(alerts).length > 0) {
+  if (apiCtx && Object.keys(alerts).length > 0) {
     try {
-      await cancelAllBatchReminders(undefined, alerts);
+      await cancelAllBatchReminders(apiCtx, alerts);
     } catch (e) {
+      console.warn(`[recordChamber2Entry] Failed to cancel reminders: ${e}`);
     }
   }
 

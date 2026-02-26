@@ -403,11 +403,13 @@ export function buildStatusPayload(
     }
   }
   
+  const stageName = stage.id === 19 ? "Transferir para Câmara 2" : stage.name;
+  
   return {
     context,
     stage: {
       id: stage.id,
-      name: stage.name
+      name: stageName
     },
     instructions: stage.instructions || [],
     doses: Object.keys(doses).length > 0 ? doses : undefined,
@@ -458,7 +460,7 @@ export function buildAdvancePayload(
   if (completed) {
     return {
       context: "advance",
-      stage: { id: 19, name: "Transferir para Câmara 2 e Conclusão" },
+      stage: { id: 19, name: "Transferir para Câmara 2" },
       notes: "Lote finalizado com sucesso! Todas as etapas foram concluídas.",
       allowedUtterances: ["qual é o status", "novo lote com 130 litros"]
     };
@@ -481,11 +483,13 @@ export function buildAdvancePayload(
   
   const instructions = nextStage.instructions || [];
   
+  const stageName = nextStage.id === 19 ? "Transferir para Câmara 2" : nextStage.name;
+  
   return {
     context: "advance",
     stage: {
       id: nextStage.id,
-      name: nextStage.name
+      name: stageName
     },
     instructions,
     doses: Object.keys(doses).length > 0 ? doses : undefined,
@@ -520,7 +524,7 @@ export function buildCompletionPayload(
 ): SpeechRenderPayload {
   return {
     context: "advance",
-    stage: { id: 19, name: "Transferir para Câmara 2 e Conclusão" },
+    stage: { id: 19, name: "Transferir para Câmara 2" },
     notes: `Lote ${batchCode} concluído. Data de entrada na câmara dois: ${formattedEntryDate}. Fim da maturação: ${formattedMaturationDate}. Até o próximo queijo!`,
     allowedUtterances: ["qual é o status", "novo lote com 130 litros"]
   };
@@ -730,7 +734,7 @@ export function getContextualUtterances(stage: any, batch: any): string[] {
   for (const input of requiredInputs) {
     if (input === 'chamber_2_entry_date') {
       if (!batch?.chamber2EntryDate) {
-        return ["coloquei na câmara dois hoje"];
+        return ["coloquei na câmara dois agora"];
       }
       continue;
     }
