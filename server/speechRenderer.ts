@@ -385,6 +385,13 @@ export function buildStatusPayload(
   context: "status" | "instructions" = "status",
   pendingInputReminder?: string
 ): SpeechRenderPayload {
+  if (!stage) {
+    return {
+      context: "error",
+      notes: `Lote na etapa ${batch.currentStageId}, que não existe na receita atual. Verifique o sistema.`,
+      allowedUtterances: ["qual é o status", "ajuda"]
+    };
+  }
   const calculatedInputs = batch.calculatedInputs || {};
   
   const doses = getRelevantDosesForStage(stage, calculatedInputs);
@@ -464,6 +471,14 @@ export function buildAdvancePayload(
     };
   }
   
+  if (!nextStage) {
+    return {
+      context: "error",
+      notes: "Não foi possível determinar a próxima etapa. Verifique o sistema.",
+      allowedUtterances: ["qual é o status", "ajuda"]
+    };
+  }
+
   const calculatedInputs = batch.calculatedInputs || {};
   
   const doses = getRelevantDosesForStage(nextStage, calculatedInputs);
@@ -673,6 +688,14 @@ export function buildAutoAdvancePayload(
   batch: any,
   nextStage: any
 ): SpeechRenderPayload {
+  if (!nextStage) {
+    return {
+      context: "error",
+      confirmation: confirmationMessage,
+      notes: "Não foi possível determinar a próxima etapa. Verifique o sistema.",
+      allowedUtterances: ["qual é o status", "ajuda"]
+    };
+  }
   const calculatedInputs = batch.calculatedInputs || {};
   
   const doses = getRelevantDosesForStage(nextStage, calculatedInputs);
