@@ -28,7 +28,7 @@ const STAGE_NAMES: Record<number, string> = {
   16: "Transferir para câmara de secagem",
   17: "Salga em tanque",
   18: "Secagem em prateleiras",
-  19: "Transferir para Câmara 2 e Conclusão",
+  19: "Transferir para Câmara 2 (início da maturação)",
 };
 
 const MEASUREMENT_LABELS: Record<string, string> = {
