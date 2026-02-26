@@ -521,7 +521,7 @@ export async function listInProgressBatches(): Promise<BatchSummary[]> {
       recipeName: recipeName,
       startedAt: startedAtISO,
       currentStageId: batch.currentStageId,
-      currentStageName: stage?.id === 19 ? "Transferir para Câmara 2" : (stage?.name || `Etapa ${batch.currentStageId}`),
+      currentStageName: stage?.name || `Etapa ${batch.currentStageId}`,
       status: batch.status,
     };
   });

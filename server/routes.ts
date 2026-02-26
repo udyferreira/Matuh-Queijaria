@@ -1345,8 +1345,7 @@ export async function registerRoutes(
               const stage = recipeManager.getStage(batch.currentStageId);
               const recipeName = recipeManager.getRecipeName();
               const stage15Ctx = buildStage15Context(batch);
-              const alexaStageName = stage?.id === 19 ? "Transferir para Câmara 2" : (stage?.name || 'em andamento');
-              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${alexaStageName}.${stage15Ctx} Continuar ou trocar de lote?`;
+              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${stage15Ctx} Continuar ou trocar de lote?`;
               console.log(`[LaunchRequest] Resuming persisted batch=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
               return res.status(200).json(buildAlexaResponse(
                 speechText,
