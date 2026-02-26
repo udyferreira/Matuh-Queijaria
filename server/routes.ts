@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import { CHEESE_TYPES, getCheeseTypeName } from "@shared/schema";
+import { CHEESE_TYPES, getCheeseTypeName, formatBatchCode } from "@shared/schema";
 import { recipeManager, getTimerDurationMinutes, getIntervalDurationMinutes, TEST_MODE } from "./recipe";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
@@ -2443,44 +2443,25 @@ export async function registerRoutes(
           }
           
           const maturationEndDate = result.maturationEndDateISO!.split('T')[0];
-          console.log(`[Stage 19] Chamber 2 entry date registered: ${dateValue}, maturation ends: ${maturationEndDate}`);
+          console.log(`[Stage 19] Chamber 2 entry date registered: ${dateValue}, maturation ends: ${maturationEndDate}. Batch completed.`);
           
-          // Format date for speech
           const dateParts = dateValue.split('-');
-          const formattedDate = `${parseInt(dateParts[2])} de ${getMonthName(parseInt(dateParts[1]))}`;
+          const formattedDate = `${parseInt(dateParts[2])} de ${getMonthName(parseInt(dateParts[1]))} de ${dateParts[0]}`;
           const matDateParts = maturationEndDate.split('-');
-          const formattedMatDate = `${parseInt(matDateParts[2])} de ${getMonthName(parseInt(matDateParts[1]))}`;
+          const formattedMatDate = `${parseInt(matDateParts[2])} de ${getMonthName(parseInt(matDateParts[1]))} de ${matDateParts[0]}`;
           
-          const confirmationMsg = `Data de entrada na câmara 2 registrada: ${formattedDate}. A maturação de 90 dias terminará em ${formattedMatDate}.`;
+          const batchCode = formatBatchCode(new Date(activeBatch.startedAt));
+          const completionPayload = speechRenderer.buildCompletionPayload(
+            batchCode,
+            formattedDate,
+            formattedMatDate
+          );
+          const speech = await speechRenderer.renderSpeech(completionPayload);
           
-          const advanceResult = await batchService.advanceBatch(activeBatch.id, apiCtx);
-          if (advanceResult.success && advanceResult.nextStage) {
-            const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
-            const updatedBatch = await batchService.getBatch(activeBatch.id);
-            console.log(`[Stage 19] Auto-advancing to stage ${advanceResult.nextStage.id}.`);
-            
-            if (nextStage && updatedBatch) {
-              const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
-              let speech = await speechRenderer.renderSpeech(payload);
-              let permCard: any = undefined;
-              if (advanceResult.reminderScheduled && advanceResult.waitDurationText) {
-                speech += ` Vou te avisar em ${advanceResult.waitDurationText}.`;
-              } else if (advanceResult.needsReminderPermission && advanceResult.waitDurationText) {
-                speech += ` Esta etapa dura ${advanceResult.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
-                permCard = buildPermissionCard().card;
-              } else if (advanceResult.needsReminderPermission) {
-                speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
-                permCard = buildPermissionCard().card;
-              }
-              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes, permCard));
-            }
-          }
-          
-          // Fallback
           return res.status(200).json(buildAlexaResponse(
-            `${confirmationMsg} Diga 'avançar etapa' para continuar.`,
-            false,
-            "Diga 'avançar etapa' para continuar.",
+            speech,
+            true,
+            undefined,
             sessionAttributes
           ));
         }

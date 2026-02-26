@@ -390,13 +390,6 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
   updatedHistory.push({ stageId: nextStage.id, action: "start", timestamp: new Date().toISOString() });
   updates.history = updatedHistory;
 
-  if (nextStage.id === 20) {
-    const maturationEndDate = (batch as any).maturationEndDate;
-    if (maturationEndDate && new Date(maturationEndDate) <= new Date()) {
-      updates.batchStatus = "READY_FOR_SALE";
-    }
-  }
-
   const measurements = (batch.measurements as Record<string, any>) || {};
   const nowIso = new Date().toISOString();
   let touchedMeasurements = false;
@@ -852,11 +845,23 @@ export async function recordChamber2Entry(
   inputHistory.push(historyEntry);
   measurements._history = inputHistory;
   
+  const alerts = (batch.scheduledAlerts as Record<string, any>) || {};
+  if (Object.keys(alerts).length > 0) {
+    try {
+      await cancelAllBatchReminders(undefined, alerts);
+    } catch (e) {
+    }
+  }
+
   await storage.updateBatch(batchId, { 
     measurements,
     chamber2EntryDate: entryDate,
     maturationEndDate: maturationEndDate,
-    batchStatus: "MATURING"
+    status: "completed",
+    completedAt: new Date(),
+    scheduledAlerts: {},
+    activeTimers: [],
+    activeReminders: []
   });
   
   await storage.logBatchAction({
@@ -866,6 +871,16 @@ export async function recordChamber2Entry(
     details: { 
       chamber_2_entry_date: entryDateValue, 
       maturationEndDate: maturationEndDateISO 
+    }
+  });
+
+  await storage.logBatchAction({
+    batchId,
+    stageId: batch.currentStageId,
+    action: "complete",
+    details: { 
+      reason: "chamber_2_entry_registered",
+      maturationEndDate: maturationEndDateISO
     }
   });
   

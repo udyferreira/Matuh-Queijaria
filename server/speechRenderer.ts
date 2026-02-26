@@ -458,7 +458,7 @@ export function buildAdvancePayload(
   if (completed) {
     return {
       context: "advance",
-      stage: { id: 21, name: "Conclusão" },
+      stage: { id: 19, name: "Transferir para Câmara 2 e Conclusão" },
       notes: "Lote finalizado com sucesso! Todas as etapas foram concluídas.",
       allowedUtterances: ["qual é o status", "novo lote com 130 litros"]
     };
@@ -510,6 +510,19 @@ export function buildQueryInputPayload(
       value,
       unit
     }
+  };
+}
+
+export function buildCompletionPayload(
+  batchCode: string,
+  formattedEntryDate: string,
+  formattedMaturationDate: string
+): SpeechRenderPayload {
+  return {
+    context: "advance",
+    stage: { id: 19, name: "Transferir para Câmara 2 e Conclusão" },
+    notes: `Lote ${batchCode} concluído. Data de entrada na câmara dois: ${formattedEntryDate}. Fim da maturação: ${formattedMaturationDate}. Até o próximo queijo!`,
+    allowedUtterances: ["qual é o status", "novo lote com 130 litros"]
   };
 }
 

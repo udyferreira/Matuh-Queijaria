@@ -2,7 +2,7 @@
 
 ## Overview
 
-Matuh Queijaria is a backend-driven production management system for artisan cheese making, featuring voice control via Alexa integration. The application tracks cheese production batches through a canonical 21-stage recipe (expanded from 20, with stage 21 "Conclusão" as final), managing timers, measurements (pH, temperature), and calculated ingredient proportions. The system follows a deterministic architecture where the backend maintains strict control over the production process, with LLM integration serving only as a cognitive assistant for natural language interpretation and guidance—never as a process executor.
+Matuh Queijaria is a backend-driven production management system for artisan cheese making, featuring voice control via Alexa integration. The application tracks cheese production batches through a canonical 19-stage recipe (stages 19/20/21 were unified into stage 19 "Transferir para Câmara 2 e Conclusão"), managing timers, measurements (pH, temperature), and calculated ingredient proportions. The system follows a deterministic architecture where the backend maintains strict control over the production process, with LLM integration serving only as a cognitive assistant for natural language interpretation and guidance—never as a process executor.
 
 ## User Preferences
 
@@ -136,7 +136,9 @@ Preferred communication style: Simple, everyday language.
 - **RegisterChamberEntryDateIntent** (etapa 19): Registro de data de entrada na câmara 2
   - Slot: entry_date (AMAZON.DATE)
   - Só aceito na etapa 19, rejeitado em outras
-  - Calcula automaticamente maturationEndDate (90 dias)
+  - Calcula automaticamente maturationEndDate (startedAt + 90 dias)
+  - **Auto-completa o lote**: Após registrar data, o lote é automaticamente marcado como `completed`
+  - Alexa vocaliza: "Lote [code] concluído... Até o próximo queijo!" com data de maturação
   - **Intent Misroute Guard**: Se entry_date vazio/"?", retorna ajuda contextual para etapa atual
 
 **pH Value Normalization** (`normalizePHValue` em batchService.ts):
@@ -162,7 +164,7 @@ Preferred communication style: Simple, everyday language.
   - Etapa 6: flocculation_time
   - Etapa 7: cut_point_time
   - Etapa 14: press_start_time
-  - Etapa 19: chamber_2_entry_date → calcula maturationEndDate (90 dias)
+  - Etapa 19: chamber_2_entry_date → calcula maturationEndDate (startedAt + 90 dias) → auto-completa lote
 - **Loop etapa 15**: Sai SOMENTE quando pH < 5.3 (sem saída automática por tempo)
 - **Reminder re-scheduling no loop pH**: Após registro de pH que não atinge meta, cancela reminder atual e agenda novo para 1h30 (tempo completo de nova espera)
 - **UX amigável**: Mensagens claras informando qual input falta e como fornecê-lo

@@ -252,7 +252,7 @@ stages:
       blocking: true
 
   - id: 19
-    name: "Transferir para Câmara 2 (início da maturação)"
+    name: "Transferir para Câmara 2 e Conclusão"
     type: "transfer"
     operator_input_required:
       - chamber_2_entry_date
@@ -262,22 +262,6 @@ stages:
     input_prompt: "Registre a data de entrada na câmara 2 dizendo: 'entrada na câmara dois hoje' ou 'entrada na câmara dois dia quinze de janeiro'."
     instructions:
       - "Colocar plaquinha com data de produção na tábua"
-
-  - id: 20
-    name: "Maturação em Câmara 2"
-    type: "maintenance"
-    reminder:
-      frequency: "daily"
-    maturation_control:
-      duration_days: 90
-      count_from: "chamber_2_entry_date"
-    instructions:
-      - "Virar os queijos diariamente"
+      - "Virar os queijos diariamente na câmara 2"
       - "Trocar tábua se estiver molhada"
-
-  - id: 21
-    name: "Conclusão"
-    type: "completion"
-    instructions:
-      - "Lote finalizado com sucesso"
-      - "Queijos prontos para comercialização"
+      - "Após registrar a data, o lote será concluído automaticamente"

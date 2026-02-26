@@ -28,9 +28,7 @@ const STAGE_NAMES: Record<number, string> = {
   16: "Transferir para câmara de secagem",
   17: "Salga em tanque",
   18: "Secagem em prateleiras",
-  19: "Transferir para Câmara 2 (início da maturação)",
-  20: "Maturação em Câmara 2",
-  21: "Conclusão",
+  19: "Transferir para Câmara 2 e Conclusão",
 };
 
 const MEASUREMENT_LABELS: Record<string, string> = {
@@ -87,7 +85,7 @@ function getMeasurementLabel(key: string, stageId: number, measurementIndex?: nu
 
 function exportToExcel(batches: ProductionBatch[]) {
   const data: any[] = [];
-  const allStageIds = Array.from({ length: 21 }, (_, i) => i + 1);
+  const allStageIds = Array.from({ length: 19 }, (_, i) => i + 1);
   
   batches.forEach((batch) => {
     const measurements = batch.measurements as Record<string, any> || {};
@@ -228,9 +226,6 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
     if (batch.maturationEndDate) {
       rows.push({ label: "Fim da Maturação (90 dias)", value: new Date(batch.maturationEndDate).toLocaleDateString("pt-BR") });
     }
-  }
-
-  if (stageId === 21) {
     if (batch.completedAt) {
       rows.push({ label: "Data de Conclusão", value: new Date(batch.completedAt).toLocaleDateString("pt-BR") });
     }
@@ -253,7 +248,7 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
     return acc;
   }, {} as Record<number, MeasurementHistoryItem[]>);
 
-  const allStageIds = Array.from({ length: 21 }, (_, i) => i + 1);
+  const allStageIds = Array.from({ length: 19 }, (_, i) => i + 1);
   const stagesWithData = allStageIds.filter((stageId) => getStageData(batch, stageId, measurementsByStage).length > 0);
 
   return (
@@ -342,7 +337,7 @@ function PrintableReport({ batches }: { batches: ProductionBatch[] }) {
           return acc;
         }, {} as Record<number, MeasurementHistoryItem[]>);
 
-        const allStageIds = Array.from({ length: 21 }, (_, i) => i + 1);
+        const allStageIds = Array.from({ length: 19 }, (_, i) => i + 1);
         
         return (
           <div key={batch.id} className="mb-8 break-inside-avoid">

@@ -34,9 +34,7 @@ const STAGE_NAMES: Record<number, string> = {
   16: "Transferir para câmara de secagem",
   17: "Salga em tanque",
   18: "Secagem em prateleiras",
-  19: "Transferir para Câmara 2 (início da maturação)",
-  20: "Maturação em Câmara 2",
-  21: "Conclusão",
+  19: "Transferir para Câmara 2 e Conclusão",
 };
 
 const STAGE_INSTRUCTIONS: Record<number, string[]> = {
@@ -50,7 +48,6 @@ const TIMER_LABELS: Record<number, string> = {
   4: "Maturação dos fermentos LR/DX",
   10: "Mexedura progressiva",
   17: "Salga em salmoura",
-  19: "Secagem na Câmara 2",
 };
 
 const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -163,13 +160,12 @@ export default function BatchDetail() {
       return;
     }
 
-    // Stage 19: Date input (chamber entry date)
     if (batch.currentStageId === 19) {
       logCanonical({ id, data: { key: 'chamber_2_entry_date', value: inputVal } }, {
         onSuccess: () => {
-          toast({ title: "Registrado", description: "Data de entrada na Câmara 2 registrada." });
+          toast({ title: "Lote Concluído", description: "Data registrada e lote concluído. Até o próximo queijo!" });
           setInputVal("");
-          handleAdvance();
+          navigate("/");
         },
         onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
       });
@@ -315,7 +311,7 @@ export default function BatchDetail() {
                <div className="h-8 w-px bg-border" />
                <div className="text-right">
                  <div className="text-xs text-muted-foreground uppercase tracking-wider">Etapa</div>
-                 <div className="text-xl font-bold text-primary">{batch.currentStageId} <span className="text-muted-foreground text-sm font-normal">/ 21</span></div>
+                 <div className="text-xl font-bold text-primary">{batch.currentStageId} <span className="text-muted-foreground text-sm font-normal">/ 19</span></div>
                </div>
             </div>
             
