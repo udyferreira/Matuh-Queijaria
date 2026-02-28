@@ -980,6 +980,16 @@ export async function registerRoutes(
         if (!activeBatch) {
           return { speech: "Não há lote ativo para avançar.", shouldEndSession: false };
         }
+
+        if (activeBatch.currentStageId === 13) {
+          const s13 = getStage13EntryPrompt(activeBatch, {});
+          if (s13) {
+            const stage = recipeManager.getStage(13);
+            const speech = `Etapa 13: ${stage?.name || 'Medir pH inicial e registrar quantidade de peças'}.${s13.prompt}`;
+            console.log(`[advance] Already on stage 13, starting guided entry: pending=${s13.newAttrs.pending}`);
+            return { speech, shouldEndSession: false, sessionAttrsOverride: s13.newAttrs };
+          }
+        }
         
         const result = await batchService.advanceBatch(activeBatch.id, apiCtxParam);
         
@@ -1002,6 +1012,16 @@ export async function registerRoutes(
         
         const updatedBatch = result.batch || activeBatch;
         const nextStage = recipeManager.getStage(result.nextStage?.id || 0);
+
+        if (nextStage?.id === 13) {
+          const s13 = getStage13EntryPrompt(updatedBatch, {});
+          if (s13) {
+            const speech = `Etapa 13: ${nextStage.name}.${s13.prompt}`;
+            console.log(`[advance] Stage 13 guided entry: pending=${s13.newAttrs.pending}`);
+            return { speech, shouldEndSession: false, sessionAttrsOverride: s13.newAttrs };
+          }
+        }
+
         const payload = speechRenderer.buildAdvancePayload(updatedBatch, nextStage, false);
         let speech = await speechRenderer.renderSpeech(payload);
         
@@ -2841,6 +2861,19 @@ export async function registerRoutes(
           // Pass pendingInputReminder from GATING to status/instructions handlers
           const result = await executeIntent(command, pendingInputReminder, activeBatchResolved || undefined, apiCtx, userId) as any;
           
+          if (result.sessionAttrsOverride) {
+            const mergedAttrs = { ...sessionAttributes, ...result.sessionAttrsOverride };
+            return res.status(200).json(buildAlexaResponse(
+              result.speech,
+              result.shouldEndSession,
+              result.sessionAttrsOverride.pending === "STAGE13_PH" ? "Qual o pH inicial?" :
+              result.sessionAttrsOverride.pending === "STAGE13_PIECES" ? "Quantas peças?" :
+              "O que deseja fazer?",
+              mergedAttrs,
+              result.card
+            ));
+          }
+
           // Handle guided start_batch multi-turn flow
           if (result.speech === '_GUIDED_START_BATCH_' && result.guidedDraft) {
             const draft = result.guidedDraft;

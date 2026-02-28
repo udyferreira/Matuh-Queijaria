@@ -327,15 +327,13 @@ export class RecipeManager {
           break;
         case 'ph_value':
           if (stageId === 13) {
-            messages.push("Registre o pH inicial e a quantidade de peças. Diga: 'pH cinco vírgula dois com doze peças'");
+            messages.push("Registre o pH inicial. Diga: 'pH cinco vírgula dois'");
           } else {
             messages.push("Registre o pH atual. Diga: 'pH cinco vírgula dois'");
           }
           break;
         case 'pieces_quantity':
-          if (stageId !== 13) {
-            messages.push("Registre a quantidade de peças. Diga: 'são 12 peças'");
-          }
+          messages.push("Registre a quantidade de peças. Diga: 'doze peças'");
           break;
         case 'press_start_time':
           messages.push("Registre o horário de início da prensa. Diga: 'hora da prensa às dezesseis e dez'");

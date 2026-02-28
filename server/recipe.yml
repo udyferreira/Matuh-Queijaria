@@ -196,7 +196,7 @@ stages:
       - initial_ph
       - pieces_quantity
     expected_intent: "RegisterPHAndPiecesIntent"
-    input_prompt: "Informe o pH inicial e a quantidade de peças dizendo: 'pH cinco vírgula quatro e seis peças'."
+    input_prompt: "Informe o pH inicial dizendo: 'pH cinco vírgula dois'."
 
   - id: 14
     name: "Colocar na prensa"

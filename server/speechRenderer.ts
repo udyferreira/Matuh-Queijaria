@@ -769,11 +769,7 @@ export function getContextualUtterances(stage: any, batch: any): string[] {
         return ["hora da prensa às dezesseis e dez"];
       }
       if (input === 'ph_value' || input === 'initial_ph') {
-        if (stage?.id === 13) {
-          return ["pH cinco vírgula dois com doze peças"];
-        } else {
-          return ["pH cinco vírgula dois"];
-        }
+        return ["pH cinco vírgula dois"];
       }
       if (input === 'pieces_quantity') {
         return ["doze peças"];
