@@ -1246,7 +1246,14 @@ export async function registerRoutes(
     return batch;
   }
 
-  async function resolveActiveBatch(userId: string | null) {
+  async function resolveActiveBatch(userId: string | null, sessionActiveBatchId?: number | null) {
+    if (sessionActiveBatchId) {
+      const batch = await batchService.getBatch(sessionActiveBatchId);
+      if (batch && (batch.status === "active" || (batch.status as string) === "in_progress")) {
+        console.log(`[resolveActiveBatch] Using session activeBatchId=${batch.id} stage=${batch.currentStageId}`);
+        return batch;
+      }
+    }
     if (userId) {
       const lastBatchId = await storage.getLastActiveBatch(userId);
       if (lastBatchId) {
@@ -1264,6 +1271,29 @@ export async function registerRoutes(
       console.log(`[resolveActiveBatch] Fallback to first active batch id=${batch.id} stage=${batch.currentStageId}`);
     }
     return batch;
+  }
+
+  function getStage13EntryPrompt(batch: any, sessionAttrs: Record<string, any>): { prompt: string; reprompt: string; newAttrs: Record<string, any> } | null {
+    if (batch.currentStageId !== 13) return null;
+    const measurements = (batch.measurements as any) || {};
+    const existingPh = measurements.initial_ph;
+    const existingPieces = measurements.pieces_quantity;
+
+    if (existingPh === undefined) {
+      return {
+        prompt: " Qual é o pH inicial? Diga, por exemplo: 'pH cinco vírgula dois'.",
+        reprompt: "Qual o pH inicial?",
+        newAttrs: { ...sessionAttrs, pending: "STAGE13_PH" },
+      };
+    }
+    if (existingPieces === undefined) {
+      return {
+        prompt: ` pH ${existingPh} já registrado. Quantas peças foram enformadas? Diga, por exemplo: 'doze peças'.`,
+        reprompt: "Quantas peças?",
+        newAttrs: { ...sessionAttrs, pending: "STAGE13_PIECES" },
+      };
+    }
+    return null;
   }
 
   function buildStage15Context(batch: any): string {
@@ -1323,15 +1353,31 @@ export async function registerRoutes(
     if (batches.length === 1) {
       const b = batches[0];
       const dateStr = formatDatePtBr(b.startedAt);
-      let stage15Ctx = '';
+      let stageCtx = '';
+      let baseAttrs: Record<string, any> = { ...sessionAttrs, activeBatchId: b.batchId, state: undefined, batchChoices: undefined };
+      let reprompt = "O que deseja fazer?";
+
       if (b.currentStageId === 15) {
         const fullBatch = await batchService.getBatch(b.batchId);
-        if (fullBatch) stage15Ctx = buildStage15Context(fullBatch);
+        if (fullBatch) stageCtx = buildStage15Context(fullBatch);
+        reprompt = "Informe o pH ou diga 'qual é o status'.";
+      } else if (b.currentStageId === 13) {
+        const fullBatch = await batchService.getBatch(b.batchId);
+        if (fullBatch) {
+          const s13 = getStage13EntryPrompt(fullBatch, baseAttrs);
+          if (s13) {
+            stageCtx = s13.prompt;
+            baseAttrs = s13.newAttrs;
+            reprompt = s13.reprompt;
+            console.log(`[BATCH_MENU] Single batch stage 13 guided entry: pending=${s13.newAttrs.pending}`);
+          }
+        }
       }
+
       return {
-        speechText: `Beleza, vamos continuar o lote do ${b.recipeName} iniciado em ${dateStr}. Você está na etapa ${b.currentStageId}: ${b.currentStageName}.${stage15Ctx}`,
-        repromptText: b.currentStageId === 15 ? "Informe o pH ou diga 'qual é o status'." : "O que deseja fazer?",
-        newSessionAttrs: { ...sessionAttrs, activeBatchId: b.batchId, state: undefined, batchChoices: undefined },
+        speechText: `Beleza, vamos continuar o lote do ${b.recipeName} iniciado em ${dateStr}. Você está na etapa ${b.currentStageId}: ${b.currentStageName}.${stageCtx}`,
+        repromptText: reprompt,
+        newSessionAttrs: baseAttrs,
       };
     }
 
@@ -1418,12 +1464,24 @@ export async function registerRoutes(
               const stage = recipeManager.getStage(batch.currentStageId);
               const recipeName = recipeManager.getRecipeName();
               const stage15Ctx = buildStage15Context(batch);
-              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${stage15Ctx} Continuar ou trocar de lote?`;
+              let stageHint = '';
+              if (batch.currentStageId === 13) {
+                const measurements = (batch.measurements as any) || {};
+                if (measurements.initial_ph === undefined) {
+                  stageHint = ' Ao continuar, vou pedir o pH inicial.';
+                } else if (measurements.pieces_quantity === undefined) {
+                  stageHint = ` pH ${measurements.initial_ph} já registrado. Ao continuar, vou pedir a quantidade de peças.`;
+                }
+              }
+              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${stage15Ctx}${stageHint} Continuar ou trocar de lote?`;
               console.log(`[LaunchRequest] Resuming persisted batch=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
+              let launchReprompt = "Diga 'continuar' ou 'trocar lote'.";
+              if (batch.currentStageId === 15) launchReprompt = "Informe o pH ou diga 'continuar' ou 'trocar lote'.";
+              else if (batch.currentStageId === 13) launchReprompt = "Diga 'continuar' para informar o pH, ou 'trocar lote'.";
               return res.status(200).json(buildAlexaResponse(
                 speechText,
                 false,
-                batch.currentStageId === 15 ? "Informe o pH ou diga 'continuar' ou 'trocar lote'." : "Diga 'continuar' ou 'trocar lote'.",
+                launchReprompt,
                 { activeBatchId: batch.id, state: "CONFIRM_CONTINUE_OR_SWITCH" }
               ));
             } else {
@@ -1457,7 +1515,8 @@ export async function registerRoutes(
         const slots = intent?.slots || {};
         const dialogState = alexaRequest?.request?.dialogState || 'N/A';
         
-        const activeBatchResolved = await resolveActiveBatch(userId);
+        const sessionBatchId = sessionAttributes?.activeBatchId ? Number(sessionAttributes.activeBatchId) : null;
+        const activeBatchResolved = await resolveActiveBatch(userId, sessionBatchId);
         const stageForLog = activeBatchResolved?.currentStageId || 'no-batch';
         if (activeBatchResolved) {
           console.log(`[ACTIVE_BATCH] activeBatchId=${activeBatchResolved.id} stage=${stageForLog}`);
@@ -1470,6 +1529,19 @@ export async function registerRoutes(
           const activeBatch = userId ? await getActiveBatchForUser(userId) : activeBatchResolved;
           if (activeBatch) {
             console.log(`[${intentName}] Continuing with batch=${activeBatch.id} stage=${activeBatch.currentStageId}`);
+            const baseAttrs = { ...sessionAttributes, activeBatchId: activeBatch.id, state: undefined };
+
+            if (activeBatch.currentStageId === 13) {
+              const s13 = getStage13EntryPrompt(activeBatch, baseAttrs);
+              if (s13) {
+                const recipeName = recipeManager.getRecipeName();
+                const stage = recipeManager.getStage(activeBatch.currentStageId);
+                const speech = `Continuando o lote. Etapa 13: ${stage?.name || 'Medir pH inicial e registrar quantidade de peças'}.${s13.prompt}`;
+                console.log(`[${intentName}] Stage 13 guided entry: pending=${s13.newAttrs.pending}`);
+                return res.status(200).json(buildAlexaResponse(speech, false, s13.reprompt, s13.newAttrs));
+              }
+            }
+
             const stage = recipeManager.getStage(activeBatch.currentStageId);
             const payload = speechRenderer.buildStatusPayload(activeBatch, stage, "status");
             const speech = await speechRenderer.renderSpeech(payload);
@@ -1477,7 +1549,7 @@ export async function registerRoutes(
               speech,
               false,
               "O que deseja fazer?",
-              { ...sessionAttributes, activeBatchId: activeBatch.id, state: undefined }
+              baseAttrs
             ));
           }
           console.log(`[${intentName}] No active batch found, showing menu`);
@@ -1530,20 +1602,35 @@ export async function registerRoutes(
           
           const newSessionAttrs = { ...sessionAttributes, activeBatchId: selected.batchId, state: undefined, batchChoices: undefined };
           
-          let stage15Ctx = '';
+          let stageCtx = '';
+          let finalAttrs = newSessionAttrs;
+          let repromptText = "O que deseja fazer?";
+
           if (selected.currentStageId === 15) {
             const fullBatch = await batchService.getBatch(selected.batchId);
-            if (fullBatch) stage15Ctx = buildStage15Context(fullBatch);
+            if (fullBatch) stageCtx = buildStage15Context(fullBatch);
+            repromptText = "Informe o pH ou diga 'qual é o status'.";
+          } else if (selected.currentStageId === 13) {
+            const fullBatch = await batchService.getBatch(selected.batchId);
+            if (fullBatch) {
+              const s13 = getStage13EntryPrompt(fullBatch, newSessionAttrs);
+              if (s13) {
+                stageCtx = s13.prompt;
+                finalAttrs = s13.newAttrs;
+                repromptText = s13.reprompt;
+                console.log(`[BATCH_SELECT] Stage 13 guided entry: pending=${s13.newAttrs.pending}`);
+              }
+            }
           }
           
-          const speech = `Beleza, vamos continuar o lote do ${selected.recipeName} iniciado em ${dateStr}. Você está na etapa ${selected.currentStageId}: ${selected.currentStageName}.${stage15Ctx}`;
+          const speech = `Beleza, vamos continuar o lote do ${selected.recipeName} iniciado em ${dateStr}. Você está na etapa ${selected.currentStageId}: ${selected.currentStageName}.${stageCtx}`;
           console.log(`[BATCH_SELECT] option=${optionNumber} batchId=${selected.batchId}`);
           
           return res.status(200).json(buildAlexaResponse(
             speech,
             false,
-            selected.currentStageId === 15 ? "Informe o pH ou diga 'qual é o status'." : "O que deseja fazer?",
-            newSessionAttrs
+            repromptText,
+            finalAttrs
           ));
         }
         

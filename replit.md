@@ -41,7 +41,8 @@ Preferred communication style: Simple, everyday language.
 ### Alexa Integration
 - **Speech Renderer**: Backend builds structured JSON payloads for the LLM to render into natural speech. The LLM only renders, never decides or calculates.
 - **Stage-Aware Intent Gating**: Controls which Alexa intents are allowed based on the current production stage and pending inputs, ensuring process integrity.
-- **Multi-Turn Interactions**: Guided flows for critical actions like starting a batch or logging specific measurements (e.g., pH and pieces).
+- **Multi-Turn Interactions**: Guided flows for critical actions like starting a batch or logging specific measurements (e.g., pH and pieces). Stage 13 entry is guided: upon selecting/resuming a batch on stage 13, the system automatically prompts for pH first, then pieces, then auto-advances.
+- **Session-Aware Batch Resolution**: `resolveActiveBatch` prioritizes the session's `activeBatchId` over persisted or fallback batches, ensuring continuity across multi-turn flows.
 - **Alexa Reminders API**: Automatically schedules native Alexa reminders for stages with wait times, using the Alexa Reminders API.
 
 ## External Dependencies
