@@ -1,191 +1,56 @@
 # Matuh Queijaria - Artisan Cheese Production Agent
 
 ## Overview
-
-Matuh Queijaria is a backend-driven production management system for artisan cheese making, featuring voice control via Alexa integration. The application tracks cheese production batches through a canonical 19-stage recipe (stages 19/20/21 were unified into stage 19 "Transferir para Câmara 2 e Conclusão"), managing timers, measurements (pH, temperature), and calculated ingredient proportions. The system follows a deterministic architecture where the backend maintains strict control over the production process, with LLM integration serving only as a cognitive assistant for natural language interpretation and guidance—never as a process executor.
+Matuh Queijaria is a backend-driven production management system for artisan cheese making. It integrates voice control via Alexa to track and manage cheese production batches through a canonical 19-stage recipe. The system handles timers, measurements (pH, temperature), and calculates ingredient proportions. Its primary purpose is to ensure strict adherence to the production process for food safety and quality, with LLM integration serving as a cognitive assistant for natural language interpretation and guidance, not as a process executor. The project aims to streamline cheese production, improve consistency, and provide a user-friendly interface for managing complex recipes.
 
 ## User Preferences
-
 Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
-### Frontend Architecture
-- **Framework**: React 18 with TypeScript
-- **Routing**: Wouter (lightweight client-side routing)
-- **State Management**: TanStack React Query for server state with automatic polling (5s dashboard, 2s active batch, 1s timers)
-- **UI Components**: shadcn/ui component library with Radix UI primitives
-- **Styling**: Tailwind CSS with custom dark theme optimized for production environments
-- **Animations**: Framer Motion for stage transitions
-- **Build Tool**: Vite with custom path aliases (@/, @shared/, @assets/)
+### Core Principles
+- **Deterministic Process Control**: The backend is sovereign over stage order, calculations, timers, and validations to ensure strict adherence to production steps. The LLM cannot alter the production process.
+- **LLM as Supervised Assistant**: The LLM functions as a tool-calling pattern assistant for natural language interpretation, explaining steps, reinforcing safety, and providing verbal alerts, without executing process changes.
+- **Monorepo Structure**: The project is organized into `/client` (React frontend), `/server` (Express backend), and `/shared` (database schemas, API contracts, shared types) for maintainability.
 
-### Backend Architecture
-- **Runtime**: Node.js with Express
-- **Language**: TypeScript (ES Modules)
-- **API Design**: RESTful endpoints with Zod validation for request/response schemas
-- **Recipe Engine**: YAML-based canonical recipe (v1.0) loaded at startup, immutable during runtime
-- **Process Control**: Deterministic stage progression with backend-enforced validations
+### Frontend
+- **Framework**: React 18 with TypeScript.
+- **Routing**: Wouter.
+- **State Management**: TanStack React Query for server state with graduated polling intervals (1s-5s) for real-time updates.
+- **UI Components**: shadcn/ui with Radix UI.
+- **Styling**: Tailwind CSS with a custom dark theme.
+- **Animations**: Framer Motion.
+- **Authentication**: Session-based authentication with a login page.
 
-### Key Architectural Decisions
-
-1. **Deterministic Process Control**
-   - Problem: Ensuring food safety and quality requires strict adherence to production steps
-   - Solution: Backend is sovereign over stage order, calculations, timers, and validations
-   - The LLM cannot calculate proportions, advance/skip stages, alter timers, or override human measurements
-
-2. **LLM as Supervised Assistant**
-   - Problem: Natural language interaction needed without compromising process integrity
-   - Solution: Tool-calling pattern where LLM suggests intents, backend decides and executes
-   - LLM used for: interpreting ambiguous input, explaining steps, reinforcing safety, verbal alerts
-
-3. **Real-time State Polling**
-   - Problem: Production requires up-to-date timer and status information
-   - Solution: Graduated polling intervals based on data criticality (1s-5s)
-
-4. **Monorepo Structure**
-   - `/client` - React frontend application
-   - `/server` - Express backend with route handlers
-   - `/shared` - Database schemas, API contracts, and shared types
+### Backend
+- **Runtime**: Node.js with Express and TypeScript.
+- **API Design**: RESTful endpoints with Zod validation.
+- **Recipe Engine**: YAML-based canonical recipe, loaded at startup and immutable during runtime.
+- **Security**:
+    - **Authentication**: `express-session` with PostgreSQL-backed sessions, bcryptjs for password hashing.
+    - **Alexa Webhook Verification**: Validates certificate chain, signing certificate, X.509 certificate, request signature, and timestamp.
+    - **Security Headers**: Helmet for various HTTP security headers and CSP in production.
+    - **Rate Limiting**: Implemented for various API endpoints.
+    - **Error Sanitization**: Generic error messages in production, full details in development.
 
 ### Data Storage
-- **Database**: PostgreSQL via Drizzle ORM
-- **Session Storage**: connect-pg-simple for production sessions
-- **Schema Design**: 
-  - `production_batches` - Batch state with JSONB for calculated inputs, measurements, timers, history
-  - `batch_logs` - Audit trail of all production actions
-  - `conversations` / `messages` - Chat history for LLM assistant
-  - `alexa_webhook_logs` - Logs de todas as chamadas ao webhook Alexa (7 dias de retenção)
-  - `web_request_logs` - Logs de requisições API web não-polling (7 dias de retenção)
+- **Database**: PostgreSQL via Drizzle ORM.
+- **Schema**: Includes tables for `production_batches` (with JSONB for state, measurements, history), `batch_logs` (audit trail), `users`, `conversations`/`messages` (chat history), and `alexa_webhook_logs`/`web_request_logs` for persistent logging.
+- **Logging**: Persistent logging system with 180-day retention and daily purging.
 
-### Persistent Logging System (`server/logService.ts`)
-- **Retenção**: 7 dias para ambas as tabelas
-- **Expurgo automático**: Rotina diária executada às 3:00 AM horário de Brasília (6:00 AM UTC), via setTimeout recursivo
-- **alexa_webhook_logs**: Registra cada chamada ao webhook Alexa com: userId, intentName, stageId, batchId, requestType, slots, sessionAttributes, responseSpeech (max 2000 chars), durationMs, error
-- **web_request_logs**: Registra chamadas API REST (excluindo GET polling em /api/batches e /api/batch/ e o próprio /api/alexa/webhook que tem tabela própria) com: method, path, statusCode, durationMs, requestBody, responseBody (truncado a 2000 chars)
-- **Endpoints de consulta**:
-  - `GET /api/logs/alexa` - Filtros: batchId, intent, startDate, endDate, limit, offset
-  - `GET /api/logs/web` - Filtros: method, path, startDate, endDate, limit, offset
-  - `POST /api/logs/purge` - Força expurgo manual de logs > 7 dias
-
-### API Structure
-- Typed API contracts in `/shared/routes.ts` with Zod schemas
-- Endpoints: `/api/batches` (CRUD + status), `/api/conversations` (chat), `/api/generate-image`, `/api/logs/alexa`, `/api/logs/web`
-- Error handling with standardized error schemas
+### Alexa Integration
+- **Speech Renderer**: Backend builds structured JSON payloads for the LLM to render into natural speech. The LLM only renders, never decides or calculates.
+- **Stage-Aware Intent Gating**: Controls which Alexa intents are allowed based on the current production stage and pending inputs, ensuring process integrity.
+- **Multi-Turn Interactions**: Guided flows for critical actions like starting a batch or logging specific measurements (e.g., pH and pieces).
+- **Alexa Reminders API**: Automatically schedules native Alexa reminders for stages with wait times, using the Alexa Reminders API.
 
 ## External Dependencies
 
 ### AI Services
-- **OpenAI API**: Chat completions and image generation via Replit AI Integrations
-- **Environment Variables**: `AI_INTEGRATIONS_OPENAI_API_KEY`, `AI_INTEGRATIONS_OPENAI_BASE_URL`
+- **OpenAI API**: Used for chat completions and image generation via Replit AI Integrations.
 
 ### Database
-- **PostgreSQL**: Primary data store
-- **Environment Variable**: `DATABASE_URL`
+- **PostgreSQL**: The primary database used for all data storage.
 
 ### Voice Integration
-- **Amazon Alexa**: Webhook endpoint at `/api/alexa/webhook` for voice commands
-- ASK-compliant responses with proper format (version, outputSpeech, shouldEndSession)
-- Always returns HTTP 200 (errors communicated via speech)
-- Handles LaunchRequest, IntentRequest, SessionEndedRequest
-
-**Guided Multi-Turn Start Batch Flow**:
-- Início de lote via Alexa agora é fluxo guiado em 3 etapas separadas (não 3 dados de uma vez)
-- Etapa 1: Operador informa apenas volume → "novo lote com 130 litros"
-  - sessionAttributes.startBatchDraft = { milk_volume_l }, pending = "START_BATCH_TEMP"
-- Etapa 2: RegisterMilkTemperatureIntent captura temperatura → "32 graus"
-  - draft atualizado com milk_temperature_c, pending = "START_BATCH_PH"
-- Etapa 3: RegisterMilkPHIntent captura pH → "pH seis vírgula cinco"
-  - Lote criado com os 3 valores, draft e pending limpos
-- Backward compatible: se operador informar 3 valores de uma vez, funciona normalmente
-- FallbackIntent re-prompta com mensagem contextual durante pending states
-- Intents fora de contexto (sem pending correto) retornam orientação ao operador
-- Novos intents no interaction model: RegisterMilkTemperatureIntent (slot: temp_value AMAZON.NUMBER), RegisterMilkPHIntent (slot: ph_value AMAZON.NUMBER)
-
-**Speech Renderer Architecture** (`server/speechRenderer.ts`):
-- Backend builds structured `SpeechRenderPayload` JSON with all data
-- LLM (gpt-4o-mini) ONLY renders JSON to natural speech - never decides, calculates, or invents
-- Contexts: status, instructions, advance, help, query_input, error, start_batch, log_time/ph/date
-- Payload includes: stage, instructions, doses (value+unit), timers, allowedUtterances, notes
-- Builder functions: buildStatusPayload, buildAdvancePayload, buildQueryInputPayload, buildHelpPayload, buildErrorPayload, buildStartBatchPayload, buildLogConfirmationPayload, buildLaunchPayload
-- Structured logging: `[llm.render.input]` and `[llm.render.output]` for troubleshooting
-- Fallback speech generation when LLM fails
-
-**Stage-Aware Intent Gating (REGRA MESTRA)**:
-- Se etapa tem `operator_input_required` pendente:
-  - Bloqueia intents que mudam estado (advance, timers)
-  - Permite read-only intents (status, instructions, help) com pendingInputReminder injetado
-  - O `expected_intent` da etapa sempre permitido
-  - AMAZON.HelpIntent, AMAZON.StopIntent, AMAZON.CancelIntent sempre permitidos
-- Logging estruturado: `[GATING] stage=X intent=Y pendingInputs=Z expected=W`
-
-**Intents Estruturados por Etapa**:
-- **LogTimeIntent** (etapas 6, 7, 14): Registro de horários via AMAZON.TIME
-  - timeType → etapa: floculação→6, corte→7, prensa→14
-  - Valida currentStageId antes de registrar
-  - Normaliza formatos: T15:30, HH:MM, "now", períodos (MO/AF/EV/NI)
-- **RegisterPHAndPiecesIntent** (etapa 13): Registro de pH e quantidade de peças
-  - Slots: ph_value (AMAZON.NUMBER), pieces_quantity (AMAZON.NUMBER)
-  - Só aceito nas etapas 13 e 15, rejeitado em outras
-  - **Fluxo Multi-Turn Etapa 13**: Coleta pH e peças em perguntas separadas
-    - Etapa 1: Sistema pergunta pH → operador responde → pending = "STAGE13_PH"
-    - Etapa 2: pH registrado, sistema pergunta peças → pending = "STAGE13_PIECES"
-    - Etapa 3: Peças registradas → auto-advance para próxima etapa, pending limpo
-    - GUIDED_GUARD bloqueia intents não-relacionados durante STAGE13_PH/STAGE13_PIECES
-    - FallbackIntent re-prompta contextualmente durante pending states
-  - **Intent Misroute Guard**: Se ALL slots vazios/"?" em etapas != 13, retorna ajuda contextual
-- **RegisterChamberEntryDateIntent** (etapa 19): Registro de data de entrada na câmara 2
-  - Slot: entry_date (AMAZON.DATE)
-  - Só aceito na etapa 19, rejeitado em outras
-  - Calcula automaticamente maturationEndDate (startedAt + 90 dias)
-  - **Auto-completa o lote**: Após registrar data, o lote é automaticamente marcado como `completed`
-  - Alexa vocaliza: "Lote [code] concluído... Até o próximo queijo!" com data de maturação
-  - **Intent Misroute Guard**: Se entry_date vazio/"?", retorna ajuda contextual para etapa atual
-
-**pH Value Normalization** (`normalizePHValue` em batchService.ts):
-- ASR voice patterns: "55"→5.5, "66"→6.6 (divide by 10 if >14 and <100)
-- Comma decimal: "6,5"→6.5
-- Spaced/hyphen: "5 5"→5.5, "6-5"→6.5
-- Range validation: 3.5-8.0
-- Applied in: startBatch (milk_ph), RegisterPHAndPiecesIntent (ph_value)
-- Zod schema in shared/routes.ts also transforms before validation
-
-**ProcessCommandIntent**: Para comandos gerais (status, avançar, ajuda)
-  - Bloqueado quando etapa tem inputs pendentes
-  - log_time via texto livre bloqueado - redireciona para LogTimeIntent
-
-- **Backend is SOVEREIGN** - LLM only interprets, never executes or validates
-- Documentation available at `docs/ALEXA_WEBHOOK.md`
-
-### Stage Validation System
-- **Inputs obrigatórios**: validateAdvance verifica operator_input_required da etapa
-- **Timers bloqueantes**: Não permite avanço se timer.blocking está ativo
-- **Mapeamento de stored_values**: 
-  - Etapa 13: ph_value → initial_ph, pieces_quantity
-  - Etapa 6: flocculation_time
-  - Etapa 7: cut_point_time
-  - Etapa 14: press_start_time
-  - Etapa 19: chamber_2_entry_date → calcula maturationEndDate (startedAt + 90 dias) → auto-completa lote
-- **Loop etapa 15**: Sai SOMENTE quando pH < 5.3 (sem saída automática por tempo)
-- **Reminder re-scheduling no loop pH**: Após registro de pH que não atinge meta, cancela reminder atual e agenda novo para 1h30 (tempo completo de nova espera)
-- **UX amigável**: Mensagens claras informando qual input falta e como fornecê-lo
-
-### Alexa Reminders API (`server/alexaReminders.ts`)
-- Automaticamente agenda lembretes nativos da Alexa para etapas com tempo de espera
-- `getWaitSpecForStage(stageId)` em recipe.ts: detecta stages com timer (duration_min/duration_hours) ou loop (max_loop_duration_hours)
-- `scheduleReminderForWait()`: cria reminder via POST `/v1/alerts/reminders` usando apiAccessToken da sessão
-- `cancelReminder()`: cancela reminder específico via DELETE
-- `cancelAllBatchReminders()`: cancela todos os lembretes pendentes de um lote
-- `getApiContext(alexaRequest)`: extrai apiEndpoint + apiAccessToken do request.context.System
-- Agendamento ocorre em `advanceBatch()` quando novo estágio tem waitSpec
-- Cancelamento: ao sair de etapa, ao completar lote, ao cancelar lote
-- Se apiAccessToken ausente ou API falhar: log + continua sem quebrar fluxo
-- Dados persistidos em `batch.scheduledAlerts` (JSONB): `{ stage_N: { reminderId, stageId, dueAtISO, kind } }`
-- Requer permissão `alexa::alerts:reminders:skill:readwrite` no skill manifest
-- Fallback timezone: "America/Sao_Paulo"
-
-### Key npm Dependencies
-- `drizzle-orm` / `drizzle-kit` - Database ORM and migrations
-- `openai` - LLM API client
-- `js-yaml` - Recipe YAML parsing
-- `p-limit` / `p-retry` - Batch processing with rate limiting
-- `express-session` / `connect-pg-simple` - Session management
+- **Amazon Alexa**: Provides voice control via a webhook endpoint (`/api/alexa/webhook`). Handles various Alexa requests (LaunchRequest, IntentRequest, SessionEndedRequest) and includes robust signature verification in production.

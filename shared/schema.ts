@@ -58,7 +58,27 @@ export const batchLogs = pgTable("batch_logs", {
   timestamp: timestamp("timestamp").defaultNow().notNull(),
 });
 
-// === LOG TABLES (7-day retention, daily purge at 3am BRT) ===
+// === USERS TABLE ===
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  name: text("name").notNull(),
+  role: text("role", { enum: ["admin"] }).notNull().default("admin"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  passwordHash: true,
+});
+
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+
+// === LOG TABLES (180-day retention, daily purge at 3am BRT) ===
 
 export const alexaWebhookLogs = pgTable("alexa_webhook_logs", {
   id: serial("id").primaryKey(),

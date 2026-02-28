@@ -66,7 +66,7 @@ function truncateJson(obj: any, maxLength: number): any {
 }
 
 export async function purgeOldLogs(): Promise<{ alexaDeleted: number; webDeleted: number }> {
-  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const cutoff = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
   
   const alexaResult = await db.delete(alexaWebhookLogs)
     .where(lt(alexaWebhookLogs.timestamp, cutoff));

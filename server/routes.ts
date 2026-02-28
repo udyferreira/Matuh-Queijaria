@@ -12,6 +12,8 @@ import { getApiContext as extractApiContext, cancelAllBatchReminders, scheduleRe
 import { z } from "zod";
 import { randomBytes } from "crypto";
 import { logAlexaWebhook, logWebRequest, queryAlexaLogs, queryWebLogs, scheduleDailyPurge, purgeOldLogs } from "./logService";
+import { findUserByUsername, verifyPassword, createUser, getAllUsers, deleteUser } from "./auth";
+import { verifyAlexaRequest } from "./alexaVerifier";
 
 // Helper to generate unique IDs
 const generateId = () => randomBytes(8).toString('hex');
@@ -24,6 +26,78 @@ export async function registerRoutes(
   // Register AI Integrations
   registerChatRoutes(app);
   registerImageRoutes(app);
+
+  // --- Auth Routes ---
+
+  app.post("/api/auth/login", async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ message: "Usuário e senha são obrigatórios" });
+    }
+
+    const user = await findUserByUsername(username);
+    if (!user || !(await verifyPassword(password, user.passwordHash))) {
+      return res.status(401).json({ message: "Usuário ou senha inválidos" });
+    }
+
+    req.session.userId = user.id;
+    req.session.username = user.username;
+    res.json({ id: user.id, username: user.username, name: user.name, role: user.role });
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy((err) => {
+      if (err) return res.status(500).json({ message: "Erro ao sair" });
+      res.clearCookie("connect.sid");
+      res.json({ message: "Logout realizado" });
+    });
+  });
+
+  app.get("/api/auth/me", (req, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ message: "Não autenticado" });
+    }
+    res.json({ id: req.session.userId, username: req.session.username });
+  });
+
+  // --- User Management Routes ---
+
+  app.get("/api/users", async (req, res) => {
+    const userList = await getAllUsers();
+    res.json(userList);
+  });
+
+  app.post("/api/users", async (req, res) => {
+    const { username, password, name } = req.body;
+    if (!username || !password || !name) {
+      return res.status(400).json({ message: "Nome, usuário e senha são obrigatórios" });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ message: "Senha deve ter pelo menos 6 caracteres" });
+    }
+
+    const existing = await findUserByUsername(username);
+    if (existing) {
+      return res.status(409).json({ message: "Usuário já existe" });
+    }
+
+    try {
+      const user = await createUser(username, password, name);
+      res.status(201).json({ id: user.id, username: user.username, name: user.name, role: user.role });
+    } catch (e: any) {
+      res.status(500).json({ message: "Erro ao criar usuário" });
+    }
+  });
+
+  app.delete("/api/users/:id", async (req, res) => {
+    const userId = Number(req.params.id);
+    if (userId === req.session?.userId) {
+      return res.status(400).json({ message: "Não é possível remover seu próprio usuário" });
+    }
+    const deleted = await deleteUser(userId);
+    if (!deleted) return res.status(404).json({ message: "Usuário não encontrado" });
+    res.json({ message: "Usuário removido" });
+  });
 
   // --- Recipe Routes ---
 
@@ -563,20 +637,6 @@ export async function registerRoutes(
     res.json(updated);
   });
 
-  // Temporary endpoint to import a batch (for dev→prod migration)
-  app.post("/api/admin/import-batch", async (req, res) => {
-    try {
-      const data = req.body;
-      if (!data || !data.recipe_id) {
-        return res.status(400).json({ message: "Missing batch data" });
-      }
-      const result = await storage.createBatchRaw(data);
-      return res.json({ success: true, id: result.id });
-    } catch (e: any) {
-      console.error("[import-batch] Error:", e);
-      return res.status(500).json({ message: e.message });
-    }
-  });
 
   app.post(api.batches.advance.path, async (req, res) => {
     const batchId = Number(req.params.id);
@@ -1300,6 +1360,19 @@ export async function registerRoutes(
 
   app.post("/api/alexa/webhook", async (req, res) => {
     const webhookStartTime = Date.now();
+
+    const verification = await verifyAlexaRequest(
+      req.headers["signaturecertchainurl"] as string | undefined,
+      req.headers["signature"] as string | undefined,
+      req.rawBody as Buffer,
+      req.body,
+      process.env.ALEXA_SKILL_ID
+    );
+    if (!verification.valid) {
+      console.log(`[ALEXA_VERIFY] Rejected: ${verification.reason}`);
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     const origJson = res.json.bind(res);
     let capturedSpeech: string | undefined;
     let errorLogged = false;

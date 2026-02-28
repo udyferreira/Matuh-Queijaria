@@ -1,17 +1,28 @@
 import { Link, useLocation } from "wouter";
-import { Activity, Settings, ChefHat, FileText } from "lucide-react";
+import { Activity, Settings, ChefHat, FileText, Users, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import logoMatuh from "@assets/logoMatuh_1767667488292.jpg";
 
 export function Navbar() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
 
   const navItems = [
     { href: "/", label: "Painel", icon: Activity },
     { href: "/new", label: "Novo Lote", icon: ChefHat },
     { href: "/reports", label: "Relatórios", icon: FileText },
     { href: "/alexa", label: "Integrações", icon: Settings },
+    { href: "/users", label: "Usuários", icon: Users },
   ];
+
+  const handleLogout = async () => {
+    try {
+      await apiRequest("POST", "/api/auth/logout");
+    } catch {}
+    queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    setLocation("/");
+  };
 
   return (
     <nav className="border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
@@ -39,6 +50,16 @@ export function Navbar() {
               <span className="hidden sm:inline">{item.label}</span>
             </Link>
           ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="text-muted-foreground hover:text-foreground ml-2"
+            data-testid="button-logout"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="hidden sm:inline ml-1">Sair</span>
+          </Button>
         </div>
       </div>
     </nav>
