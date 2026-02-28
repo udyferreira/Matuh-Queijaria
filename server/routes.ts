@@ -1425,7 +1425,7 @@ export async function registerRoutes(
 
     const verification = await verifyAlexaRequest(
       req.headers["signaturecertchainurl"] as string | undefined,
-      req.headers["signature"] as string | undefined,
+      (req.headers["signature-256"] || req.headers["signature"]) as string | undefined,
       req.rawBody as Buffer,
       req.body,
       process.env.ALEXA_SKILL_ID
