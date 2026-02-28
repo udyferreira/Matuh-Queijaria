@@ -8,7 +8,7 @@ import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import * as batchService from "./batchService";
 import * as speechRenderer from "./speechRenderer";
-import { getApiContext as extractApiContext, cancelAllBatchReminders, scheduleReminderForWait, cancelReminder, buildPermissionCard, type ApiContext, type ScheduledAlert } from "./alexaReminders";
+import { getApiContext as extractApiContext, cancelAllBatchReminders, scheduleReminderForWait, cancelReminder, type ApiContext, type ScheduledAlert } from "./alexaReminders";
 import { z } from "zod";
 import { randomBytes } from "crypto";
 import { logAlexaWebhook, logWebRequest, queryAlexaLogs, queryWebLogs, scheduleDailyPurge, purgeOldLogs } from "./logService";
@@ -1029,12 +1029,8 @@ export async function registerRoutes(
           speech += ` Vou te avisar em ${result.waitDurationText}.`;
         } else if (result.needsReminderPermission && result.waitDurationText) {
           speech += ` Esta etapa dura ${result.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
-          const { card } = buildPermissionCard();
-          return { speech, shouldEndSession: false, card };
         } else if (result.needsReminderPermission) {
           speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
-          const { card } = buildPermissionCard();
-          return { speech, shouldEndSession: false, card };
         }
         
         return { speech, shouldEndSession: false };
@@ -1862,19 +1858,15 @@ export async function registerRoutes(
           const nextStage = recipeManager.getStage(result.nextStage?.id || 0);
           const payload = speechRenderer.buildAdvancePayload(updatedBatch, nextStage, false);
           let speech = await speechRenderer.renderSpeech(payload);
-          let permCard: any = undefined;
-
           if (result.reminderScheduled && result.waitDurationText) {
             speech += ` Vou te avisar em ${result.waitDurationText}.`;
           } else if (result.needsReminderPermission && result.waitDurationText) {
             speech += ` Esta etapa dura ${result.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
-            permCard = buildPermissionCard().card;
           } else if (result.needsReminderPermission) {
             speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
-            permCard = buildPermissionCard().card;
           }
 
-          return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", { ...sessionAttributes, activeBatchId: updatedBatch.id, state: undefined }, permCard));
+          return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", { ...sessionAttributes, activeBatchId: updatedBatch.id, state: undefined }));
         }
 
         // --- LogTimeIntent: Structured time registration with AMAZON.TIME slot ---
@@ -2012,17 +2004,14 @@ export async function registerRoutes(
             if (nextStage && updatedBatch) {
               const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
               let speech = await speechRenderer.renderSpeech(payload);
-              let permCard: any = undefined;
               if (advanceResult.reminderScheduled && advanceResult.waitDurationText) {
                 speech += ` Vou te avisar em ${advanceResult.waitDurationText}.`;
               } else if (advanceResult.needsReminderPermission && advanceResult.waitDurationText) {
                 speech += ` Esta etapa dura ${advanceResult.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
-                permCard = buildPermissionCard().card;
               } else if (advanceResult.needsReminderPermission) {
                 speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
-                permCard = buildPermissionCard().card;
               }
-              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes, permCard));
+              return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
             }
           }
           
@@ -2243,17 +2232,14 @@ export async function registerRoutes(
                 if (nextStage && updatedBatch) {
                   const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
                   let speech = await speechRenderer.renderSpeech(payload);
-                  let permCard: any = undefined;
                   if (advanceResult.reminderScheduled && advanceResult.waitDurationText) {
                     speech += ` Vou te avisar em ${advanceResult.waitDurationText}.`;
                   } else if (advanceResult.needsReminderPermission && advanceResult.waitDurationText) {
                     speech += ` Esta etapa dura ${advanceResult.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
-                    permCard = buildPermissionCard().card;
                   } else if (advanceResult.needsReminderPermission) {
                     speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
-                    permCard = buildPermissionCard().card;
                   }
-                  return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", newAttrs, permCard));
+                  return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", newAttrs));
                 }
               }
               return res.status(200).json(buildAlexaResponse(
@@ -2333,17 +2319,14 @@ export async function registerRoutes(
               if (nextStage && updatedBatch) {
                 const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
                 let speech = await speechRenderer.renderSpeech(payload);
-                let permCard: any = undefined;
                 if (advanceResult.reminderScheduled && advanceResult.waitDurationText) {
                   speech += ` Vou te avisar em ${advanceResult.waitDurationText}.`;
                 } else if (advanceResult.needsReminderPermission && advanceResult.waitDurationText) {
                   speech += ` Esta etapa dura ${advanceResult.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
-                  permCard = buildPermissionCard().card;
                 } else if (advanceResult.needsReminderPermission) {
                   speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
-                  permCard = buildPermissionCard().card;
                 }
-                return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes, permCard));
+                return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
               }
             }
             
@@ -2426,17 +2409,14 @@ export async function registerRoutes(
                 if (nextStage && updatedBatch) {
                   const payload = speechRenderer.buildAutoAdvancePayload(confirmationMsg, updatedBatch, nextStage);
                   let speech = await speechRenderer.renderSpeech(payload);
-                  let permCard: any = undefined;
                   if (advanceResult.reminderScheduled && advanceResult.waitDurationText) {
                     speech += ` Vou te avisar em ${advanceResult.waitDurationText}.`;
                   } else if (advanceResult.needsReminderPermission && advanceResult.waitDurationText) {
                     speech += ` Esta etapa dura ${advanceResult.waitDurationText}. Para eu avisar quando terminar, habilite as permissões de lembrete no app da Alexa.`;
-                    permCard = buildPermissionCard().card;
                   } else if (advanceResult.needsReminderPermission) {
                     speech += ' Para eu avisar quando o tempo acabar, abra o app da Alexa e habilite as permissões de lembrete para esta skill.';
-                    permCard = buildPermissionCard().card;
                   }
-                  return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes, permCard));
+                  return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
                 }
               }
               
@@ -2452,7 +2432,6 @@ export async function registerRoutes(
               console.log(`[Stage 15] pH ${phValue} above target. Continue monitoring.`);
               
               let reminderMsg = '';
-              let permCard: any = undefined;
               if (apiCtx) {
                 try {
                   const updatedBatchForReminder = await batchService.getBatch(activeBatch.id);
@@ -2487,7 +2466,6 @@ export async function registerRoutes(
                   } else if (reminderResult.permissionDenied) {
                     console.log(`[Stage 15] Reminder permission denied after pH log`);
                     reminderMsg = ' Para eu lembrar de medir o pH, habilite as permissões de lembrete no app da Alexa.';
-                    permCard = buildPermissionCard().card;
                   }
                 } catch (err) {
                   console.log(`[Stage 15] Error scheduling reminder after pH: ${err}`);
@@ -2498,8 +2476,7 @@ export async function registerRoutes(
                 `pH ${phValue} registrado. Queijos virados ${turningCycles} vez${turningCycles > 1 ? 'es' : ''}.${reminderMsg} Continue monitorando ou informe novo pH.`,
                 false,
                 "Informe o próximo pH ou diga 'qual é o status' para ver o progresso.",
-                sessionAttributes,
-                permCard
+                sessionAttributes
               ));
             }
           }
