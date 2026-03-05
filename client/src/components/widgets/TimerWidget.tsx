@@ -46,19 +46,19 @@ export function TimerWidget({ durationMinutes, startTime, label }: TimerWidgetPr
   };
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-card border border-border p-6 shadow-xl shadow-black/20">
+    <div className="relative overflow-hidden rounded-2xl bg-card border border-border p-4 sm:p-6 shadow-xl shadow-black/20">
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">{label}</h3>
+          <h3 className="text-xs sm:text-sm font-medium text-muted-foreground uppercase tracking-wider">{label}</h3>
           <div className="flex items-baseline gap-1 mt-1">
-            <span className="text-4xl font-display font-bold tabular-nums">
+            <span className="text-2xl sm:text-4xl font-display font-bold tabular-nums">
               {formatTime()}
             </span>
-            <span className="text-sm text-muted-foreground">restantes</span>
+            <span className="text-xs sm:text-sm text-muted-foreground">restantes</span>
           </div>
         </div>
-        <div className={`p-3 rounded-full ${isComplete ? 'bg-green-500/20 text-green-500' : 'bg-primary/20 text-primary'}`}>
-          {isComplete ? <AlertCircle className="w-6 h-6 animate-pulse" /> : <Clock className="w-6 h-6 animate-spin-slow" />}
+        <div className={`p-2 sm:p-3 rounded-full ${isComplete ? 'bg-green-500/20 text-green-500' : 'bg-primary/20 text-primary'}`}>
+          {isComplete ? <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 animate-pulse" /> : <Clock className="w-5 h-5 sm:w-6 sm:h-6 animate-spin-slow" />}
         </div>
       </div>
 

@@ -1,5 +1,6 @@
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Settings, ChefHat, FileText, Users, LogOut } from "lucide-react";
+import { Activity, Settings, ChefHat, FileText, Users, LogOut, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -7,6 +8,11 @@ import logoMatuh from "@assets/logoMatuh_1767667488292.jpg";
 
 export function Navbar() {
   const [location, setLocation] = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location]);
 
   const navItems = [
     { href: "/", label: "Painel", icon: Activity },
@@ -26,28 +32,28 @@ export function Navbar() {
 
   return (
     <nav className="border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-      <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3">
+      <div className="container mx-auto px-4 h-14 sm:h-16 flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-2 sm:gap-3">
           <img 
             src={logoMatuh} 
             alt="Matuh Queijaria" 
-            className="w-10 h-10 rounded-lg object-cover shadow-lg"
+            className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg object-cover shadow-lg"
           />
-          <span className="font-display font-bold text-xl tracking-tight">
+          <span className="font-display font-bold text-lg sm:text-xl tracking-tight">
             Matuh <span className="text-primary">Queijaria</span>
           </span>
         </Link>
 
-        <div className="flex items-center gap-1">
+        <div className="hidden lg:flex items-center gap-1">
           {navItems.map((item) => (
             <Link key={item.href} href={item.href} className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200",
+              "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200",
               location === item.href 
                 ? "bg-primary/10 text-primary" 
                 : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
             )}>
               <item.icon className="w-4 h-4" />
-              <span className="hidden sm:inline">{item.label}</span>
+              <span>{item.label}</span>
             </Link>
           ))}
           <Button
@@ -58,10 +64,50 @@ export function Navbar() {
             data-testid="button-logout"
           >
             <LogOut className="w-4 h-4" />
-            <span className="hidden sm:inline ml-1">Sair</span>
+            <span className="ml-1">Sair</span>
           </Button>
         </div>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="lg:hidden text-muted-foreground"
+          onClick={() => setMobileOpen(!mobileOpen)}
+          data-testid="button-mobile-menu"
+        >
+          {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </Button>
       </div>
+
+      {mobileOpen && (
+        <div className="lg:hidden border-t border-border/40 bg-background/98 backdrop-blur">
+          <div className="container mx-auto px-4 py-3 space-y-1">
+            {navItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  location === item.href
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                )}
+              >
+                <item.icon className="w-4 h-4" />
+                <span>{item.label}</span>
+              </Link>
+            ))}
+            <button
+              onClick={() => { setMobileOpen(false); handleLogout(); }}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 w-full"
+              data-testid="button-logout-mobile"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Sair</span>
+            </button>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

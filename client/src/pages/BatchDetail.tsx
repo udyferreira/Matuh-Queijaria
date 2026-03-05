@@ -286,37 +286,37 @@ export default function BatchDetail() {
     <div className="min-h-screen bg-background pb-24">
       <Navbar />
       
-      <main className="container mx-auto px-4 py-8">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+      <main className="container mx-auto px-4 py-4 sm:py-8">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 sm:mb-8">
           <div>
-            <div className="flex items-center gap-3 mb-2 flex-wrap">
-              <span className="text-sm font-mono text-primary bg-primary/10 px-2 py-1 rounded">
+            <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
+              <span className="text-xs sm:text-sm font-mono text-primary bg-primary/10 px-2 py-1 rounded">
                 LOTE {formatBatchCode(batch.startedAt)}
               </span>
               <Badge variant={statusInfo.variant} data-testid="badge-batch-status">
                 {statusInfo.label}
               </Badge>
-              <span className="text-sm text-muted-foreground">
+              <span className="text-xs sm:text-sm text-muted-foreground">
                 Iniciado em {new Date(batch.startedAt).toLocaleDateString('pt-BR')}
               </span>
             </div>
-            <h1 className="text-3xl font-display font-bold">Produção {getCheeseTypeName(batch.recipeId)}</h1>
+            <h1 className="text-2xl sm:text-3xl font-display font-bold">Produção {getCheeseTypeName(batch.recipeId)}</h1>
           </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="bg-card px-6 py-3 rounded-xl border border-border shadow-lg flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap w-full md:w-auto">
+            <div className="bg-card px-3 py-2 sm:px-6 sm:py-3 rounded-xl border border-border shadow-lg flex items-center gap-2 sm:gap-4">
                <div className="text-right">
                  <div className="text-xs text-muted-foreground uppercase tracking-wider">Volume Total</div>
-                 <div className="text-xl font-bold">{batch.milkVolumeL}L</div>
+                 <div className="text-lg sm:text-xl font-bold">{batch.milkVolumeL}L</div>
                </div>
                <div className="h-8 w-px bg-border" />
                <div className="text-right">
                  <div className="text-xs text-muted-foreground uppercase tracking-wider">Etapa</div>
-                 <div className="text-xl font-bold text-primary">{batch.currentStageId} <span className="text-muted-foreground text-sm font-normal">/ 19</span></div>
+                 <div className="text-lg sm:text-xl font-bold text-primary">{batch.currentStageId} <span className="text-muted-foreground text-sm font-normal">/ 19</span></div>
                </div>
             </div>
             
             {!isFinished && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {isPaused ? (
                   <Button onClick={handleResume} disabled={isResuming} variant="outline" data-testid="button-resume">
                     <Play className="w-4 h-4 mr-2" />
@@ -419,19 +419,19 @@ export default function BatchDetail() {
             
             <motion.div 
               layoutId="stage-card"
-              className="glass-card p-8 rounded-3xl border-l-4 border-l-primary relative overflow-hidden"
+              className="glass-card p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border-l-4 border-l-primary relative overflow-hidden"
             >
-              <div className="absolute top-0 right-0 p-8 opacity-5">
+              <div className="absolute top-0 right-0 p-8 opacity-5 hidden sm:block">
                 <CheckCircle className="w-48 h-48" />
               </div>
 
               <div className="relative z-10">
-                <h2 className="text-sm font-medium text-primary uppercase tracking-widest mb-2">Etapa Atual</h2>
-                <h3 className="text-3xl font-bold mb-6 leading-tight">
+                <h2 className="text-xs sm:text-sm font-medium text-primary uppercase tracking-widest mb-2">Etapa Atual</h2>
+                <h3 className="text-xl sm:text-2xl md:text-3xl font-bold mb-4 sm:mb-6 leading-tight">
                   {STAGE_NAMES[batch.currentStageId] || `Etapa ${batch.currentStageId}`}
                 </h3>
 
-                <div className="bg-background/50 backdrop-blur rounded-xl p-6 border border-white/5 mb-8">
+                <div className="bg-background/50 backdrop-blur rounded-xl p-3 sm:p-4 md:p-6 border border-white/5 mb-4 sm:mb-8">
                   
                   {/* Instruções da etapa */}
                   {stageInstructions.length > 0 && (
@@ -497,7 +497,7 @@ export default function BatchDetail() {
                        ) : isDateInputStage ? (
                          <>
                            <label className="block text-sm font-medium mb-2">{inputLabel}</label>
-                           <div className="flex gap-4">
+                           <div className="flex flex-col sm:flex-row gap-3">
                              <Input 
                                value={inputVal} 
                                onChange={(e) => setInputVal(e.target.value)}
@@ -505,7 +505,7 @@ export default function BatchDetail() {
                                className="text-lg h-12"
                                data-testid="input-date"
                              />
-                             <Button type="submit" size="lg" disabled={isLoggingCanonical} data-testid="button-log-next">
+                             <Button type="submit" size="lg" disabled={isLoggingCanonical} className="w-full sm:w-auto" data-testid="button-log-next">
                                Registrar e Avançar
                              </Button>
                            </div>
@@ -513,7 +513,7 @@ export default function BatchDetail() {
                        ) : (
                          <>
                            <label className="block text-sm font-medium mb-2">{inputLabel}</label>
-                           <div className="flex gap-4">
+                           <div className="flex flex-col sm:flex-row gap-3">
                              <Input 
                                value={inputVal} 
                                onChange={(e) => setInputVal(e.target.value)}
@@ -524,7 +524,7 @@ export default function BatchDetail() {
                                autoFocus
                                data-testid="input-measurement"
                              />
-                             <Button type="submit" size="lg" disabled={isLogging || isLoggingCanonical} data-testid="button-log-next">
+                             <Button type="submit" size="lg" disabled={isLogging || isLoggingCanonical} className="w-full sm:w-auto" data-testid="button-log-next">
                                {batch.currentStageId === 15 ? "Registrar pH" : "Registrar e Avançar"}
                              </Button>
                            </div>
@@ -571,9 +571,9 @@ export default function BatchDetail() {
                         const isEditingThis = editingKey === editKey;
 
                         return (
-                          <div className="bg-muted/30 border border-border/50 rounded-lg p-4 mt-2">
-                            <div className="flex justify-between items-center gap-2">
-                              <span className="text-sm text-muted-foreground">{fermentLabel}</span>
+                          <div className="bg-muted/30 border border-border/50 rounded-lg p-3 sm:p-4 mt-2">
+                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-2">
+                              <span className="text-xs sm:text-sm text-muted-foreground">{fermentLabel}</span>
                               {isEditingThis ? (
                                 <div className="flex items-center gap-1">
                                   <Input
@@ -647,8 +647,8 @@ export default function BatchDetail() {
             </motion.div>
 
             {batch.currentStageId >= 2 && batch.calculatedInputs && (
-               <div className="glass-card p-6 rounded-2xl">
-                 <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+               <div className="glass-card p-4 sm:p-6 rounded-2xl">
+                 <h3 className="text-base sm:text-lg font-bold mb-4 flex items-center gap-2">
                    <Scale className="w-5 h-5 text-primary" />
                    Receita do Lote
                  </h3>
@@ -657,7 +657,7 @@ export default function BatchDetail() {
             )}
           </div>
 
-          <div className="bg-card border border-border rounded-2xl p-6">
+          <div className="bg-card border border-border rounded-2xl p-4 sm:p-6">
             <h3 className="font-bold mb-4 flex items-center gap-2">
               <Thermometer className="w-5 h-5 text-primary" />
               Registro de Medições
@@ -670,8 +670,8 @@ export default function BatchDetail() {
                 </div>
                 
                 {batch.chamber2EntryDate && (
-                  <div className="flex justify-between items-center py-2 border-b border-border/50 text-sm gap-2">
-                    <span className="text-muted-foreground flex-shrink-0">Entrada na Câmara 2</span>
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center items-start py-2 border-b border-border/50 text-sm gap-1 sm:gap-2">
+                    <span className="text-muted-foreground flex-shrink-0 text-xs sm:text-sm">Entrada na Câmara 2</span>
                     {editingKey === "chamber_2_entry_date" ? (
                       <div className="flex items-center gap-1">
                         <Input
@@ -830,14 +830,14 @@ export default function BatchDetail() {
                     const isEditingThis = editingKey === uniqueKey;
 
                     return (
-                      <div key={idx} className="flex justify-between items-center py-2 border-b border-border/50 text-sm gap-2">
+                      <div key={idx} className="flex flex-col sm:flex-row sm:justify-between sm:items-center items-start py-2 border-b border-border/50 text-sm gap-1 sm:gap-2">
                         <span className="text-muted-foreground flex-shrink-0 text-xs">{item.label}</span>
                         {isEditingThis ? (
                           <div className="flex items-center gap-1">
                             <Input
                               data-testid={`input-edit-${uniqueKey}`}
                               type={item.editKey.endsWith('_time_iso') ? 'time' : undefined}
-                              className="h-7 w-[100px] font-mono text-xs"
+                              className="h-7 w-20 sm:w-[100px] font-mono text-xs"
                               value={editValue}
                               onChange={(e) => setEditValue(e.target.value)}
                               onKeyDown={(e) => {
