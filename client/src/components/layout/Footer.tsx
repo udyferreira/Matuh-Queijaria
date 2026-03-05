@@ -7,6 +7,13 @@ export function Footer() {
         <span>Matuh Queijaria</span>
         <div className="flex items-center gap-4">
           <Link
+            href="/alexa"
+            className="hover:text-foreground transition-colors"
+            data-testid="link-integrations"
+          >
+            Integrações
+          </Link>
+          <Link
             href="/privacy"
             className="hover:text-foreground transition-colors"
             data-testid="link-privacy-policy"
