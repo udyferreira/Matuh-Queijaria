@@ -1026,10 +1026,10 @@ export async function registerRoutes(
         let speech = await speechRenderer.renderSpeech(payload);
 
         if (nextStage && nextStage.id !== 15) {
-          const ctx = buildPendingInputContext(updatedBatch, nextStage);
+          const ctx = buildStageGuidance(updatedBatch, nextStage);
           if (ctx) {
             speech += ctx;
-            console.log(`[advance] Appended pending input context for stage ${nextStage.id}`);
+            console.log(`[advance] Appended stage guidance for stage ${nextStage.id}`);
           }
         }
         
@@ -1320,20 +1320,26 @@ export async function registerRoutes(
     return null;
   }
 
-  function buildPendingInputContext(batch: any, stage: any): string {
-    if (!stage || !stage.operator_input_required || stage.operator_input_required.length === 0) return '';
-    const pending = speechRenderer.getPendingInputs(batch, stage.id, stage);
-    if (pending.length === 0) {
-      return " Todos os dados já foram registrados. Diga 'próxima etapa' para avançar.";
+  function buildStageGuidance(batch: any, stage: any): string {
+    if (!stage) return '';
+    if (stage.operator_input_required && stage.operator_input_required.length > 0) {
+      const pending = speechRenderer.getPendingInputs(batch, stage.id, stage);
+      if (pending.length === 0) {
+        return " Todos os dados já foram registrados. Diga 'próxima etapa' para avançar.";
+      }
+      if (stage.input_prompt) {
+        return ` ${stage.input_prompt}`;
+      }
+      const lock = recipeManager.getStageInputLock(stage.id);
+      if (lock?.inputPrompt) {
+        return ` ${lock.inputPrompt}`;
+      }
+      return ` Esta etapa requer: ${pending.join(', ')}.`;
     }
-    if (stage.input_prompt) {
-      return ` ${stage.input_prompt}`;
+    if (stage.instructions && stage.instructions.length > 0) {
+      return ` ${stage.instructions.join('. ')}.`;
     }
-    const lock = recipeManager.getStageInputLock(stage.id);
-    if (lock?.inputPrompt) {
-      return ` ${lock.inputPrompt}`;
-    }
-    return ` Esta etapa requer: ${pending.join(', ')}.`;
+    return '';
   }
 
   function buildStage15Context(batch: any): string {
@@ -1416,10 +1422,11 @@ export async function registerRoutes(
         const fullBatch = await batchService.getBatch(b.batchId);
         if (fullBatch) {
           const stage = recipeManager.getStage(b.currentStageId);
-          const ctx = buildPendingInputContext(fullBatch, stage);
-          if (ctx) {
-            stageCtx = ctx;
+          stageCtx = buildStageGuidance(fullBatch, stage);
+          if (stage?.operator_input_required?.length > 0) {
             reprompt = "Diga o valor solicitado ou 'qual é o status'.";
+          } else {
+            reprompt = "Diga 'próxima etapa' ou 'qual é o status'.";
           }
         }
       }
@@ -1582,12 +1589,15 @@ export async function registerRoutes(
             const stage = recipeManager.getStage(activeBatch.currentStageId);
 
             if (activeBatch.currentStageId !== 15) {
-              const ctx = buildPendingInputContext(activeBatch, stage);
+              const ctx = buildStageGuidance(activeBatch, stage);
               if (ctx) {
+                const repromptText = stage?.operator_input_required?.length > 0
+                  ? "Diga o valor solicitado ou 'qual é o status'."
+                  : "Diga 'próxima etapa' ou 'qual é o status'.";
                 const speech = `Continuando o lote. Etapa ${activeBatch.currentStageId}: ${stage?.name || 'em andamento'}.${ctx}`;
-                console.log(`[${intentName}] Generic pending input context for stage ${activeBatch.currentStageId}`);
+                console.log(`[${intentName}] Stage guidance for stage ${activeBatch.currentStageId}`);
                 return res.status(200).json(buildAlexaResponse(
-                  speech, false, "Diga o valor solicitado ou 'qual é o status'.", baseAttrs
+                  speech, false, repromptText, baseAttrs
                 ));
               }
             }
@@ -1674,10 +1684,11 @@ export async function registerRoutes(
             const fullBatch = await batchService.getBatch(selected.batchId);
             if (fullBatch) {
               const stage = recipeManager.getStage(selected.currentStageId);
-              const ctx = buildPendingInputContext(fullBatch, stage);
-              if (ctx) {
-                stageCtx = ctx;
+              stageCtx = buildStageGuidance(fullBatch, stage);
+              if (stage?.operator_input_required?.length > 0) {
                 repromptText = "Diga o valor solicitado ou 'qual é o status'.";
+              } else {
+                repromptText = "Diga 'próxima etapa' ou 'qual é o status'.";
               }
             }
           }

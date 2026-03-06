@@ -106,6 +106,9 @@ stages:
     system_actions:
       - calculate_proportions
       - remind_remove_from_freezer
+    instructions:
+      - "Cálculos realizados automaticamente pelo sistema"
+      - "Quando terminar, diga 'próxima etapa'"
 
   - id: 3
     name: "Aquecer o leite"
@@ -114,6 +117,9 @@ stages:
       target_temp_c: 32
     validations:
       - rule: "temperature_between(31,33)"
+    instructions:
+      - "Aquecer o leite até atingir 32 graus"
+      - "Quando terminar, diga 'próxima etapa'"
 
   - id: 4
     name: "Adicionar fermentos LR e DX"
@@ -162,10 +168,16 @@ stages:
   - id: 8
     name: "Corte da massa com a Lira"
     type: "cut"
+    instructions:
+      - "Realizar o corte da massa com a Lira"
+      - "Quando terminar, diga 'próxima etapa'"
 
   - id: 9
     name: "Corte complementar com espátula"
     type: "cut"
+    instructions:
+      - "Realizar o corte complementar com espátula"
+      - "Quando terminar, diga 'próxima etapa'"
 
   - id: 10
     name: "Mexedura progressiva da massa"
@@ -175,16 +187,24 @@ stages:
     timer:
       duration_min: 30
       blocking: true
+    instructions:
+      - "Mexer a massa de forma progressiva"
 
   - id: 11
     name: "Enformagem com peneira e paninho"
     type: "mold"
+    instructions:
+      - "Enformar os queijos usando peneira e paninho"
+      - "Quando terminar, diga 'próxima etapa'"
 
   - id: 12
     name: "Dessoragem em mesa"
     type: "drain"
     parameters:
       duration_note: "alguns minutos"
+    instructions:
+      - "Deixar dessorar em mesa por alguns minutos"
+      - "Quando terminar, diga 'próxima etapa'"
 
   - id: 13
     name: "Medir pH inicial e registrar quantidade de peças"
@@ -236,6 +256,9 @@ stages:
     type: "transfer"
     timing:
       when: "apos_prensagem"
+    instructions:
+      - "Transferir os queijos para a câmara de secagem"
+      - "Quando terminar, diga 'próxima etapa'"
 
   - id: 17
     name: "Salga em tanque"
@@ -243,6 +266,8 @@ stages:
     timer:
       duration_hours: 8
       blocking: true
+    instructions:
+      - "Colocar os queijos no tanque de salmoura"
 
   - id: 18
     name: "Secagem em prateleiras"
@@ -250,6 +275,8 @@ stages:
     timer:
       duration_hours: 36
       blocking: true
+    instructions:
+      - "Dispor os queijos nas prateleiras para secagem"
 
   - id: 19
     name: "Transferir para Câmara 2"
