@@ -44,7 +44,6 @@ const MEASUREMENT_LABELS: Record<string, string> = {
   cut_point_time: "Hora do Corte",
   press_start_time: "Hora da Prensa",
   turning_cycles_count: "Quantidade de Viradas",
-  loop_exit_reason: "Motivo de Saída do Loop",
   timestamp: "Data/Hora"
 };
 
@@ -61,13 +60,6 @@ function formatValue(key: string, value: number | string): string {
   }
   if (key === "timestamp") {
     return new Date(value).toLocaleString("pt-BR");
-  }
-  if (key === "loop_exit_reason") {
-    const reasonMap: Record<string, string> = {
-      "ph_reached": "pH ideal atingido",
-      "time_limit": "Tempo limite atingido"
-    };
-    return reasonMap[String(value)] || String(value);
   }
   if (typeof value === "number") {
     return value.toString();
@@ -211,12 +203,6 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
     const cycles = stageHistory.find(i => i.key === 'turning_cycles_count');
     if (cycles) rows.push({ label: "Viradas Realizadas", value: String(cycles.value) });
     else if (measurements.turning_cycles_count) rows.push({ label: "Viradas Realizadas", value: String(measurements.turning_cycles_count) });
-    const exitReason = stageHistory.find(i => i.key === 'loop_exit_reason');
-    const reason = exitReason?.value || measurements.loop_exit_reason;
-    if (reason) {
-      const reasonMap: Record<string, string> = { "ph_reached": "pH ideal atingido", "time_limit": "Tempo limite atingido" };
-      rows.push({ label: "Motivo de Saída", value: reasonMap[String(reason)] || String(reason) });
-    }
   }
 
   if (stageId === 19) {

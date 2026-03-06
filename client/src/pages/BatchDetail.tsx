@@ -739,16 +739,10 @@ export default function BatchDetail() {
                     'chamber_2_entry_date': 'Data de Entrada na Câmara 2',
                     'initial_ph': 'pH Inicial',
                     'turning_cycles_count': 'Quantidade de Viradas',
-                    'loop_exit_reason': 'Motivo de Saída',
                     'ferment_lr_dx_add_time_iso': 'Adição Fermentos LR/DX',
                     'ferment_kl_coalho_add_time_iso': 'Adição Fermento KL + Coalho',
                   };
 
-                  const readOnlyKeys = new Set(['loop_exit_reason']);
-                  const reasonMap: Record<string, string> = {
-                    "ph_reached": "pH ideal atingido",
-                    "time_limit": "Tempo limite atingido"
-                  };
                   
                   type MeasurementItem = { label: string; value: string; editKey: string; historyIndex?: number; stageId?: number; editable: boolean };
                   const items: MeasurementItem[] = [];
@@ -769,10 +763,8 @@ export default function BatchDetail() {
                         label = `Etapa ${entry.stageId} - ${labelMap[entry.key] || entry.key.replace(/_/g, ' ')}`;
                       }
                       
+                      if (entry.key === 'loop_exit_reason') return;
                       let displayValue = String(entry.value);
-                      if (entry.key === 'loop_exit_reason') {
-                        displayValue = reasonMap[displayValue] || displayValue;
-                      }
                       if (entry.key.endsWith('_time_iso')) {
                         try {
                           displayValue = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(entry.value));
@@ -785,7 +777,7 @@ export default function BatchDetail() {
                         editKey: entry.key,
                         historyIndex: idx,
                         stageId: entry.stageId,
-                        editable: !readOnlyKeys.has(entry.key),
+                        editable: true,
                       });
                     });
                   } else {
@@ -803,7 +795,7 @@ export default function BatchDetail() {
                     });
                     
                     Object.entries(measurements).forEach(([key, val]) => {
-                      if (key.startsWith('_') || key === 'ph_measurements' || key === 'ph' || key === 'ph_value') return;
+                      if (key.startsWith('_') || key === 'ph_measurements' || key === 'ph' || key === 'ph_value' || key === 'loop_exit_reason') return;
                       const label = labelMap[key] || key.replace(/_/g, ' ');
                       let displayValue: string;
                       if (key.endsWith('_time_iso')) {
@@ -813,7 +805,7 @@ export default function BatchDetail() {
                       } else {
                         displayValue = typeof val === 'object' ? String(val?.value ?? val) : String(val);
                       }
-                      items.push({ label, value: displayValue, editKey: key, editable: !readOnlyKeys.has(key) });
+                      items.push({ label, value: displayValue, editKey: key, editable: true });
                     });
                   }
                   
