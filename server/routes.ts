@@ -1024,6 +1024,14 @@ export async function registerRoutes(
 
         const payload = speechRenderer.buildAdvancePayload(updatedBatch, nextStage, false);
         let speech = await speechRenderer.renderSpeech(payload);
+
+        if (nextStage && nextStage.id !== 15) {
+          const ctx = buildPendingInputContext(updatedBatch, nextStage);
+          if (ctx) {
+            speech += ctx;
+            console.log(`[advance] Appended pending input context for stage ${nextStage.id}`);
+          }
+        }
         
         if (result.reminderScheduled && result.waitDurationText) {
           speech += ` Vou te avisar em ${result.waitDurationText}.`;
@@ -1312,6 +1320,22 @@ export async function registerRoutes(
     return null;
   }
 
+  function buildPendingInputContext(batch: any, stage: any): string {
+    if (!stage || !stage.operator_input_required || stage.operator_input_required.length === 0) return '';
+    const pending = speechRenderer.getPendingInputs(batch, stage.id, stage);
+    if (pending.length === 0) {
+      return " Todos os dados já foram registrados. Diga 'próxima etapa' para avançar.";
+    }
+    if (stage.input_prompt) {
+      return ` ${stage.input_prompt}`;
+    }
+    const lock = recipeManager.getStageInputLock(stage.id);
+    if (lock?.inputPrompt) {
+      return ` ${lock.inputPrompt}`;
+    }
+    return ` Esta etapa requer: ${pending.join(', ')}.`;
+  }
+
   function buildStage15Context(batch: any): string {
     if (batch.currentStageId !== 15) return '';
     
@@ -1386,6 +1410,16 @@ export async function registerRoutes(
             baseAttrs = s13.newAttrs;
             reprompt = s13.reprompt;
             console.log(`[BATCH_MENU] Single batch stage 13 guided entry: pending=${s13.newAttrs.pending}`);
+          }
+        }
+      } else {
+        const fullBatch = await batchService.getBatch(b.batchId);
+        if (fullBatch) {
+          const stage = recipeManager.getStage(b.currentStageId);
+          const ctx = buildPendingInputContext(fullBatch, stage);
+          if (ctx) {
+            stageCtx = ctx;
+            reprompt = "Diga o valor solicitado ou 'qual é o status'.";
           }
         }
       }
@@ -1479,21 +1513,27 @@ export async function registerRoutes(
             if (batch && (batch.status === "active" || (batch.status as string) === "in_progress")) {
               const stage = recipeManager.getStage(batch.currentStageId);
               const recipeName = recipeManager.getRecipeName();
-              const stage15Ctx = buildStage15Context(batch);
               let stageHint = '';
-              if (batch.currentStageId === 13) {
+              let launchReprompt = "Diga 'continuar' ou 'trocar lote'.";
+              if (batch.currentStageId === 15) {
+                stageHint = buildStage15Context(batch);
+                launchReprompt = "Informe o pH ou diga 'continuar' ou 'trocar lote'.";
+              } else if (batch.currentStageId === 13) {
                 const measurements = (batch.measurements as any) || {};
                 if (measurements.initial_ph === undefined) {
                   stageHint = ' Ao continuar, vou pedir o pH inicial.';
                 } else if (measurements.pieces_quantity === undefined) {
                   stageHint = ` pH ${measurements.initial_ph} já registrado. Ao continuar, vou pedir a quantidade de peças.`;
                 }
+                launchReprompt = "Diga 'continuar' para informar o pH, ou 'trocar lote'.";
+              } else {
+                stageHint = buildPendingInputContext(batch, stage);
+                if (stageHint) {
+                  launchReprompt = "Diga 'continuar' ou 'trocar lote'.";
+                }
               }
-              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${stage15Ctx}${stageHint} Continuar ou trocar de lote?`;
+              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${stageHint} Continuar ou trocar de lote?`;
               console.log(`[LaunchRequest] Resuming persisted batch=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
-              let launchReprompt = "Diga 'continuar' ou 'trocar lote'.";
-              if (batch.currentStageId === 15) launchReprompt = "Informe o pH ou diga 'continuar' ou 'trocar lote'.";
-              else if (batch.currentStageId === 13) launchReprompt = "Diga 'continuar' para informar o pH, ou 'trocar lote'.";
               return res.status(200).json(buildAlexaResponse(
                 speechText,
                 false,
@@ -1559,6 +1599,18 @@ export async function registerRoutes(
             }
 
             const stage = recipeManager.getStage(activeBatch.currentStageId);
+
+            if (activeBatch.currentStageId !== 15) {
+              const ctx = buildPendingInputContext(activeBatch, stage);
+              if (ctx) {
+                const speech = `Continuando o lote. Etapa ${activeBatch.currentStageId}: ${stage?.name || 'em andamento'}.${ctx}`;
+                console.log(`[${intentName}] Generic pending input context for stage ${activeBatch.currentStageId}`);
+                return res.status(200).json(buildAlexaResponse(
+                  speech, false, "Diga o valor solicitado ou 'qual é o status'.", baseAttrs
+                ));
+              }
+            }
+
             const payload = speechRenderer.buildStatusPayload(activeBatch, stage, "status");
             const speech = await speechRenderer.renderSpeech(payload);
             return res.status(200).json(buildAlexaResponse(
@@ -1635,6 +1687,16 @@ export async function registerRoutes(
                 finalAttrs = s13.newAttrs;
                 repromptText = s13.reprompt;
                 console.log(`[BATCH_SELECT] Stage 13 guided entry: pending=${s13.newAttrs.pending}`);
+              }
+            }
+          } else {
+            const fullBatch = await batchService.getBatch(selected.batchId);
+            if (fullBatch) {
+              const stage = recipeManager.getStage(selected.currentStageId);
+              const ctx = buildPendingInputContext(fullBatch, stage);
+              if (ctx) {
+                stageCtx = ctx;
+                repromptText = "Diga o valor solicitado ou 'qual é o status'.";
               }
             }
           }
