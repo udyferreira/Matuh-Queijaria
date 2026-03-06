@@ -739,6 +739,7 @@ export function buildAutoAdvancePayload(
 export function getContextualUtterances(stage: any, batch: any): string[] {
   const requiredInputs = stage?.operator_input_required || [];
   const measurements = batch?.measurements || {};
+  const isLoopStage = stage?.type === 'loop';
   
   const inputToMeasurementKey: Record<string, string> = {
     'flocculation_time': 'flocculation_time',
@@ -750,6 +751,10 @@ export function getContextualUtterances(stage: any, batch: any): string[] {
   };
   
   for (const input of requiredInputs) {
+    if (isLoopStage && (input === 'ph_value' || input === 'initial_ph')) {
+      return ["pH cinco vírgula dois"];
+    }
+
     if (input === 'chamber_2_entry_date') {
       if (!batch?.chamber2EntryDate) {
         return ["coloquei na câmara dois agora"];
@@ -791,6 +796,7 @@ export function getPendingInputs(batch: any, stageId: number, stage: any): strin
   
   const measurements = batch?.measurements || {};
   const pending: string[] = [];
+  const isLoopStage = stage?.type === 'loop';
   
   const inputToMeasurementKey: Record<string, string> = {
     'flocculation_time': 'flocculation_time',
@@ -802,6 +808,10 @@ export function getPendingInputs(batch: any, stageId: number, stage: any): strin
   };
   
   for (const input of requiredInputs) {
+    if (isLoopStage && (input === 'ph_value' || input === 'initial_ph')) {
+      pending.push(input);
+      continue;
+    }
     if (input === 'chamber_2_entry_date') {
       if (!batch?.chamber2EntryDate) {
         pending.push('chamber_2_entry_date');

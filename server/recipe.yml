@@ -210,7 +210,7 @@ stages:
     input_prompt: "Registre o horário de início da prensagem dizendo: 'hora da prensa às quinze e vinte'."
 
   - id: 15
-    name: "Virar queijos e medir pH (loop controlado)"
+    name: "Virar queijos e medir pH"
     type: "loop"
     loop_condition:
       until: "ph_value < 5.3"

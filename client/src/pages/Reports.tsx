@@ -24,7 +24,7 @@ const STAGE_NAMES: Record<number, string> = {
   12: "Dessoragem em mesa",
   13: "Medir pH inicial e registrar quantidade de peças",
   14: "Colocar na prensa",
-  15: "Virar queijos e medir pH (loop controlado)",
+  15: "Virar queijos e medir pH",
   16: "Transferir para câmara de secagem",
   17: "Salga em tanque",
   18: "Secagem em prateleiras",
