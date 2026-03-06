@@ -1374,7 +1374,7 @@ export async function registerRoutes(
     if (parts.length > 0) {
       context = ' ' + parts.join(', ') + '.';
     }
-    context += " Informe o pH dizendo: 'pH é X ponto X'.";
+    context += " Informe o pH dizendo: 'pH é cinco vírgula dois', por exemplo.";
     return context;
   }
 
