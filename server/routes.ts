@@ -1513,31 +1513,12 @@ export async function registerRoutes(
             if (batch && (batch.status === "active" || (batch.status as string) === "in_progress")) {
               const stage = recipeManager.getStage(batch.currentStageId);
               const recipeName = recipeManager.getRecipeName();
-              let stageHint = '';
-              let launchReprompt = "Diga 'continuar' ou 'trocar lote'.";
-              if (batch.currentStageId === 15) {
-                stageHint = buildStage15Context(batch);
-                launchReprompt = "Informe o pH ou diga 'continuar' ou 'trocar lote'.";
-              } else if (batch.currentStageId === 13) {
-                const measurements = (batch.measurements as any) || {};
-                if (measurements.initial_ph === undefined) {
-                  stageHint = ' Ao continuar, vou pedir o pH inicial.';
-                } else if (measurements.pieces_quantity === undefined) {
-                  stageHint = ` pH ${measurements.initial_ph} já registrado. Ao continuar, vou pedir a quantidade de peças.`;
-                }
-                launchReprompt = "Diga 'continuar' para informar o pH, ou 'trocar lote'.";
-              } else {
-                stageHint = buildPendingInputContext(batch, stage);
-                if (stageHint) {
-                  launchReprompt = "Diga 'continuar' ou 'trocar lote'.";
-                }
-              }
-              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${stageHint} Continuar ou trocar de lote?`;
+              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}. Continuar ou trocar de lote?`;
               console.log(`[LaunchRequest] Resuming persisted batch=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
               return res.status(200).json(buildAlexaResponse(
                 speechText,
                 false,
-                launchReprompt,
+                "Diga 'continuar' ou 'trocar lote'.",
                 { activeBatchId: batch.id, state: "CONFIRM_CONTINUE_OR_SWITCH" }
               ));
             } else {
