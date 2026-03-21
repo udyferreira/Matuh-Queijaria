@@ -1103,7 +1103,9 @@ export async function rollbackBatch(batchId: number, apiCtx?: ApiContext | null)
 
   const measurements = (batch.measurements as Record<string, any>) || {};
   const oldHistory: any[] = measurements._history || [];
-  const newHistory = oldHistory.filter((entry: any) => entry.stageId !== currentStageId);
+  const newHistory = oldHistory.filter((entry: any) =>
+    entry.stageId !== currentStageId && entry.stageId !== targetStageId
+  );
   const newMeasurements = reconstructMeasurements(newHistory);
 
   const updatedHistory = [...((batch.history as any[]) || [])];
