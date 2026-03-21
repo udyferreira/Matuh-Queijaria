@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowRight, CheckCircle, AlertCircle, Thermometer, Scale, Pause, Play, XCircle, Flag, Pencil, Check, X } from "lucide-react";
+import { ArrowRight, ChevronLeft, CheckCircle, AlertCircle, Thermometer, Scale, Pause, Play, XCircle, Flag, Pencil, Check, X } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useBatch, useAdvanceStage, useLogMeasurement, useLogCanonicalInput, useEditMeasurement, usePauseBatch, useResumeBatch, useCompleteBatch, useCancelBatch } from "@/hooks/use-batches";
+import { useBatch, useAdvanceStage, useRollbackStage, useLogMeasurement, useLogCanonicalInput, useEditMeasurement, usePauseBatch, useResumeBatch, useCompleteBatch, useCancelBatch } from "@/hooks/use-batches";
 import { TimerWidget } from "@/components/widgets/TimerWidget";
 import { IngredientList } from "@/components/widgets/IngredientList";
 
@@ -66,6 +66,7 @@ export default function BatchDetail() {
   // Query disabled for id <= 0, preventing GET /api/batches/0
   const { data: batch, isLoading } = useBatch(id, { enabled: id > 0 });
   const { mutate: advance, isPending: isAdvancing } = useAdvanceStage();
+  const { mutate: rollback, isPending: isRollingBack } = useRollbackStage();
   const { mutate: logInput, isPending: isLogging } = useLogMeasurement();
   const { mutate: logCanonical, isPending: isLoggingCanonical } = useLogCanonicalInput();
   const { mutate: editMeasurement, isPending: isEditing } = useEditMeasurement();
@@ -115,6 +116,13 @@ export default function BatchDetail() {
     advance({ id, data: { stageId: batch.currentStageId } }, {
       onSuccess: () => toast({ title: "Etapa Concluída", description: "Avançando para a próxima etapa." }),
       onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
+    });
+  };
+
+  const handleRollback = () => {
+    rollback({ id }, {
+      onSuccess: () => toast({ title: "Etapa Revertida", description: "O lote voltou para a etapa anterior." }),
+      onError: (err) => toast({ title: "Não foi possível voltar", description: err.message, variant: "destructive" })
     });
   };
 
@@ -643,6 +651,20 @@ export default function BatchDetail() {
                     <ArrowRight className="ml-2 w-5 h-5" />
                   </Button>
                 )}
+
+                {batch.currentStageId > 3 && batch.status !== "completed" && batch.status !== "cancelled" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full mt-2 text-muted-foreground hover:text-foreground"
+                    onClick={handleRollback}
+                    disabled={isRollingBack}
+                    data-testid="button-rollback-step"
+                  >
+                    <ChevronLeft className="mr-1 w-4 h-4" />
+                    {isRollingBack ? "Revertendo..." : "Voltar Etapa Anterior"}
+                  </Button>
+                )}
               </div>
             </motion.div>
 
@@ -763,7 +785,7 @@ export default function BatchDetail() {
                         label = `Etapa ${entry.stageId} - ${labelMap[entry.key] || entry.key.replace(/_/g, ' ')}`;
                       }
                       
-                      if (entry.key === 'loop_exit_reason') return;
+                      if (entry.key === 'loop_exit_reason' || entry.key === 'rollback') return;
                       let displayValue = String(entry.value);
                       if (entry.key.endsWith('_time_iso')) {
                         try {

@@ -1026,3 +1026,117 @@ export function buildStageSpeech(batch: any, stageId: number): string {
   
   return parts.join(' ');
 }
+
+function reconstructMeasurements(history: any[]): Record<string, any> {
+  const m: Record<string, any> = { _history: history };
+  const phMeasurements: any[] = [];
+
+  history.forEach((entry: any) => {
+    const { key, value, stageId, timestamp } = entry;
+    m[key] = value;
+    if (key === 'ph_value' && stageId === 13) {
+      m['initial_ph'] = value;
+    }
+    if (key === 'ph_value') {
+      phMeasurements.push({ value, timestamp, stageId });
+    }
+  });
+
+  if (phMeasurements.length > 0) {
+    m.ph_measurements = phMeasurements;
+  }
+
+  return m;
+}
+
+export async function rollbackBatch(batchId: number, apiCtx?: ApiContext | null): Promise<{
+  success: boolean;
+  batch?: any;
+  targetStageId?: number;
+  error?: string;
+  code?: string;
+}> {
+  const batch = await storage.getBatch(batchId);
+  if (!batch) {
+    return { success: false, error: "Lote não encontrado", code: "BATCH_NOT_FOUND" };
+  }
+
+  if (batch.status === "completed") {
+    return { success: false, error: "O lote já foi concluído e não pode ser revertido.", code: "BATCH_COMPLETED" };
+  }
+
+  if (batch.currentStageId <= 3) {
+    return {
+      success: false,
+      error: "Não é possível voltar a partir das etapas 1, 2 ou 3. O retorno é permitido apenas a partir da etapa 4.",
+      code: "ROLLBACK_NOT_ALLOWED"
+    };
+  }
+
+  let targetStageId = batch.currentStageId - 1;
+  while (targetStageId > 0) {
+    const s = recipeManager.getStage(targetStageId);
+    if (s && s.type !== "system") break;
+    targetStageId--;
+  }
+
+  if (targetStageId <= 0) {
+    return { success: false, error: "Não há etapa anterior válida.", code: "ROLLBACK_NOT_ALLOWED" };
+  }
+
+  const currentStageId = batch.currentStageId;
+
+  let activeTimers = (batch.activeTimers as any[]) || [];
+  activeTimers = activeTimers.filter((t: any) => t.stageId !== currentStageId);
+
+  let activeReminders = (batch.activeReminders as any[]) || [];
+  activeReminders = activeReminders.filter((r: any) => r.stageId !== currentStageId);
+
+  let scheduledAlerts = { ...((batch.scheduledAlerts as Record<string, any>) || {}) };
+  const stageKey = `stage_${currentStageId}`;
+  if (scheduledAlerts[stageKey]) {
+    if (apiCtx) {
+      await cancelReminder(apiCtx, scheduledAlerts[stageKey].reminderId);
+    }
+    delete scheduledAlerts[stageKey];
+  }
+
+  const measurements = (batch.measurements as Record<string, any>) || {};
+  const oldHistory: any[] = measurements._history || [];
+  const newHistory = oldHistory.filter((entry: any) => entry.stageId !== currentStageId);
+  const newMeasurements = reconstructMeasurements(newHistory);
+
+  const updatedHistory = [...((batch.history as any[]) || [])];
+  updatedHistory.push({
+    action: "rollback",
+    stageId: currentStageId,
+    targetStageId,
+    timestamp: new Date().toISOString(),
+  });
+
+  const updates: any = {
+    currentStageId: targetStageId,
+    activeTimers,
+    activeReminders,
+    scheduledAlerts,
+    measurements: newMeasurements,
+    history: updatedHistory,
+  };
+
+  if (currentStageId === 15) {
+    updates.turningCyclesCount = 0;
+  }
+
+  const updatedBatch = await storage.updateBatch(batchId, updates);
+
+  await storage.logBatchAction({
+    batchId,
+    stageId: targetStageId,
+    action: "rollback",
+    details: { from: currentStageId, to: targetStageId },
+  });
+
+  console.log(`[rollbackBatch] batch=${batchId} from=${currentStageId} to=${targetStageId}`);
+
+  return { success: true, batch: updatedBatch, targetStageId };
+}

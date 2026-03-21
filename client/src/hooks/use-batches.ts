@@ -7,6 +7,7 @@ import {
   type LogMeasurementRequest
 } from "@shared/schema";
 
+
 export function useBatches() {
   return useQuery({
     queryKey: [api.batches.list.path],
@@ -105,6 +106,29 @@ export function useAdvanceStage() {
         throw new Error(error.message || "Failed to advance stage");
       }
       return api.batches.advance.responses[200].parse(await res.json());
+    },
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: [api.batches.get.path, id] });
+      queryClient.invalidateQueries({ queryKey: [api.batches.status.path, id] });
+      queryClient.invalidateQueries({ queryKey: [api.batches.logs.path, id] });
+    },
+  });
+}
+
+export function useRollbackStage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      const url = buildUrl(api.batches.rollback.path, { id });
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Não foi possível voltar a etapa");
+      }
+      return api.batches.rollback.responses[200].parse(await res.json());
     },
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: [api.batches.get.path, id] });

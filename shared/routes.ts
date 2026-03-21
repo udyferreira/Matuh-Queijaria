@@ -155,7 +155,16 @@ export const api = {
         400: errorSchemas.businessRule,
         404: errorSchemas.notFound,
       },
-    }
+    },
+    rollback: {
+      method: 'POST' as const,
+      path: '/api/batches/:id/rollback',
+      responses: {
+        200: z.custom<typeof productionBatches.$inferSelect>(),
+        400: errorSchemas.businessRule,
+        404: errorSchemas.notFound,
+      },
+    },
   },
   // Alexa Integration Webhook
   alexa: {

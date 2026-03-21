@@ -81,7 +81,7 @@ function exportToExcel(batches: ProductionBatch[]) {
   
   batches.forEach((batch) => {
     const measurements = batch.measurements as Record<string, any> || {};
-    const history: MeasurementHistoryItem[] = measurements._history || [];
+    const history: MeasurementHistoryItem[] = (measurements._history || []).filter((item: any) => item.key !== 'rollback' && item.key !== 'loop_exit_reason');
     
     const measurementsByStage = history.reduce((acc, item) => {
       if (!acc[item.stageId]) acc[item.stageId] = [];
@@ -224,7 +224,7 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
   const [expanded, setExpanded] = useState(false);
   
   const measurements = batch.measurements as Record<string, any> || {};
-  const history: MeasurementHistoryItem[] = measurements._history || [];
+  const history: MeasurementHistoryItem[] = (measurements._history || []).filter((item: any) => item.key !== 'rollback' && item.key !== 'loop_exit_reason');
   
   const measurementsByStage = history.reduce((acc, item) => {
     if (!acc[item.stageId]) {
@@ -315,7 +315,7 @@ function PrintableReport({ batches }: { batches: ProductionBatch[] }) {
       
       {batches.map((batch) => {
         const measurements = batch.measurements as Record<string, any> || {};
-        const history: MeasurementHistoryItem[] = measurements._history || [];
+        const history: MeasurementHistoryItem[] = (measurements._history || []).filter((item: any) => item.key !== 'rollback' && item.key !== 'loop_exit_reason');
         
         const measurementsByStage = history.reduce((acc, item) => {
           if (!acc[item.stageId]) acc[item.stageId] = [];

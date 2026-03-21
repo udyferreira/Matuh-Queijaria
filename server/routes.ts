@@ -653,6 +653,19 @@ export async function registerRoutes(
 
     res.json(result.batch);
   });
+
+  app.post(api.batches.rollback.path, async (req, res) => {
+    const batchId = Number(req.params.id);
+
+    const result = await batchService.rollbackBatch(batchId);
+
+    if (!result.success) {
+      const statusCode = result.code === "BATCH_NOT_FOUND" ? 404 : 400;
+      return res.status(statusCode).json({ message: result.error, code: result.code });
+    }
+
+    res.json(result.batch);
+  });
   
   // --- Alexa Webhook (ASK-Compliant) ---
   // This webhook accepts ONLY:
@@ -1921,6 +1934,48 @@ export async function registerRoutes(
           }
 
           return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", { ...sessionAttributes, activeBatchId: updatedBatch.id, state: undefined }));
+        }
+
+        // --- GoBackStageIntent: Roll back to previous stage (no confirmation) ---
+        if (intentName === "GoBackStageIntent") {
+          const activeBatch = activeBatchResolved || (userId ? await getActiveBatchForUser(userId) : null);
+          if (!activeBatch) {
+            console.log(`[GoBackStageIntent] No active batch, showing menu`);
+            const { speechText, repromptText, newSessionAttrs } = await buildBatchSelectionMenu(sessionAttributes);
+            return res.status(200).json(buildAlexaResponse(speechText, false, repromptText, newSessionAttrs));
+          }
+
+          console.log(`[GoBackStageIntent] Rolling back batch=${activeBatch.id} from stage=${activeBatch.currentStageId}`);
+          const result = await batchService.rollbackBatch(activeBatch.id, apiCtx);
+
+          if (!result.success) {
+            let errorSpeech: string;
+            if (result.code === "ROLLBACK_NOT_ALLOWED") {
+              errorSpeech = "Não é possível voltar a partir desta etapa. O retorno só é permitido a partir da quarta etapa.";
+            } else if (result.code === "BATCH_COMPLETED") {
+              errorSpeech = "Este lote já foi concluído e não pode ser revertido.";
+            } else {
+              errorSpeech = result.error || "Não foi possível voltar a etapa.";
+            }
+            return res.status(200).json(buildAlexaResponse(errorSpeech, false, "O que mais posso ajudar?", sessionAttributes));
+          }
+
+          const updatedBatch = result.batch || activeBatch;
+          const targetStage = recipeManager.getStage(result.targetStageId || 0);
+          const stageName = targetStage?.name || `etapa ${result.targetStageId}`;
+          let speech = `Etapa revertida. Estamos agora na etapa ${result.targetStageId}: ${stageName}.`;
+
+          const ctx = buildStageGuidance(updatedBatch, targetStage);
+          if (ctx) {
+            speech += ctx;
+          }
+
+          return res.status(200).json(buildAlexaResponse(
+            speech,
+            false,
+            "O que deseja fazer?",
+            { ...sessionAttributes, activeBatchId: updatedBatch.id, state: undefined }
+          ));
         }
 
         // --- LogTimeIntent: Structured time registration with AMAZON.TIME slot ---
