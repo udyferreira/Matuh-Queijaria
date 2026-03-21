@@ -1825,8 +1825,9 @@ export async function registerRoutes(
           };
           const cfg = pendingConfig[pendingState];
           const systemIntents = ['AMAZON.HelpIntent', 'AMAZON.StopIntent', 'AMAZON.CancelIntent', 'AMAZON.FallbackIntent'];
+          const alwaysAllowed = ['GoBackStageIntent'];
           
-          if (cfg && intentName !== cfg.expected && !systemIntents.includes(intentName || '') && !cfg.alternates.includes(intentName || '')) {
+          if (cfg && intentName !== cfg.expected && !systemIntents.includes(intentName || '') && !cfg.alternates.includes(intentName || '') && !alwaysAllowed.includes(intentName || '')) {
             console.log(`[GUIDED_GUARD] Blocked intent=${intentName} during pending=${pendingState}. Expected=${cfg.expected}`);
             return res.status(200).json(buildAlexaResponse(cfg.prompt, false, cfg.reprompt, sessionAttributes));
           }
@@ -1875,6 +1876,9 @@ export async function registerRoutes(
               if (intentName === 'ProcessCommandIntent') {
                 // Let it through - we'll add notes with the reminder below
                 console.log(`[GATING] Allowing ProcessCommandIntent for read-only query at stage ${activeBatchForGating.currentStageId}`);
+              } else if (intentName === 'GoBackStageIntent') {
+                // Always allow rollback regardless of pending inputs
+                console.log(`[GATING] Allowing GoBackStageIntent to pass through at stage ${activeBatchForGating.currentStageId}`);
               } else if (!systemIntents.includes(intentName || '')) {
                 // Block other intents
                 console.log(`[GATING] Blocked intent ${intentName} at stage ${activeBatchForGating.currentStageId}. Expected: ${stageLock.expectedIntent}`);
