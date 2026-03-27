@@ -326,7 +326,6 @@ function formatDoseName(name: string): string {
     "FERMENT_DX": "fermento D X", 
     "FERMENT_KL": "fermento K L",
     "RENNET": "coalho",
-    "SALT": "sal"
   };
   return nameMap[name] || name;
 }
@@ -865,9 +864,5 @@ export function getRelevantDosesForStage(
   if (stageText.includes('coalho') && calculatedInputs.RENNET) {
     doses["RENNET"] = { value: calculatedInputs.RENNET, unit: "ml" };
   }
-  if (stageText.includes('sal') && calculatedInputs.SALT) {
-    doses["SALT"] = { value: calculatedInputs.SALT, unit: "g" };
-  }
-  
   return doses;
 }

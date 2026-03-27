@@ -59,8 +59,6 @@ interface FormState {
   FERMENT_DX: string;
   FERMENT_KL: string;
   RENNET: string;
-  SALT: string;
-  CALCIUM: string;
   ferment_lr_dx_add_time: string;
   ferment_kl_coalho_add_time: string;
   flocculation_time: string;
@@ -112,8 +110,6 @@ function buildInitialState(batch: ProductionBatch): FormState {
     FERMENT_DX: calc.FERMENT_DX != null ? String(calc.FERMENT_DX) : "",
     FERMENT_KL: calc.FERMENT_KL != null ? String(calc.FERMENT_KL) : "",
     RENNET: calc.RENNET != null ? String(calc.RENNET) : "",
-    SALT: calc.SALT != null ? String(calc.SALT) : "",
-    CALCIUM: calc.CALCIUM != null ? String(calc.CALCIUM) : "",
     ferment_lr_dx_add_time: isoToTimeBRT(mOrHistory('ferment_lr_dx_add_time_iso')),
     ferment_kl_coalho_add_time: isoToTimeBRT(mOrHistory('ferment_kl_coalho_add_time_iso')),
     flocculation_time: mOrHistory('flocculation_time') ?? "",
@@ -196,8 +192,6 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
     numIfChanged("FERMENT_DX", (v) => { payload.calculatedInputs.FERMENT_DX = v; });
     numIfChanged("FERMENT_KL", (v) => { payload.calculatedInputs.FERMENT_KL = v; });
     numIfChanged("RENNET", (v) => { payload.calculatedInputs.RENNET = v; });
-    numIfChanged("SALT", (v) => { payload.calculatedInputs.SALT = v; });
-    numIfChanged("CALCIUM", (v) => { payload.calculatedInputs.CALCIUM = v; });
 
     // Stage 4 (time input, compare HH:MM strings)
     if (form.ferment_lr_dx_add_time !== initial.ferment_lr_dx_add_time && form.ferment_lr_dx_add_time !== "") {
@@ -304,8 +298,6 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
                 { key: "FERMENT_DX", label: "Fermento DX (mL)", testid: "ferment-dx" },
                 { key: "FERMENT_KL", label: "Fermento KL (mL)", testid: "ferment-kl" },
                 { key: "RENNET", label: "Coalho (mL)", testid: "rennet" },
-                { key: "SALT", label: "Sal (g)", testid: "salt" },
-                { key: "CALCIUM", label: "Cloreto de Cálcio (mL)", testid: "calcium" },
               ].map(({ key, label, testid }) => (
                 <div key={key}>
                   <Label htmlFor={`edit-${testid}`}>{label}</Label>

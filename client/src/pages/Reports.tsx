@@ -168,10 +168,8 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
       FERMENT_DX: "Fermento DX (mL)",
       FERMENT_KL: "Fermento KL (mL)",
       RENNET: "Coalho (mL)",
-      SALT: "Sal (g)",
-      CALCIUM: "Cloreto de Cálcio (mL)",
     };
-    ['FERMENT_LR', 'FERMENT_DX', 'FERMENT_KL', 'RENNET', 'SALT', 'CALCIUM'].forEach((k) => {
+    ['FERMENT_LR', 'FERMENT_DX', 'FERMENT_KL', 'RENNET'].forEach((k) => {
       if (k in calculatedInputs) {
         rows.push({ label: inputLabels[k] || k, value: String(calculatedInputs[k]) });
       }
