@@ -1111,3 +1111,154 @@ export async function rollbackBatch(batchId: number, apiCtx?: ApiContext | null)
 
   return { success: true, batch: updatedBatch, targetStageId };
 }
+
+// ─── Post-Completion Edit ───────────────────────────────────────────────────
+
+export interface PhMeasurementEdit {
+  index: number;
+  value: number;
+}
+
+export interface EditCompletedBatchPayload {
+  measurements?: {
+    milk_volume_l?: number;
+    milk_temperature_c?: number;
+    milk_ph?: number;
+    ferment_lr_dx_add_time_iso?: string;
+    ferment_kl_coalho_add_time_iso?: string;
+    flocculation_time?: string;
+    cut_point_time?: string;
+    initial_ph?: number;
+    pieces_quantity?: number;
+    press_start_time?: string;
+    ph_measurements?: PhMeasurementEdit[];
+  };
+  calculatedInputs?: Record<string, number>;
+  topLevel?: {
+    milkVolumeL?: number;
+    turningCyclesCount?: number;
+    chamber2EntryDate?: string;
+    maturationEndDate?: string;
+  };
+}
+
+export async function editCompletedBatch(
+  batchId: number,
+  payload: EditCompletedBatchPayload
+): Promise<{ success: boolean; batch?: any; error?: string; code?: string }> {
+  const batch = await storage.getBatch(batchId);
+  if (!batch) return { success: false, error: "Lote não encontrado", code: "BATCH_NOT_FOUND" };
+  if (batch.status !== 'completed') {
+    return { success: false, error: "Apenas lotes concluídos podem ser editados.", code: "BATCH_NOT_COMPLETED" };
+  }
+
+  const now = new Date().toISOString();
+  const measurements = { ...((batch.measurements as any) || {}) };
+  const history: any[] = [...(measurements._history || [])];
+  const fieldsEdited: string[] = [];
+
+  function recordEdit(key: string, newValue: any, previousValue: any, stageId: number) {
+    history.push({ key, value: newValue, previousValue, stageId, timestamp: now, action: 'post_completion_edit', editedVia: 'web' });
+    fieldsEdited.push(key);
+  }
+
+  const updates: Record<string, any> = {};
+
+  // --- measurements patch ---
+  if (payload.measurements) {
+    const m = payload.measurements;
+
+    const simpleFields: Array<{ key: string; stageId: number }> = [
+      { key: 'milk_volume_l', stageId: 1 },
+      { key: 'milk_temperature_c', stageId: 1 },
+      { key: 'milk_ph', stageId: 1 },
+      { key: 'ferment_lr_dx_add_time_iso', stageId: 4 },
+      { key: 'ferment_kl_coalho_add_time_iso', stageId: 5 },
+      { key: 'flocculation_time', stageId: 6 },
+      { key: 'cut_point_time', stageId: 7 },
+      { key: 'initial_ph', stageId: 13 },
+      { key: 'pieces_quantity', stageId: 13 },
+      { key: 'press_start_time', stageId: 14 },
+    ];
+
+    for (const { key, stageId } of simpleFields) {
+      const newVal = (m as any)[key];
+      if (newVal !== undefined && newVal !== measurements[key]) {
+        recordEdit(key, newVal, measurements[key], stageId);
+        measurements[key] = newVal;
+      }
+    }
+
+    if (m.ph_measurements && m.ph_measurements.length > 0) {
+      const phArr = [...(measurements.ph_measurements || [])];
+      for (const edit of m.ph_measurements) {
+        if (edit.index >= 0 && edit.index < phArr.length) {
+          const prev = phArr[edit.index].value;
+          if (edit.value !== prev) {
+            recordEdit(`ph_measurement_${edit.index}`, edit.value, prev, 15);
+            phArr[edit.index] = { ...phArr[edit.index], value: edit.value };
+          }
+        }
+      }
+      measurements.ph_measurements = phArr;
+      if (phArr.length > 0) {
+        measurements.ph_value = phArr[phArr.length - 1].value;
+      }
+    }
+  }
+
+  // --- calculatedInputs patch ---
+  if (payload.calculatedInputs && Object.keys(payload.calculatedInputs).length > 0) {
+    const currentCalc = { ...((batch.calculatedInputs as any) || {}) };
+    for (const [key, value] of Object.entries(payload.calculatedInputs)) {
+      if (value !== undefined && value !== currentCalc[key]) {
+        recordEdit(`calc_${key}`, value, currentCalc[key], 2);
+        currentCalc[key] = value;
+      }
+    }
+    updates.calculatedInputs = currentCalc;
+  }
+
+  // --- topLevel patch ---
+  if (payload.topLevel) {
+    const t = payload.topLevel;
+    if (t.milkVolumeL !== undefined && t.milkVolumeL !== Number(batch.milkVolumeL)) {
+      recordEdit('milkVolumeL', t.milkVolumeL, Number(batch.milkVolumeL), 1);
+      updates.milkVolumeL = t.milkVolumeL;
+      measurements.milk_volume_l = t.milkVolumeL;
+    }
+    if (t.turningCyclesCount !== undefined && t.turningCyclesCount !== (batch as any).turningCyclesCount) {
+      recordEdit('turningCyclesCount', t.turningCyclesCount, (batch as any).turningCyclesCount, 15);
+      updates.turningCyclesCount = t.turningCyclesCount;
+    }
+    if (t.chamber2EntryDate !== undefined) {
+      const newDate = new Date(t.chamber2EntryDate);
+      recordEdit('chamber2EntryDate', t.chamber2EntryDate, batch.chamber2EntryDate?.toISOString?.() ?? null, 19);
+      updates.chamber2EntryDate = newDate;
+    }
+    if (t.maturationEndDate !== undefined) {
+      const newDate = new Date(t.maturationEndDate);
+      recordEdit('maturationEndDate', t.maturationEndDate, batch.maturationEndDate?.toISOString?.() ?? null, 19);
+      updates.maturationEndDate = newDate;
+    }
+  }
+
+  if (fieldsEdited.length === 0) {
+    return { success: true, batch };
+  }
+
+  measurements._history = history;
+  updates.measurements = measurements;
+
+  const updatedBatch = await storage.updateBatch(batchId, updates);
+
+  await storage.logBatchAction({
+    batchId,
+    stageId: batch.currentStageId,
+    action: 'post_completion_edit',
+    details: { fieldsEdited, editedVia: 'web' }
+  });
+
+  console.log(`[editCompletedBatch] batch=${batchId} fieldsEdited=${fieldsEdited.join(',')}`);
+  return { success: true, batch: updatedBatch };
+}

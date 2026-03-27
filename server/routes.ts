@@ -611,6 +611,20 @@ export async function registerRoutes(
 
     res.json(result.batch);
   });
+
+  app.patch("/api/batches/:id/report-edit", async (req, res) => {
+    const batchId = Number(req.params.id);
+    if (isNaN(batchId)) return res.status(400).json({ message: "ID inválido" });
+
+    const result = await batchService.editCompletedBatch(batchId, req.body);
+
+    if (!result.success) {
+      const statusCode = result.code === "BATCH_NOT_FOUND" ? 404 : 400;
+      return res.status(statusCode).json({ message: result.error, code: result.code });
+    }
+
+    res.json(result.batch);
+  });
   
   // --- Alexa Webhook (ASK-Compliant) ---
   // This webhook accepts ONLY:

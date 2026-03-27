@@ -1,8 +1,9 @@
 import { Link } from "wouter";
-import { FileText, ArrowLeft, ChevronDown, ChevronUp, Printer, FileDown, FileSpreadsheet } from "lucide-react";
+import { FileText, ArrowLeft, ChevronDown, ChevronUp, Printer, FileDown, FileSpreadsheet, Pencil } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
 import { useCompletedBatches } from "@/hooks/use-batches";
@@ -10,6 +11,7 @@ import { getCheeseTypeName, formatBatchCode, ProductionBatch } from "@shared/sch
 import { parseDateOnly } from "@/lib/utils";
 import { useState, useRef } from "react";
 import * as XLSX from "xlsx";
+import { EditBatchModal } from "@/components/EditBatchModal";
 
 const STAGE_NAMES: Record<number, string> = {
   1: "Separar o leite e medir parâmetros iniciais",
@@ -233,9 +235,11 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
 
 function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionBatch; printRef?: React.RefObject<HTMLDivElement>; stageTimers?: Record<number, number> }) {
   const [expanded, setExpanded] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   
   const measurements = batch.measurements as Record<string, any> || {};
   const history: MeasurementHistoryItem[] = (measurements._history || []).filter((item: any) => item.key !== 'rollback' && item.key !== 'loop_exit_reason');
+  const wasEdited = (measurements._history || []).some((item: any) => item.action === 'post_completion_edit');
   
   const measurementsByStage = history.reduce((acc, item) => {
     if (!acc[item.stageId]) {
@@ -249,6 +253,10 @@ function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionB
   const stagesWithData = allStageIds.filter((stageId) => getStageData(batch, stageId, measurementsByStage, stageTimers).length > 0);
 
   return (
+    <>
+      {editOpen && (
+        <EditBatchModal batch={batch} open={editOpen} onClose={() => setEditOpen(false)} />
+      )}
     <Card className="mb-4 print:break-inside-avoid">
       <CardHeader 
         className="cursor-pointer hover-elevate print:cursor-default" 
@@ -261,9 +269,16 @@ function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionB
               <FileText className="w-6 h-6 text-primary print:text-gray-700" />
             </div>
             <div>
-              <CardTitle className="text-lg">
-                Lote {formatBatchCode(batch.startedAt)}
-              </CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-lg">
+                  Lote {formatBatchCode(batch.startedAt)}
+                </CardTitle>
+                {wasEdited && (
+                  <Badge variant="outline" className="text-xs text-amber-500 border-amber-500/50 print:hidden" data-testid={`badge-edited-${batch.id}`}>
+                    Editado
+                  </Badge>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground">
                 {getCheeseTypeName(batch.recipeId)} - {batch.milkVolumeL}L - Concluído em {batch.completedAt ? new Date(batch.completedAt).toLocaleDateString("pt-BR") : "N/A"}
                 {batch.chamber2EntryDate && ` | Entrada Câmara 2: ${parseDateOnly(batch.chamber2EntryDate)}`}
@@ -271,9 +286,20 @@ function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionB
               </p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="print:hidden" data-testid={`button-expand-${batch.id}`}>
-            {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </Button>
+          <div className="flex items-center gap-1 print:hidden" onClick={(e) => e.stopPropagation()}>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Editar dados"
+              onClick={() => setEditOpen(true)}
+              data-testid={`button-edit-batch-${batch.id}`}
+            >
+              <Pencil className="w-4 h-4" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setExpanded(!expanded)} data-testid={`button-expand-${batch.id}`}>
+              {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+            </Button>
+          </div>
         </div>
       </CardHeader>
       
@@ -312,6 +338,7 @@ function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionB
         </CardContent>
       )}
     </Card>
+    </>
   );
 }
 
