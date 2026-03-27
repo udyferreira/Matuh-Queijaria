@@ -40,7 +40,10 @@ function timeBRTToISO(originalISO: string | undefined | null, newTime: string): 
 function timestampToDateInput(ts: string | Date | undefined | null): string {
   if (!ts) return "";
   try {
-    return new Date(ts as string).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    // Extract YYYY-MM-DD from ISO string directly (no TZ conversion)
+    // Matches parseDateOnly in utils.ts — avoids off-by-one near UTC midnight
+    const str = typeof ts === "string" ? ts : (ts as Date).toISOString();
+    return str.split("T")[0] ?? "";
   } catch {
     return "";
   }

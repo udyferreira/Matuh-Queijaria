@@ -1232,8 +1232,9 @@ export async function editCompletedBatch(
       updates.turningCyclesCount = t.turningCyclesCount;
     }
     if (t.chamber2EntryDate !== undefined) {
+      // Extract date-part from ISO string directly (no TZ conversion) — matches frontend parseDateOnly
       const currentStr = batch.chamber2EntryDate
-        ? new Date(batch.chamber2EntryDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
+        ? new Date(batch.chamber2EntryDate).toISOString().split("T")[0]
         : null;
       if (t.chamber2EntryDate !== currentStr) {
         recordEdit('chamber2EntryDate', t.chamber2EntryDate, currentStr, 19);
@@ -1242,7 +1243,7 @@ export async function editCompletedBatch(
     }
     if (t.maturationEndDate !== undefined) {
       const currentStr = batch.maturationEndDate
-        ? new Date(batch.maturationEndDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
+        ? new Date(batch.maturationEndDate).toISOString().split("T")[0]
         : null;
       if (t.maturationEndDate !== currentStr) {
         recordEdit('maturationEndDate', t.maturationEndDate, currentStr, 19);
