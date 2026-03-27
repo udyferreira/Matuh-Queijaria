@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompletedBatches } from "@/hooks/use-batches";
 import { getCheeseTypeName, formatBatchCode, ProductionBatch } from "@shared/schema";
+import { parseDateOnly } from "@/lib/utils";
 import { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 
@@ -207,10 +208,10 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
 
   if (stageId === 19) {
     if (batch.chamber2EntryDate) {
-      rows.push({ label: "Data de Entrada na Câmara 2", value: new Date(batch.chamber2EntryDate).toLocaleDateString("pt-BR") });
+      rows.push({ label: "Data de Entrada na Câmara 2", value: parseDateOnly(batch.chamber2EntryDate) });
     }
     if (batch.maturationEndDate) {
-      rows.push({ label: "Fim da Maturação (90 dias)", value: new Date(batch.maturationEndDate).toLocaleDateString("pt-BR") });
+      rows.push({ label: "Fim da Maturação (90 dias)", value: parseDateOnly(batch.maturationEndDate) });
     }
     if (batch.completedAt) {
       rows.push({ label: "Data de Conclusão", value: new Date(batch.completedAt).toLocaleDateString("pt-BR") });
@@ -255,8 +256,8 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
               </CardTitle>
               <p className="text-sm text-muted-foreground">
                 {getCheeseTypeName(batch.recipeId)} - {batch.milkVolumeL}L - Concluído em {batch.completedAt ? new Date(batch.completedAt).toLocaleDateString("pt-BR") : "N/A"}
-                {batch.chamber2EntryDate && ` | Entrada Câmara 2: ${new Date(batch.chamber2EntryDate).toLocaleDateString("pt-BR")}`}
-                {batch.maturationEndDate && ` | Fim Maturação: ${new Date(batch.maturationEndDate).toLocaleDateString("pt-BR")}`}
+                {batch.chamber2EntryDate && ` | Entrada Câmara 2: ${parseDateOnly(batch.chamber2EntryDate)}`}
+                {batch.maturationEndDate && ` | Fim Maturação: ${parseDateOnly(batch.maturationEndDate)}`}
               </p>
             </div>
           </div>

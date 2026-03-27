@@ -14,6 +14,7 @@ import { IngredientList } from "@/components/widgets/IngredientList";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { getCheeseTypeName, formatBatchCode } from "@shared/schema";
+import { parseDateOnly } from "@/lib/utils";
 
 const STAGE_NAMES: Record<number, string> = {
   1: "Separar o leite e medir parâmetros iniciais",
@@ -627,11 +628,11 @@ export default function BatchDetail() {
                       </div>
                     ) : (
                       <div className="flex items-center gap-1">
-                        <span className="font-mono font-bold">{new Date(batch.chamber2EntryDate).toLocaleDateString('pt-BR')}</span>
+                        <span className="font-mono font-bold">{parseDateOnly(batch.chamber2EntryDate)}</span>
                         <Button size="icon" variant="ghost" className="h-6 w-6" data-testid="button-edit-chamber2"
                           onClick={() => {
                             setEditingKey("chamber_2_entry_date");
-                            setEditValue(new Date(batch.chamber2EntryDate!).toISOString().split('T')[0]);
+                            setEditValue(String(batch.chamber2EntryDate).split('T')[0]);
                           }}>
                           <Pencil className="w-3 h-3 text-muted-foreground" />
                         </Button>
@@ -643,7 +644,7 @@ export default function BatchDetail() {
                 {batch.maturationEndDate && (
                   <div className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
                     <span className="text-muted-foreground">Fim da Maturação</span>
-                    <span className="font-mono font-bold">{new Date(batch.maturationEndDate).toLocaleDateString('pt-BR')}</span>
+                    <span className="font-mono font-bold">{parseDateOnly(batch.maturationEndDate)}</span>
                   </div>
                 )}
 
