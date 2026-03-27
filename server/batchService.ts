@@ -1190,7 +1190,13 @@ export async function editCompletedBatch(
     }
 
     if (m.ph_measurements && m.ph_measurements.length > 0) {
-      const phArr = [...(measurements.ph_measurements || [])];
+      // Prefer existing ph_measurements array; for legacy batches without it, reconstruct from _history
+      let phArr: any[] = measurements.ph_measurements
+        ? [...measurements.ph_measurements]
+        : history
+            .filter((h: any) => (h.key === 'ph_value' || h.key === 'ph_measurement') && h.stageId === 15)
+            .map((h: any) => ({ value: h.value, stageId: 15, timestamp: h.timestamp }));
+
       for (const edit of m.ph_measurements) {
         if (edit.index >= 0 && edit.index < phArr.length) {
           const prev = phArr[edit.index].value;
