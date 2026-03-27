@@ -2479,8 +2479,13 @@ export async function registerRoutes(
                       : 0;
                     const alertAlreadyFired = alertDueAt > 0 && alertDueAt < Date.now();
                     if (!alertAlreadyFired) {
-                      // Reminder still pending — cancel it on Alexa before scheduling the new one
-                      await cancelReminder(apiCtx, scheduledAlerts[alertKey].reminderId);
+                      // Reminder still pending — cancel it on Alexa before scheduling the new one.
+                      // Isolated try/catch: a failure here must NOT prevent scheduling the new reminder.
+                      try {
+                        await cancelReminder(apiCtx, scheduledAlerts[alertKey].reminderId);
+                      } catch (cancelErr) {
+                        console.warn(`[Stage 15] cancelReminder failed (non-fatal): ${cancelErr}. Will proceed to schedule new reminder.`);
+                      }
                     } else {
                       console.log(`[Stage 15] Previous reminder already fired (dueAt=${scheduledAlerts[alertKey].dueAtISO}). Skipping cancelReminder API call.`);
                     }

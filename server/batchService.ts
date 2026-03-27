@@ -680,6 +680,14 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
       console.log(`[logPh] Stage 15: pH ${phValue} not ideal. New 1h30 timer started.`);
     } else {
       console.log(`[logPh] Stage 15: pH ${phValue} reached target. Timer cleared.`);
+      // Also clear the DB record of the Alexa scheduled alert so advanceBatch
+      // does not attempt to cancel an already-fired reminder via the Alexa API
+      const currentAlerts = { ...((batch as any).scheduledAlerts || {}) };
+      if (currentAlerts['stage_15']) {
+        delete currentAlerts['stage_15'];
+        updates.scheduledAlerts = currentAlerts;
+        console.log(`[logPh] Stage 15: scheduledAlerts.stage_15 cleared from DB on pH target reached.`);
+      }
     }
     updates.activeTimers = activeTimers;
   }
