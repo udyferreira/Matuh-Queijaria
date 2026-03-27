@@ -612,9 +612,15 @@ export async function registerRoutes(
     res.json(result.batch);
   });
 
+  // calculatedInputs accepts flat numbers { KEY: 65 } OR nested { KEY: { value: 65 } }
+  const calcValueSchema = z.union([
+    z.number().min(0).max(100000),
+    z.object({ value: z.number().min(0).max(100000) }),
+  ]);
+
   const reportEditSchema = z.object({
     measurements: z.object({
-      milk_volume_l: z.number().positive().max(10000).optional(),
+      // milk_volume_l intentionally excluded: use topLevel.milkVolumeL to sync both top-level and measurements atomically
       milk_temperature_c: z.number().min(-10).max(100).optional(),
       milk_ph: z.number().min(0).max(14).optional(),
       ferment_lr_dx_add_time_iso: z.string().datetime().optional(),
@@ -629,7 +635,7 @@ export async function registerRoutes(
         value: z.number().min(0).max(14),
       })).optional(),
     }).optional(),
-    calculatedInputs: z.record(z.string(), z.number().min(0).max(100000)).optional(),
+    calculatedInputs: z.record(z.string(), calcValueSchema).optional(),
     topLevel: z.object({
       milkVolumeL: z.number().positive().max(10000).optional(),
       turningCyclesCount: z.number().int().min(0).max(10000).optional(),

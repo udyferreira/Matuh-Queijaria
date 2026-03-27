@@ -1121,7 +1121,7 @@ export interface PhMeasurementEdit {
 
 export interface EditCompletedBatchPayload {
   measurements?: {
-    milk_volume_l?: number;
+    // milk_volume_l excluded: use topLevel.milkVolumeL to keep top-level and measurements in sync
     milk_temperature_c?: number;
     milk_ph?: number;
     ferment_lr_dx_add_time_iso?: string;
@@ -1133,7 +1133,8 @@ export interface EditCompletedBatchPayload {
     press_start_time?: string;
     ph_measurements?: PhMeasurementEdit[];
   };
-  calculatedInputs?: Record<string, number>;
+  // Accepts flat { KEY: number } or nested { KEY: { value: number } } — normalized in service
+  calculatedInputs?: Record<string, number | { value: number }>;
   topLevel?: {
     milkVolumeL?: number;
     turningCyclesCount?: number;
@@ -1169,7 +1170,6 @@ export async function editCompletedBatch(
     const m = payload.measurements;
 
     const simpleFields: Array<{ key: string; stageId: number }> = [
-      { key: 'milk_volume_l', stageId: 1 },
       { key: 'milk_temperature_c', stageId: 1 },
       { key: 'milk_ph', stageId: 1 },
       { key: 'ferment_lr_dx_add_time_iso', stageId: 4 },
@@ -1210,7 +1210,11 @@ export async function editCompletedBatch(
   // --- calculatedInputs patch ---
   if (payload.calculatedInputs && Object.keys(payload.calculatedInputs).length > 0) {
     const currentCalc = { ...((batch.calculatedInputs as any) || {}) };
-    for (const [key, value] of Object.entries(payload.calculatedInputs)) {
+    for (const [key, rawValue] of Object.entries(payload.calculatedInputs)) {
+      // Normalize: accepts flat number { KEY: 65 } OR nested { KEY: { value: 65 } }
+      const value = typeof rawValue === 'object' && rawValue !== null && 'value' in rawValue
+        ? (rawValue as { value: number }).value
+        : rawValue as number;
       if (value !== undefined && value !== currentCalc[key]) {
         recordEdit(`calc_${key}`, value, currentCalc[key], 2);
         currentCalc[key] = value;
