@@ -15,7 +15,11 @@ export interface IStorage extends IChatStorage {
   getAllBatches(): Promise<ProductionBatch[]>;
   createBatch(batch: InsertBatch): Promise<ProductionBatch>;
   updateBatch(id: number, updates: Partial<ProductionBatch>): Promise<ProductionBatch>;
-  
+  // Note: post-completion batch editing (editCompletedBatch) is implemented in batchService.ts
+  // and composes the existing getBatch, updateBatch, and logBatchAction primitives above.
+  // No dedicated IStorage method is needed since the service applies partial patch semantics
+  // to measurements/calculatedInputs/topLevel with per-field audit trail in _history.
+
   // Logging
   logBatchAction(log: InsertLog): Promise<void>;
   getBatchLogs(batchId: number): Promise<any[]>;

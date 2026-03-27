@@ -77,27 +77,54 @@ interface FormState {
 function buildInitialState(batch: ProductionBatch): FormState {
   const m = (batch.measurements as Record<string, any>) || {};
   const calc = (batch.calculatedInputs as Record<string, any>) || {};
+  const history: any[] = m._history || [];
+
+  // Prefer measurements field, fall back to last matching history entry (for legacy batches)
+  function mOrHistory(key: string): any {
+    if (m[key] != null) return m[key];
+    const entries = history.filter((h: any) => h.key === key);
+    return entries.length > 0 ? entries[entries.length - 1].value : undefined;
+  }
+
+  // Stage 15 pH measurements: prefer ph_measurements array (current format),
+  // fall back to history entries with ph_measurement/ph_value keys for legacy batches
   const phArr: any[] = m.ph_measurements || [];
+  const stage15PhArr = phArr.filter((p: any) => p.stageId === 15 || p.stageId == null);
+  const phMeasurements = stage15PhArr.length > 0
+    ? stage15PhArr.map((p: any) => (p.value != null ? String(p.value) : ""))
+    : history
+        .filter((h: any) => (h.key === 'ph_value' || h.key === 'ph_measurement') && h.stageId === 15)
+        .map((h: any) => String(h.value));
+
+  // initial_ph: prefer measurements.initial_ph, fall back to stageId=13 ph_value in history
+  const initialPhVal = m.initial_ph != null
+    ? m.initial_ph
+    : (() => {
+        const entry = history.find((h: any) => (h.key === 'initial_ph' || (h.key === 'ph_value' && h.stageId === 13)));
+        return entry?.value;
+      })();
 
   return {
     milkVolumeL: batch.milkVolumeL != null ? String(batch.milkVolumeL) : "",
-    milk_temperature_c: m.milk_temperature_c != null ? String(m.milk_temperature_c) : "",
-    milk_ph: m.milk_ph != null ? String(m.milk_ph) : "",
+    milk_temperature_c: mOrHistory('milk_temperature_c') != null ? String(mOrHistory('milk_temperature_c')) : "",
+    milk_ph: mOrHistory('milk_ph') != null ? String(mOrHistory('milk_ph')) : "",
     FERMENT_LR: calc.FERMENT_LR != null ? String(calc.FERMENT_LR) : "",
     FERMENT_DX: calc.FERMENT_DX != null ? String(calc.FERMENT_DX) : "",
     FERMENT_KL: calc.FERMENT_KL != null ? String(calc.FERMENT_KL) : "",
     RENNET: calc.RENNET != null ? String(calc.RENNET) : "",
     SALT: calc.SALT != null ? String(calc.SALT) : "",
     CALCIUM: calc.CALCIUM != null ? String(calc.CALCIUM) : "",
-    ferment_lr_dx_add_time: isoToTimeBRT(m.ferment_lr_dx_add_time_iso),
-    ferment_kl_coalho_add_time: isoToTimeBRT(m.ferment_kl_coalho_add_time_iso),
-    flocculation_time: m.flocculation_time ?? "",
-    cut_point_time: m.cut_point_time ?? "",
-    initial_ph: m.initial_ph != null ? String(m.initial_ph) : "",
-    pieces_quantity: m.pieces_quantity != null ? String(m.pieces_quantity) : "",
-    press_start_time: m.press_start_time ?? "",
-    ph_measurements: phArr.map((p: any) => (p.value != null ? String(p.value) : "")),
-    turningCyclesCount: (batch as any).turningCyclesCount != null ? String((batch as any).turningCyclesCount) : "",
+    ferment_lr_dx_add_time: isoToTimeBRT(mOrHistory('ferment_lr_dx_add_time_iso')),
+    ferment_kl_coalho_add_time: isoToTimeBRT(mOrHistory('ferment_kl_coalho_add_time_iso')),
+    flocculation_time: mOrHistory('flocculation_time') ?? "",
+    cut_point_time: mOrHistory('cut_point_time') ?? "",
+    initial_ph: initialPhVal != null ? String(initialPhVal) : "",
+    pieces_quantity: mOrHistory('pieces_quantity') != null ? String(mOrHistory('pieces_quantity')) : "",
+    press_start_time: mOrHistory('press_start_time') ?? "",
+    ph_measurements: phMeasurements,
+    turningCyclesCount: (batch as any).turningCyclesCount != null
+      ? String((batch as any).turningCyclesCount)
+      : (mOrHistory('turning_cycles_count') != null ? String(mOrHistory('turning_cycles_count')) : ""),
     chamber2EntryDate: timestampToDateInput(batch.chamber2EntryDate as any),
     maturationEndDate: timestampToDateInput(batch.maturationEndDate as any),
   };
