@@ -128,18 +128,22 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
   const stageHistory = measurementsByStage[stageId] || [];
   const rows: Array<{ label: string; value: string }> = [];
 
+  // Helper: prefer measurements field (always up-to-date after edits) over history
+  function fromMeasurementsOrHistory(key: string): any {
+    if (measurements[key] != null) return measurements[key];
+    return stageHistory.find(i => i.key === key)?.value;
+  }
+
   if (stageId === 1) {
     if (batch.milkVolumeL) rows.push({ label: "Volume de Leite", value: `${batch.milkVolumeL} L` });
-    const historyTemp = stageHistory.find(h => h.key === 'milk_temperature_c');
-    const historyPh = stageHistory.find(h => h.key === 'milk_ph');
-    if (historyTemp) rows.push({ label: "Temperatura do Leite", value: `${historyTemp.value} °C` });
-    else if (measurements.milk_temperature_c) rows.push({ label: "Temperatura do Leite", value: `${measurements.milk_temperature_c} °C` });
-    if (historyPh) rows.push({ label: "pH do Leite", value: String(historyPh.value) });
-    else if (measurements.milk_ph) rows.push({ label: "pH do Leite", value: String(measurements.milk_ph) });
+    const temp = measurements.milk_temperature_c ?? stageHistory.find(h => h.key === 'milk_temperature_c')?.value;
+    if (temp != null) rows.push({ label: "Temperatura do Leite", value: `${temp} °C` });
+    const ph = measurements.milk_ph ?? stageHistory.find(h => h.key === 'milk_ph')?.value;
+    if (ph != null) rows.push({ label: "pH do Leite", value: String(ph) });
   }
 
   if (stageId === 4) {
-    const isoVal = stageHistory.find(i => i.key === 'ferment_lr_dx_add_time_iso')?.value || measurements.ferment_lr_dx_add_time_iso;
+    const isoVal = measurements.ferment_lr_dx_add_time_iso || stageHistory.find(i => i.key === 'ferment_lr_dx_add_time_iso')?.value;
     if (isoVal) {
       try {
         const formatted = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(isoVal));
@@ -149,7 +153,7 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
   }
 
   if (stageId === 5) {
-    const isoVal = stageHistory.find(i => i.key === 'ferment_kl_coalho_add_time_iso')?.value || measurements.ferment_kl_coalho_add_time_iso;
+    const isoVal = measurements.ferment_kl_coalho_add_time_iso || stageHistory.find(i => i.key === 'ferment_kl_coalho_add_time_iso')?.value;
     if (isoVal) {
       try {
         const formatted = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(isoVal));
@@ -182,40 +186,46 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
   }
 
   if (stageId === 6) {
-    const h = stageHistory.find(i => i.key === 'flocculation_time');
-    if (h) rows.push({ label: "Horário de Floculação", value: String(h.value) });
-    else if (measurements.flocculation_time) rows.push({ label: "Horário de Floculação", value: String(measurements.flocculation_time) });
+    const val = fromMeasurementsOrHistory('flocculation_time');
+    if (val != null) rows.push({ label: "Horário de Floculação", value: String(val) });
   }
 
   if (stageId === 7) {
-    const h = stageHistory.find(i => i.key === 'cut_point_time');
-    if (h) rows.push({ label: "Horário do Ponto de Corte", value: String(h.value) });
-    else if (measurements.cut_point_time) rows.push({ label: "Horário do Ponto de Corte", value: String(measurements.cut_point_time) });
+    const val = fromMeasurementsOrHistory('cut_point_time');
+    if (val != null) rows.push({ label: "Horário do Ponto de Corte", value: String(val) });
   }
 
   if (stageId === 13) {
-    const phItem = stageHistory.find(i => i.key === 'ph_value' || i.key === 'initial_ph');
-    const piecesItem = stageHistory.find(i => i.key === 'pieces_quantity');
-    if (phItem) rows.push({ label: "pH Inicial", value: String(phItem.value) });
-    else if (measurements.initial_ph) rows.push({ label: "pH Inicial", value: String(measurements.initial_ph) });
-    if (piecesItem) rows.push({ label: "Quantidade de Peças", value: String(piecesItem.value) });
-    else if (measurements.pieces_quantity) rows.push({ label: "Quantidade de Peças", value: String(measurements.pieces_quantity) });
+    const phVal = measurements.initial_ph ?? stageHistory.find(i => i.key === 'ph_value' || i.key === 'initial_ph')?.value;
+    if (phVal != null) rows.push({ label: "pH Inicial", value: String(phVal) });
+    const piecesVal = measurements.pieces_quantity ?? stageHistory.find(i => i.key === 'pieces_quantity')?.value;
+    if (piecesVal != null) rows.push({ label: "Quantidade de Peças", value: String(piecesVal) });
   }
 
   if (stageId === 14) {
-    const h = stageHistory.find(i => i.key === 'press_start_time');
-    if (h) rows.push({ label: "Início da Prensagem", value: String(h.value) });
-    else if (measurements.press_start_time) rows.push({ label: "Início da Prensagem", value: String(measurements.press_start_time) });
+    const val = fromMeasurementsOrHistory('press_start_time');
+    if (val != null) rows.push({ label: "Início da Prensagem", value: String(val) });
   }
 
   if (stageId === 15) {
-    const phItems = stageHistory.filter(i => i.key === 'ph_value' || i.key === 'ph_measurement');
-    phItems.forEach((item, idx) => {
-      rows.push({ label: `${idx + 1}a Medição de pH`, value: String(item.value) });
-    });
-    const cycles = stageHistory.find(i => i.key === 'turning_cycles_count');
-    if (cycles) rows.push({ label: "Viradas Realizadas", value: String(cycles.value) });
-    else if (measurements.turning_cycles_count) rows.push({ label: "Viradas Realizadas", value: String(measurements.turning_cycles_count) });
+    // Use ph_measurements array (always updated on edit) as primary source
+    const phArr: any[] = measurements.ph_measurements || [];
+    const stage15PhArr = phArr.filter((p: any) => p.stageId === 15 || p.stageId == null);
+    if (stage15PhArr.length > 0) {
+      stage15PhArr.forEach((item: any, idx: number) => {
+        rows.push({ label: `${idx + 1}ª Medição de pH`, value: String(item.value) });
+      });
+    } else {
+      // Fallback: read from history for older batches that pre-date ph_measurements array
+      const phItems = stageHistory.filter(i => i.key === 'ph_value' || i.key === 'ph_measurement');
+      phItems.forEach((item, idx) => {
+        rows.push({ label: `${idx + 1}ª Medição de pH`, value: String(item.value) });
+      });
+    }
+    // turningCyclesCount is a top-level batch column (updated on edit)
+    const turningCount = (batch as any).turningCyclesCount ?? measurements.turning_cycles_count
+      ?? stageHistory.find(i => i.key === 'turning_cycles_count')?.value;
+    if (turningCount != null) rows.push({ label: "Viradas Realizadas", value: String(turningCount) });
   }
 
   if (stageId === 19) {

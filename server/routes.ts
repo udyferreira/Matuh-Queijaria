@@ -612,11 +612,42 @@ export async function registerRoutes(
     res.json(result.batch);
   });
 
+  const reportEditSchema = z.object({
+    measurements: z.object({
+      milk_volume_l: z.number().positive().max(10000).optional(),
+      milk_temperature_c: z.number().min(-10).max(100).optional(),
+      milk_ph: z.number().min(0).max(14).optional(),
+      ferment_lr_dx_add_time_iso: z.string().datetime().optional(),
+      ferment_kl_coalho_add_time_iso: z.string().datetime().optional(),
+      flocculation_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+      cut_point_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+      initial_ph: z.number().min(0).max(14).optional(),
+      pieces_quantity: z.number().int().min(0).max(10000).optional(),
+      press_start_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+      ph_measurements: z.array(z.object({
+        index: z.number().int().min(0),
+        value: z.number().min(0).max(14),
+      })).optional(),
+    }).optional(),
+    calculatedInputs: z.record(z.string(), z.number().min(0).max(100000)).optional(),
+    topLevel: z.object({
+      milkVolumeL: z.number().positive().max(10000).optional(),
+      turningCyclesCount: z.number().int().min(0).max(10000).optional(),
+      chamber2EntryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      maturationEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    }).optional(),
+  });
+
   app.patch("/api/batches/:id/report-edit", async (req, res) => {
     const batchId = Number(req.params.id);
     if (isNaN(batchId)) return res.status(400).json({ message: "ID inválido" });
 
-    const result = await batchService.editCompletedBatch(batchId, req.body);
+    const parsed = reportEditSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.flatten() });
+    }
+
+    const result = await batchService.editCompletedBatch(batchId, parsed.data);
 
     if (!result.success) {
       const statusCode = result.code === "BATCH_NOT_FOUND" ? 404 : 400;
