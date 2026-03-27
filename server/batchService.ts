@@ -305,7 +305,15 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
   let scheduledAlerts = { ...((batch.scheduledAlerts as Record<string, ScheduledAlert>) || {}) };
   const prevKey = `stage_${currentStage.id}`;
   if (scheduledAlerts[prevKey] && apiCtx) {
-    await cancelReminder(apiCtx, scheduledAlerts[prevKey].reminderId);
+    const alertDueAt = scheduledAlerts[prevKey].dueAtISO
+      ? new Date(scheduledAlerts[prevKey].dueAtISO).getTime()
+      : 0;
+    const alertAlreadyFired = alertDueAt > 0 && alertDueAt < Date.now();
+    if (!alertAlreadyFired) {
+      await cancelReminder(apiCtx, scheduledAlerts[prevKey].reminderId);
+    } else {
+      console.log(`[advanceBatch] Stage ${currentStage.id} reminder already fired (dueAt=${scheduledAlerts[prevKey].dueAtISO}). Skipping cancelReminder API call.`);
+    }
     delete scheduledAlerts[prevKey];
   }
 

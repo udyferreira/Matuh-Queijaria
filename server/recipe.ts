@@ -422,6 +422,9 @@ export function getWaitSpecForStage(stageId: number): WaitSpec | null {
   }
 
   if (stage.type === 'loop' && stage.max_loop_duration_hours) {
+    // Stage 15 (pH loop) manages its own Alexa reminders after each pH measurement
+    // via the routes.ts pH handler. No entry reminder should be scheduled here.
+    if (stageId === 15) return null;
     const hours = stage.max_loop_duration_hours;
     const seconds = TEST_MODE ? 120 : hours * 3600;
     return { seconds, kind: 'loop_timeout', stageName: stage.name };

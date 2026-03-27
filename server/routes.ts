@@ -2474,7 +2474,16 @@ export async function registerRoutes(
                   const scheduledAlerts = ((updatedBatchForReminder as any)?.scheduledAlerts || {}) as Record<string, ScheduledAlert>;
                   const alertKey = 'stage_15';
                   if (scheduledAlerts[alertKey]) {
-                    await cancelReminder(apiCtx, scheduledAlerts[alertKey].reminderId);
+                    const alertDueAt = scheduledAlerts[alertKey].dueAtISO
+                      ? new Date(scheduledAlerts[alertKey].dueAtISO).getTime()
+                      : 0;
+                    const alertAlreadyFired = alertDueAt > 0 && alertDueAt < Date.now();
+                    if (!alertAlreadyFired) {
+                      // Reminder still pending — cancel it on Alexa before scheduling the new one
+                      await cancelReminder(apiCtx, scheduledAlerts[alertKey].reminderId);
+                    } else {
+                      console.log(`[Stage 15] Previous reminder already fired (dueAt=${scheduledAlerts[alertKey].dueAtISO}). Skipping cancelReminder API call.`);
+                    }
                     delete scheduledAlerts[alertKey];
                     await storage.updateBatch(activeBatch.id, { scheduledAlerts });
                   }
