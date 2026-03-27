@@ -4,6 +4,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useQuery } from "@tanstack/react-query";
 import { useCompletedBatches } from "@/hooks/use-batches";
 import { getCheeseTypeName, formatBatchCode, ProductionBatch } from "@shared/schema";
 import { parseDateOnly } from "@/lib/utils";
@@ -76,7 +77,7 @@ function getMeasurementLabel(key: string, stageId: number, measurementIndex?: nu
   return baseLabel;
 }
 
-function exportToExcel(batches: ProductionBatch[]) {
+function exportToExcel(batches: ProductionBatch[], stageTimers: Record<number, number> = {}) {
   const data: any[] = [];
   const allStageIds = Array.from({ length: 19 }, (_, i) => i + 1);
   
@@ -91,7 +92,7 @@ function exportToExcel(batches: ProductionBatch[]) {
     }, {} as Record<number, MeasurementHistoryItem[]>);
     
     allStageIds.forEach((stageId) => {
-      const stageRows = getStageData(batch, stageId, measurementsByStage);
+      const stageRows = getStageData(batch, stageId, measurementsByStage, stageTimers);
       stageRows.forEach((row) => {
         data.push({
           "Lote": formatBatchCode(batch.startedAt),
@@ -119,7 +120,7 @@ function exportToExcel(batches: ProductionBatch[]) {
   XLSX.writeFile(wb, `relatorio_lotes_${new Date().toISOString().split("T")[0]}.xlsx`);
 }
 
-function getStageData(batch: ProductionBatch, stageId: number, measurementsByStage: Record<number, MeasurementHistoryItem[]>) {
+function getStageData(batch: ProductionBatch, stageId: number, measurementsByStage: Record<number, MeasurementHistoryItem[]>, stageTimers: Record<number, number> = {}) {
   const measurements = batch.measurements as Record<string, any> || {};
   const calculatedInputs = batch.calculatedInputs as Record<string, number> || {};
   const stageHistory = measurementsByStage[stageId] || [];
@@ -169,6 +170,13 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
         rows.push({ label: inputLabels[k] || k, value: String(calculatedInputs[k]) });
       }
     });
+  }
+
+  if (stageId === 10) {
+    const durationMin = stageTimers[10];
+    if (durationMin !== undefined) {
+      rows.push({ label: "Tempo de Mexedura da Massa", value: `${durationMin} minutos` });
+    }
   }
 
   if (stageId === 6) {
@@ -223,7 +231,7 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
   return rows;
 }
 
-function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: React.RefObject<HTMLDivElement> }) {
+function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionBatch; printRef?: React.RefObject<HTMLDivElement>; stageTimers?: Record<number, number> }) {
   const [expanded, setExpanded] = useState(false);
   
   const measurements = batch.measurements as Record<string, any> || {};
@@ -238,7 +246,7 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
   }, {} as Record<number, MeasurementHistoryItem[]>);
 
   const allStageIds = Array.from({ length: 19 }, (_, i) => i + 1);
-  const stagesWithData = allStageIds.filter((stageId) => getStageData(batch, stageId, measurementsByStage).length > 0);
+  const stagesWithData = allStageIds.filter((stageId) => getStageData(batch, stageId, measurementsByStage, stageTimers).length > 0);
 
   return (
     <Card className="mb-4 print:break-inside-avoid">
@@ -278,7 +286,7 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
           ) : (
             <div className="space-y-3">
               {stagesWithData.map((stageId) => {
-                const stageRows = getStageData(batch, stageId, measurementsByStage);
+                const stageRows = getStageData(batch, stageId, measurementsByStage, stageTimers);
 
                 return (
                   <div key={stageId} className="border-l-2 border-primary/50 pl-4 print:border-gray-400">
@@ -307,7 +315,7 @@ function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: R
   );
 }
 
-function PrintableReport({ batches }: { batches: ProductionBatch[] }) {
+function PrintableReport({ batches, stageTimers = {} }: { batches: ProductionBatch[]; stageTimers?: Record<number, number> }) {
   return (
     <div className="p-8">
       <div className="text-center mb-8">
@@ -339,7 +347,7 @@ function PrintableReport({ batches }: { batches: ProductionBatch[] }) {
             </div>
             
             {allStageIds.map((stageId) => {
-              const stageRows = getStageData(batch, stageId, measurementsByStage);
+              const stageRows = getStageData(batch, stageId, measurementsByStage, stageTimers);
               if (stageRows.length === 0) return null;
               
               return (
@@ -368,6 +376,19 @@ function PrintableReport({ batches }: { batches: ProductionBatch[] }) {
 export default function Reports() {
   const { data: completedBatches, isLoading } = useCompletedBatches();
   const printRef = useRef<HTMLDivElement>(null);
+
+  const { data: recipeData } = useQuery<{ stages: Array<{ stageId: number; timer?: { durationMin?: number } }> }>({
+    queryKey: ['/api/recipes/QUEIJO_NETE'],
+  });
+
+  const stageTimers: Record<number, number> = {};
+  if (recipeData?.stages) {
+    for (const stage of recipeData.stages) {
+      if (stage.timer?.durationMin !== undefined) {
+        stageTimers[stage.stageId] = stage.timer.durationMin;
+      }
+    }
+  }
 
   const handlePrint = () => {
     const printContent = printRef.current;
@@ -427,7 +448,7 @@ export default function Reports() {
 
   const handleExportExcel = () => {
     if (completedBatches && completedBatches.length > 0) {
-      exportToExcel(completedBatches);
+      exportToExcel(completedBatches, stageTimers);
     }
   };
 
@@ -510,7 +531,7 @@ export default function Reports() {
           ) : (
             <div>
               {completedBatches.map((batch) => (
-                <BatchReport key={batch.id} batch={batch} />
+                <BatchReport key={batch.id} batch={batch} stageTimers={stageTimers} />
               ))}
             </div>
           )}
@@ -520,7 +541,7 @@ export default function Reports() {
       <div className="hidden">
         <div ref={printRef}>
           {completedBatches && completedBatches.length > 0 && (
-            <PrintableReport batches={completedBatches} />
+            <PrintableReport batches={completedBatches} stageTimers={stageTimers} />
           )}
         </div>
       </div>
