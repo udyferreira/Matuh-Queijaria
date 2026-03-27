@@ -632,7 +632,7 @@ export default function BatchDetail() {
                         <Button size="icon" variant="ghost" className="h-6 w-6" data-testid="button-edit-chamber2"
                           onClick={() => {
                             setEditingKey("chamber_2_entry_date");
-                            setEditValue(String(batch.chamber2EntryDate).split('T')[0]);
+                            setEditValue(parseDateOnly(batch.chamber2EntryDate).split('/').reverse().join('-'));
                           }}>
                           <Pencil className="w-3 h-3 text-muted-foreground" />
                         </Button>
