@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 
 export interface InterpretedCommand {
-  intent: "status" | "start_batch" | "advance" | "log_time" | "log_date" | "log_number" | "pause" | "resume" | "instructions" | "help" | "goodbye" | "timer" | "query_input" | "repeat_doses" | "unknown";
+  intent: "status" | "start_batch" | "advance" | "log_time" | "log_date" | "log_number" | "instructions" | "help" | "goodbye" | "timer" | "query_input" | "repeat_doses" | "unknown";
   confidence: number;
   entities: {
     volume?: number | null;
@@ -50,7 +50,7 @@ function buildUserPrompt(text: string): string {
 Retorne um JSON no seguinte formato:
 
 {
-  "intent": "status | start_batch | advance | log_time | log_date | log_number | pause | resume | instructions | help | goodbye | timer | query_input | unknown",
+  "intent": "status | start_batch | advance | log_time | log_date | log_number | instructions | help | goodbye | timer | query_input | unknown",
   "confidence": 0.0,
   "entities": {
     "volume": number | null,
@@ -210,17 +210,6 @@ const SIMPLE_COMMAND_MAP: Record<string, InterpretedCommand["intent"]> = {
   "comandos": "help",
   "opções": "help",
   "opcoes": "help",
-  
-  // Pause
-  "pausar": "pause",
-  "pausa": "pause",
-  "parar": "pause",
-  
-  // Resume - "continuar" sem "etapa" = resume
-  "continuar": "resume",
-  "retomar": "resume",
-  "resumir": "resume",
-  "despausar": "resume",
   
   // Instructions - palavras que indicam pedido de instrução
   "instruções": "instructions",
@@ -458,7 +447,7 @@ export async function interpretCommand(text: string): Promise<InterpretedCommand
 
     const parsed = JSON.parse(jsonContent) as InterpretedCommand;
     
-    const validIntents = ["status", "start_batch", "advance", "log_time", "log_date", "log_number", "pause", "resume", "instructions", "help", "goodbye", "timer", "query_input", "unknown"];
+    const validIntents = ["status", "start_batch", "advance", "log_time", "log_date", "log_number", "instructions", "help", "goodbye", "timer", "query_input", "unknown"];
     if (!parsed.intent || !validIntents.includes(parsed.intent)) {
       return { intent: "unknown", confidence: 0.0, entities: {} };
     }

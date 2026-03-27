@@ -215,61 +215,6 @@ export async function registerRoutes(
 
   // --- Operational State Endpoints ---
 
-  app.post("/api/batches/:id/pause", async (req, res) => {
-    const batchId = Number(req.params.id);
-    const { reason } = req.body || {};
-    
-    const result = await batchService.pauseBatch(batchId, reason);
-    
-    if (!result.success) {
-      const statusCode = result.error?.includes("not found") ? 404 : 400;
-      return res.status(statusCode).json({ message: result.error });
-    }
-
-    const batch = await storage.getBatch(batchId);
-    res.json(batch);
-  });
-
-  app.post("/api/batches/:id/resume", async (req, res) => {
-    const batchId = Number(req.params.id);
-    
-    const result = await batchService.resumeBatch(batchId);
-    
-    if (!result.success) {
-      const statusCode = result.error?.includes("not found") ? 404 : 400;
-      return res.status(statusCode).json({ message: result.error });
-    }
-
-    const batch = await storage.getBatch(batchId);
-    res.json(batch);
-  });
-
-  app.post("/api/batches/:id/complete", async (req, res) => {
-    const batchId = Number(req.params.id);
-    
-    const batch = await storage.getBatch(batchId);
-    if (!batch) return res.status(404).json({ message: "Batch not found" });
-    
-    if (batch.status === "completed" || batch.status === "cancelled") {
-      return res.status(400).json({ message: `Batch already ${batch.status}` });
-    }
-
-    const updatedBatch = await storage.updateBatch(batchId, {
-      status: "completed",
-      completedAt: new Date(),
-      scheduledAlerts: {}
-    });
-
-    await storage.logBatchAction({
-      batchId,
-      stageId: batch.currentStageId,
-      action: "complete",
-      details: { completedAt: new Date().toISOString() }
-    });
-
-    res.json(updatedBatch);
-  });
-
   app.post("/api/batches/:id/cancel", async (req, res) => {
     const batchId = Number(req.params.id);
     const { reason } = req.body || {};
@@ -1128,32 +1073,6 @@ export async function registerRoutes(
         }
         
         return { speech: "Tipo de valor não reconhecido.", shouldEndSession: false };
-      }
-      
-      case "pause": {
-        if (!activeBatch) {
-          return { speech: "Não há lote ativo para pausar.", shouldEndSession: false };
-        }
-        
-        // FIXED: Now uses batchService for consistent state management
-        const result = await batchService.pauseBatch(activeBatch.id);
-        if (!result.success) {
-          return { speech: result.error || "Erro ao pausar lote.", shouldEndSession: false };
-        }
-        return { speech: "Lote pausado. Diga 'quero retomar' quando quiser continuar.", shouldEndSession: false };
-      }
-      
-      case "resume": {
-        if (!activeBatch) {
-          return { speech: "Não há lote para retomar.", shouldEndSession: false };
-        }
-        
-        // FIXED: Now uses batchService for consistent state management
-        const result = await batchService.resumeBatch(activeBatch.id);
-        if (!result.success) {
-          return { speech: result.error || "Erro ao retomar lote.", shouldEndSession: false };
-        }
-        return { speech: "Lote retomado. Continuando de onde paramos.", shouldEndSession: false };
       }
       
       case "instructions": {

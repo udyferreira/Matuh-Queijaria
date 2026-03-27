@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowRight, ChevronLeft, CheckCircle, AlertCircle, Thermometer, Scale, Pause, Play, XCircle, Flag, Pencil, Check, X } from "lucide-react";
+import { ArrowRight, ChevronLeft, CheckCircle, AlertCircle, Thermometer, Scale, XCircle, Pencil, Check, X } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useBatch, useAdvanceStage, useRollbackStage, useLogMeasurement, useLogCanonicalInput, useEditMeasurement, usePauseBatch, useResumeBatch, useCompleteBatch, useCancelBatch } from "@/hooks/use-batches";
+import { useBatch, useAdvanceStage, useRollbackStage, useLogMeasurement, useLogCanonicalInput, useEditMeasurement, useCancelBatch } from "@/hooks/use-batches";
 import { TimerWidget } from "@/components/widgets/TimerWidget";
 import { IngredientList } from "@/components/widgets/IngredientList";
 
@@ -52,7 +52,6 @@ const TIMER_LABELS: Record<number, string> = {
 
 const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   active: { label: "Em Produção", variant: "default" },
-  paused: { label: "Pausado", variant: "secondary" },
   completed: { label: "Concluído", variant: "outline" },
   cancelled: { label: "Cancelado", variant: "destructive" },
 };
@@ -70,20 +69,15 @@ export default function BatchDetail() {
   const { mutate: logInput, isPending: isLogging } = useLogMeasurement();
   const { mutate: logCanonical, isPending: isLoggingCanonical } = useLogCanonicalInput();
   const { mutate: editMeasurement, isPending: isEditing } = useEditMeasurement();
-  const { mutate: pauseBatch, isPending: isPausing } = usePauseBatch();
-  const { mutate: resumeBatch, isPending: isResuming } = useResumeBatch();
-  const { mutate: completeBatch, isPending: isCompleting } = useCompleteBatch();
   const { mutate: cancelBatch, isPending: isCancelling } = useCancelBatch();
   const { toast } = useToast();
 
   const [inputVal, setInputVal] = useState("");
   const [piecesQuantity, setPiecesQuantity] = useState("");
   const [cancelReason, setCancelReason] = useState("");
-  const [pauseReason, setPauseReason] = useState("");
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [showCancelDialog, setShowCancelDialog] = useState(false);
-  const [showPauseDialog, setShowPauseDialog] = useState(false);
   
   // Redirect to home if invalid id (after all hooks are called)
   if (id === 0) {
@@ -232,34 +226,6 @@ export default function BatchDetail() {
     toast({ title: "Erro", description: "Etapa não reconhecida.", variant: "destructive" });
   };
 
-  const handlePause = () => {
-    pauseBatch({ id, reason: pauseReason || undefined }, {
-      onSuccess: () => {
-        toast({ title: "Pausado", description: "Produção pausada. Retome quando estiver pronto." });
-        setShowPauseDialog(false);
-        setPauseReason("");
-      },
-      onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
-    });
-  };
-
-  const handleResume = () => {
-    resumeBatch({ id }, {
-      onSuccess: () => toast({ title: "Retomado", description: "Produção retomada com sucesso." }),
-      onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
-    });
-  };
-
-  const handleComplete = () => {
-    completeBatch({ id }, {
-      onSuccess: () => {
-        toast({ title: "Concluído", description: "Lote marcado como concluído." });
-        navigate("/");
-      },
-      onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
-    });
-  };
-
   const handleCancel = () => {
     if (!cancelReason.trim()) {
       toast({ title: "Erro", description: "Informe o motivo do cancelamento.", variant: "destructive" });
@@ -281,13 +247,7 @@ export default function BatchDetail() {
     setCancelReason("");
   };
   
-  const handleClosePauseDialog = () => {
-    setShowPauseDialog(false);
-    setPauseReason("");
-  };
-
   const isFinished = batch.status === 'completed' || batch.status === 'cancelled';
-  const isPaused = batch.status === 'paused';
   const statusInfo = STATUS_LABELS[batch.status] || STATUS_LABELS.active;
 
   return (
@@ -325,49 +285,6 @@ export default function BatchDetail() {
             
             {!isFinished && (
               <div className="flex items-center gap-2 flex-wrap">
-                {isPaused ? (
-                  <Button onClick={handleResume} disabled={isResuming} variant="outline" data-testid="button-resume">
-                    <Play className="w-4 h-4 mr-2" />
-                    {isResuming ? "Retomando..." : "Retomar"}
-                  </Button>
-                ) : (
-                  <Dialog open={showPauseDialog} onOpenChange={(open) => open ? setShowPauseDialog(true) : handleClosePauseDialog()}>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" data-testid="button-pause">
-                        <Pause className="w-4 h-4 mr-2" />
-                        Pausar
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Pausar Produção</DialogTitle>
-                        <DialogDescription>
-                          Você pode informar um motivo para a pausa (opcional).
-                        </DialogDescription>
-                      </DialogHeader>
-                      <Input 
-                        placeholder="Motivo da pausa (opcional)..." 
-                        value={pauseReason}
-                        onChange={(e) => setPauseReason(e.target.value)}
-                        data-testid="input-pause-reason"
-                      />
-                      <DialogFooter>
-                        <Button variant="outline" onClick={handleClosePauseDialog}>
-                          Voltar
-                        </Button>
-                        <Button onClick={handlePause} disabled={isPausing} data-testid="button-pause-confirm">
-                          {isPausing ? "Pausando..." : "Confirmar Pausa"}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                )}
-                
-                <Button onClick={handleComplete} disabled={isCompleting} variant="outline" data-testid="button-complete">
-                  <Flag className="w-4 h-4 mr-2" />
-                  {isCompleting ? "..." : "Concluir"}
-                </Button>
-                
                 <Dialog open={showCancelDialog} onOpenChange={(open) => open ? setShowCancelDialog(true) : handleCloseCancelDialog()}>
                   <DialogTrigger asChild>
                     <Button variant="destructive" size="icon" data-testid="button-cancel-open">
@@ -401,16 +318,6 @@ export default function BatchDetail() {
             )}
           </div>
         </div>
-        
-        {isPaused && (
-          <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 p-4 rounded-xl mb-6 flex items-center gap-3">
-            <Pause className="w-5 h-5 flex-shrink-0" />
-            <div>
-              <p className="font-medium">Produção Pausada</p>
-              {batch.pauseReason && <p className="text-sm opacity-80">Motivo: {batch.pauseReason}</p>}
-            </div>
-          </div>
-        )}
         
         {isFinished && (
           <div className={`p-4 rounded-xl mb-6 flex items-center gap-3 ${batch.status === 'completed' ? 'bg-green-500/10 border border-green-500/30 text-green-400' : 'bg-red-500/10 border border-red-500/30 text-red-400'}`}>

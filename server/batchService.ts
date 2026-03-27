@@ -921,53 +921,6 @@ export async function logDate(batchId: number, dateValue: string, dateType?: str
   };
 }
 
-export async function pauseBatch(batchId: number, reason?: string) {
-  const batch = await storage.getBatch(batchId);
-  if (!batch) return { success: false, error: "Batch not found" };
-  
-  if (batch.status !== "active") {
-    return { success: false, error: `Cannot pause batch with status: ${batch.status}` };
-  }
-  
-  await storage.updateBatch(batchId, { 
-    status: "paused", 
-    pausedAt: new Date(),
-    pauseReason: reason || null
-  });
-  
-  await storage.logBatchAction({
-    batchId,
-    stageId: batch.currentStageId,
-    action: "pause",
-    details: { reason }
-  });
-  
-  return { success: true };
-}
-
-export async function resumeBatch(batchId: number) {
-  const batch = await storage.getBatch(batchId);
-  if (!batch) return { success: false, error: "Batch not found" };
-  
-  if (batch.status !== "paused") {
-    return { success: false, error: `Cannot resume batch with status: ${batch.status}` };
-  }
-  
-  await storage.updateBatch(batchId, { 
-    status: "active", 
-    pausedAt: null,
-    pauseReason: null
-  });
-  
-  await storage.logBatchAction({
-    batchId,
-    stageId: batch.currentStageId,
-    action: "resume",
-    details: {}
-  });
-  
-  return { success: true };
-}
 
 /**
  * Build speech for a stage including instructions and calculated quantities
