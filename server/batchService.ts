@@ -1232,14 +1232,22 @@ export async function editCompletedBatch(
       updates.turningCyclesCount = t.turningCyclesCount;
     }
     if (t.chamber2EntryDate !== undefined) {
-      const newDate = new Date(t.chamber2EntryDate);
-      recordEdit('chamber2EntryDate', t.chamber2EntryDate, batch.chamber2EntryDate?.toISOString?.() ?? null, 19);
-      updates.chamber2EntryDate = newDate;
+      const currentStr = batch.chamber2EntryDate
+        ? new Date(batch.chamber2EntryDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
+        : null;
+      if (t.chamber2EntryDate !== currentStr) {
+        recordEdit('chamber2EntryDate', t.chamber2EntryDate, currentStr, 19);
+        updates.chamber2EntryDate = new Date(t.chamber2EntryDate);
+      }
     }
     if (t.maturationEndDate !== undefined) {
-      const newDate = new Date(t.maturationEndDate);
-      recordEdit('maturationEndDate', t.maturationEndDate, batch.maturationEndDate?.toISOString?.() ?? null, 19);
-      updates.maturationEndDate = newDate;
+      const currentStr = batch.maturationEndDate
+        ? new Date(batch.maturationEndDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
+        : null;
+      if (t.maturationEndDate !== currentStr) {
+        recordEdit('maturationEndDate', t.maturationEndDate, currentStr, 19);
+        updates.maturationEndDate = new Date(t.maturationEndDate);
+      }
     }
   }
 

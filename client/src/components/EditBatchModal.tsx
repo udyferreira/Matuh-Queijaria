@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -110,6 +110,7 @@ interface Props {
 
 export function EditBatchModal({ batch, open, onClose }: Props) {
   const { toast } = useToast();
+  const initialRef = useRef<FormState>(buildInitialState(batch));
   const [form, setForm] = useState<FormState>(() => buildInitialState(batch));
 
   const m = (batch.measurements as Record<string, any>) || {};
@@ -140,58 +141,73 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
   }
 
   function handleSave() {
+    const initial = initialRef.current;
     const payload: any = { measurements: {}, calculatedInputs: {}, topLevel: {} };
 
+    // Helper: only include numeric field if changed and non-empty
+    function numIfChanged(formKey: keyof FormState, setter: (v: number) => void) {
+      const cur = form[formKey] as string;
+      const prev = initial[formKey] as string;
+      if (cur !== "" && cur !== prev) setter(Number(cur));
+    }
+    // Helper: only include string field if changed and non-empty
+    function strIfChanged(formKey: keyof FormState, setter: (v: string) => void) {
+      const cur = form[formKey] as string;
+      const prev = initial[formKey] as string;
+      if (cur !== "" && cur !== prev) setter(cur);
+    }
+
     // Stage 1 measurements
-    if (form.milk_temperature_c !== "") payload.measurements.milk_temperature_c = Number(form.milk_temperature_c);
-    if (form.milk_ph !== "") payload.measurements.milk_ph = Number(form.milk_ph);
+    numIfChanged("milk_temperature_c", (v) => { payload.measurements.milk_temperature_c = v; });
+    numIfChanged("milk_ph", (v) => { payload.measurements.milk_ph = v; });
 
     // Stage 2 calculatedInputs
-    if (form.FERMENT_LR !== "") payload.calculatedInputs.FERMENT_LR = Number(form.FERMENT_LR);
-    if (form.FERMENT_DX !== "") payload.calculatedInputs.FERMENT_DX = Number(form.FERMENT_DX);
-    if (form.FERMENT_KL !== "") payload.calculatedInputs.FERMENT_KL = Number(form.FERMENT_KL);
-    if (form.RENNET !== "") payload.calculatedInputs.RENNET = Number(form.RENNET);
-    if (form.SALT !== "") payload.calculatedInputs.SALT = Number(form.SALT);
-    if (form.CALCIUM !== "") payload.calculatedInputs.CALCIUM = Number(form.CALCIUM);
+    numIfChanged("FERMENT_LR", (v) => { payload.calculatedInputs.FERMENT_LR = v; });
+    numIfChanged("FERMENT_DX", (v) => { payload.calculatedInputs.FERMENT_DX = v; });
+    numIfChanged("FERMENT_KL", (v) => { payload.calculatedInputs.FERMENT_KL = v; });
+    numIfChanged("RENNET", (v) => { payload.calculatedInputs.RENNET = v; });
+    numIfChanged("SALT", (v) => { payload.calculatedInputs.SALT = v; });
+    numIfChanged("CALCIUM", (v) => { payload.calculatedInputs.CALCIUM = v; });
 
-    // Stage 4
-    if (form.ferment_lr_dx_add_time !== "") {
+    // Stage 4 (time input, compare HH:MM strings)
+    if (form.ferment_lr_dx_add_time !== initial.ferment_lr_dx_add_time && form.ferment_lr_dx_add_time !== "") {
       payload.measurements.ferment_lr_dx_add_time_iso = timeBRTToISO(m.ferment_lr_dx_add_time_iso, form.ferment_lr_dx_add_time);
     }
 
     // Stage 5
-    if (form.ferment_kl_coalho_add_time !== "") {
+    if (form.ferment_kl_coalho_add_time !== initial.ferment_kl_coalho_add_time && form.ferment_kl_coalho_add_time !== "") {
       payload.measurements.ferment_kl_coalho_add_time_iso = timeBRTToISO(m.ferment_kl_coalho_add_time_iso, form.ferment_kl_coalho_add_time);
     }
 
     // Stage 6
-    if (form.flocculation_time !== "") payload.measurements.flocculation_time = form.flocculation_time;
+    strIfChanged("flocculation_time", (v) => { payload.measurements.flocculation_time = v; });
 
     // Stage 7
-    if (form.cut_point_time !== "") payload.measurements.cut_point_time = form.cut_point_time;
+    strIfChanged("cut_point_time", (v) => { payload.measurements.cut_point_time = v; });
 
     // Stage 13
-    if (form.initial_ph !== "") payload.measurements.initial_ph = Number(form.initial_ph);
-    if (form.pieces_quantity !== "") payload.measurements.pieces_quantity = Number(form.pieces_quantity);
+    numIfChanged("initial_ph", (v) => { payload.measurements.initial_ph = v; });
+    numIfChanged("pieces_quantity", (v) => { payload.measurements.pieces_quantity = v; });
 
     // Stage 14
-    if (form.press_start_time !== "") payload.measurements.press_start_time = form.press_start_time;
+    strIfChanged("press_start_time", (v) => { payload.measurements.press_start_time = v; });
 
-    // Stage 15 - pH measurements
+    // Stage 15 - pH measurements (only changed entries)
     const phEdits = form.ph_measurements
-      .map((v, i) => ({ index: i, value: Number(v) }))
-      .filter((e, i) => form.ph_measurements[i] !== "");
+      .map((v, i) => ({ index: i, value: Number(v), changed: v !== (initial.ph_measurements[i] ?? "") && v !== "" }))
+      .filter((e) => e.changed)
+      .map(({ index, value }) => ({ index, value }));
     if (phEdits.length > 0) payload.measurements.ph_measurements = phEdits;
 
     // Stage 15 - viradas
-    if (form.turningCyclesCount !== "") payload.topLevel.turningCyclesCount = Number(form.turningCyclesCount);
+    numIfChanged("turningCyclesCount", (v) => { payload.topLevel.turningCyclesCount = v; });
 
-    // Stage 19
-    if (form.chamber2EntryDate !== "") payload.topLevel.chamber2EntryDate = form.chamber2EntryDate;
-    if (form.maturationEndDate !== "") payload.topLevel.maturationEndDate = form.maturationEndDate;
+    // Stage 19 - dates (only if changed)
+    strIfChanged("chamber2EntryDate", (v) => { payload.topLevel.chamber2EntryDate = v; });
+    strIfChanged("maturationEndDate", (v) => { payload.topLevel.maturationEndDate = v; });
 
     // Top-level milk volume
-    if (form.milkVolumeL !== "") payload.topLevel.milkVolumeL = Number(form.milkVolumeL);
+    numIfChanged("milkVolumeL", (v) => { payload.topLevel.milkVolumeL = v; });
 
     mutation.mutate(payload);
   }
