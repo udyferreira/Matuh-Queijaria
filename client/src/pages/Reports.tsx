@@ -10,7 +10,7 @@ import { useCompletedBatches } from "@/hooks/use-batches";
 import { getCheeseTypeName, formatBatchCode, ProductionBatch } from "@shared/schema";
 import { parseDateOnly } from "@/lib/utils";
 import { useState, useRef } from "react";
-import * as XLSX from "xlsx";
+import { zipSync, strToU8 } from "fflate";
 import { EditBatchModal } from "@/components/EditBatchModal";
 
 const STAGE_NAMES: Record<number, string> = {
@@ -79,6 +79,107 @@ function getMeasurementLabel(key: string, stageId: number, measurementIndex?: nu
   return baseLabel;
 }
 
+const REPORT_COLUMNS = [
+  "Lote",
+  "Tipo",
+  "Volume (L)",
+  "Data Conclusão",
+  "Etapa",
+  "Campo",
+  "Valor",
+];
+
+const REPORT_COLUMN_WIDTHS = [12, 15, 12, 15, 35, 25, 20];
+
+function escapeXml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function columnName(index: number): string {
+  let name = "";
+  let current = index;
+  while (current >= 0) {
+    name = String.fromCharCode((current % 26) + 65) + name;
+    current = Math.floor(current / 26) - 1;
+  }
+  return name;
+}
+
+function createWorksheetXml(rows: Array<Record<string, unknown>>): string {
+  const headerRow = REPORT_COLUMNS.map((column, columnIndex) => {
+    const cellRef = `${columnName(columnIndex)}1`;
+    return `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(column)}</t></is></c>`;
+  }).join("");
+
+  const bodyRows = rows.map((row, rowIndex) => {
+    const rowNumber = rowIndex + 2;
+    const cells = REPORT_COLUMNS.map((column, columnIndex) => {
+      const cellRef = `${columnName(columnIndex)}${rowNumber}`;
+      return `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(row[column])}</t></is></c>`;
+    }).join("");
+    return `<row r="${rowNumber}">${cells}</row>`;
+  }).join("");
+
+  const cols = REPORT_COLUMN_WIDTHS.map((width, index) => {
+    const columnIndex = index + 1;
+    return `<col min="${columnIndex}" max="${columnIndex}" width="${width}" customWidth="1"/>`;
+  }).join("");
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <cols>${cols}</cols>
+  <sheetData>
+    <row r="1">${headerRow}</row>
+    ${bodyRows}
+  </sheetData>
+</worksheet>`;
+}
+
+function downloadXlsx(rows: Array<Record<string, unknown>>, filename: string) {
+  const files: Record<string, Uint8Array> = {
+    "[Content_Types].xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+    "_rels/.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+    "xl/workbook.xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Relatório de Lotes" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>`),
+    "xl/_rels/workbook.xml.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+    "xl/worksheets/sheet1.xml": strToU8(createWorksheetXml(rows)),
+  };
+
+  const zipped = zipSync(files);
+  const blob = new Blob([zipped], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function exportToExcel(batches: ProductionBatch[], stageTimers: Record<number, number> = {}) {
   const data: any[] = [];
   const allStageIds = Array.from({ length: 19 }, (_, i) => i + 1);
@@ -108,18 +209,8 @@ function exportToExcel(batches: ProductionBatch[], stageTimers: Record<number, n
       });
     });
   });
-  
-  const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Relatório de Lotes");
-  
-  const colWidths = [
-    { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 15 },
-    { wch: 35 }, { wch: 25 }, { wch: 20 }
-  ];
-  ws["!cols"] = colWidths;
-  
-  XLSX.writeFile(wb, `relatorio_lotes_${new Date().toISOString().split("T")[0]}.xlsx`);
+
+  downloadXlsx(data, `relatorio_lotes_${new Date().toISOString().split("T")[0]}.xlsx`);
 }
 
 function getStageData(batch: ProductionBatch, stageId: number, measurementsByStage: Record<number, MeasurementHistoryItem[]>, stageTimers: Record<number, number> = {}) {
