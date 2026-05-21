@@ -37,6 +37,27 @@ function timeBRTToISO(originalISO: string | undefined | null, newTime: string): 
   }
 }
 
+function isoToDatetimeBRT(isoStr: string | undefined | null): string {
+  if (!isoStr) return "";
+  try {
+    const d = new Date(isoStr);
+    const datePart = d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    const timePart = d.toLocaleTimeString("en-GB", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+    return `${datePart}T${timePart}`;
+  } catch {
+    return "";
+  }
+}
+
+function datetimeBRTToISO(localVal: string): string {
+  if (!localVal) return "";
+  try {
+    return new Date(`${localVal}:00-03:00`).toISOString();
+  } catch {
+    return "";
+  }
+}
+
 function timestampToDateInput(ts: string | Date | undefined | null): string {
   if (!ts) return "";
   try {
@@ -68,6 +89,8 @@ interface FormState {
   press_start_time: string;
   ph_measurements: string[];
   turningCyclesCount: string;
+  brine_entry_time_iso: string;
+  shelf_start_time_iso: string;
   chamber2EntryDate: string;
   maturationEndDate: string;
 }
@@ -121,6 +144,8 @@ function buildInitialState(batch: ProductionBatch): FormState {
     turningCyclesCount: (batch as any).turningCyclesCount != null
       ? String((batch as any).turningCyclesCount)
       : (mOrHistory('turning_cycles_count') != null ? String(mOrHistory('turning_cycles_count')) : ""),
+    brine_entry_time_iso: isoToDatetimeBRT(mOrHistory('brine_entry_time_iso')),
+    shelf_start_time_iso: isoToDatetimeBRT(mOrHistory('shelf_start_time_iso')),
     chamber2EntryDate: timestampToDateInput(batch.chamber2EntryDate as any),
     maturationEndDate: timestampToDateInput(batch.maturationEndDate as any),
   };
@@ -225,6 +250,20 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
 
     // Stage 15 - viradas
     numIfChanged("turningCyclesCount", (v) => { payload.topLevel.turningCyclesCount = v; });
+
+    // Stage 17 — Entrada na Salga
+    if (form.brine_entry_time_iso !== initial.brine_entry_time_iso) {
+      payload.measurements.brine_entry_time_iso = form.brine_entry_time_iso
+        ? datetimeBRTToISO(form.brine_entry_time_iso)
+        : "";
+    }
+
+    // Stage 18 — Início da Secagem em Prateleiras
+    if (form.shelf_start_time_iso !== initial.shelf_start_time_iso) {
+      payload.measurements.shelf_start_time_iso = form.shelf_start_time_iso
+        ? datetimeBRTToISO(form.shelf_start_time_iso)
+        : "";
+    }
 
     // Stage 19 - dates (only if changed)
     strIfChanged("chamber2EntryDate", (v) => { payload.topLevel.chamber2EntryDate = v; });
@@ -448,6 +487,35 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
                 ))}
               </div>
             )}
+          </section>
+
+          {/* Etapas 17 e 18 — Salga e Secagem */}
+          <section>
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+              Etapas 17 e 18 — Salga e Secagem
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit-brine-entry">Entrada na Salga (data e hora)</Label>
+                <Input
+                  id="edit-brine-entry"
+                  type="datetime-local"
+                  value={form.brine_entry_time_iso}
+                  onChange={(e) => set("brine_entry_time_iso", e.target.value)}
+                  data-testid="input-edit-brine-entry"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-shelf-start">Início da Secagem em Prateleiras</Label>
+                <Input
+                  id="edit-shelf-start"
+                  type="datetime-local"
+                  value={form.shelf_start_time_iso}
+                  onChange={(e) => set("shelf_start_time_iso", e.target.value)}
+                  data-testid="input-edit-shelf-start"
+                />
+              </div>
+            </div>
           </section>
 
           {/* Etapa 19 — Câmara 2 e Maturação */}

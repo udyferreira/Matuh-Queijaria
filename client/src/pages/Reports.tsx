@@ -253,6 +253,36 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
     }
   }
 
+  if (stageId === 17) {
+    const isoVal = measurements.brine_entry_time_iso || stageHistory.find(i => i.key === 'brine_entry_time_iso')?.value;
+    let displayVal = "—";
+    if (isoVal) {
+      try {
+        displayVal = new Intl.DateTimeFormat('pt-BR', {
+          timeZone: 'America/Sao_Paulo',
+          day: '2-digit', month: '2-digit', year: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        }).format(new Date(isoVal));
+      } catch { displayVal = String(isoVal); }
+    }
+    rows.push({ label: "Entrada na Salga", value: displayVal });
+  }
+
+  if (stageId === 18) {
+    const isoVal = measurements.shelf_start_time_iso || stageHistory.find(i => i.key === 'shelf_start_time_iso')?.value;
+    let displayVal = "—";
+    if (isoVal) {
+      try {
+        displayVal = new Intl.DateTimeFormat('pt-BR', {
+          timeZone: 'America/Sao_Paulo',
+          day: '2-digit', month: '2-digit', year: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        }).format(new Date(isoVal));
+      } catch { displayVal = String(isoVal); }
+    }
+    rows.push({ label: "Início da Secagem em Prateleiras", value: displayVal });
+  }
+
   if (stageId === 2 && Object.keys(calculatedInputs).length > 0) {
     const inputLabels: Record<string, string> = {
       FERMENT_LR: "Fermento LR (mL)",

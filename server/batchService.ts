@@ -418,6 +418,22 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     touchedMeasurements = true;
   }
 
+  if (nextStage.id === 17 && !measurements.brine_entry_time_iso) {
+    measurements.brine_entry_time_iso = nowIso;
+    const mHistory = measurements._history || [];
+    mHistory.push({ key: 'brine_entry_time_iso', value: nowIso, stageId: 17, timestamp: nowIso });
+    measurements._history = mHistory;
+    touchedMeasurements = true;
+  }
+
+  if (nextStage.id === 18 && !measurements.shelf_start_time_iso) {
+    measurements.shelf_start_time_iso = nowIso;
+    const mHistory = measurements._history || [];
+    mHistory.push({ key: 'shelf_start_time_iso', value: nowIso, stageId: 18, timestamp: nowIso });
+    measurements._history = mHistory;
+    touchedMeasurements = true;
+  }
+
   if (touchedMeasurements) {
     updates.measurements = measurements;
   }
@@ -1132,6 +1148,8 @@ export interface EditCompletedBatchPayload {
     pieces_quantity?: number;
     press_start_time?: string;
     ph_measurements?: PhMeasurementEdit[];
+    brine_entry_time_iso?: string;
+    shelf_start_time_iso?: string;
   };
   // Accepts flat { KEY: number } or nested { KEY: { value: number } } — normalized in service
   calculatedInputs?: Record<string, number | { value: number }>;
@@ -1179,6 +1197,8 @@ export async function editCompletedBatch(
       { key: 'initial_ph', stageId: 13 },
       { key: 'pieces_quantity', stageId: 13 },
       { key: 'press_start_time', stageId: 14 },
+      { key: 'brine_entry_time_iso', stageId: 17 },
+      { key: 'shelf_start_time_iso', stageId: 18 },
     ];
 
     for (const { key, stageId } of simpleFields) {
