@@ -699,7 +699,13 @@ export default function BatchDetail() {
                       let displayValue = String(entry.value);
                       if (entry.key.endsWith('_time_iso')) {
                         try {
-                          displayValue = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(entry.value));
+                          const needsDate = entry.key === 'brine_entry_time_iso' || entry.key === 'shelf_start_time_iso';
+                          displayValue = new Intl.DateTimeFormat('pt-BR', {
+                            timeZone: 'America/Sao_Paulo',
+                            ...(needsDate ? { day: '2-digit', month: '2-digit', year: 'numeric' } : {}),
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          }).format(new Date(entry.value));
                         } catch { /* keep raw */ }
                       }
                       
