@@ -671,6 +671,8 @@ export default function BatchDetail() {
                     'turning_cycles_count': 'Quantidade de Viradas',
                     'ferment_lr_dx_add_time_iso': 'Adição Fermentos LR/DX',
                     'ferment_kl_coalho_add_time_iso': 'Adição Fermento KL + Coalho',
+                    'brine_entry_time_iso': 'Entrada na Salga',
+                    'shelf_start_time_iso': 'Início da Secagem em Prateleiras',
                   };
 
                   
