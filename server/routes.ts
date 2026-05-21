@@ -630,6 +630,8 @@ export async function registerRoutes(
       initial_ph: z.number().min(0).max(14).optional(),
       pieces_quantity: z.number().int().min(0).max(10000).optional(),
       press_start_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+      brine_entry_time_iso: z.union([z.string().datetime(), z.literal("")]).optional(),
+      shelf_start_time_iso: z.union([z.string().datetime(), z.literal("")]).optional(),
       ph_measurements: z.array(z.object({
         index: z.number().int().min(0),
         value: z.number().min(0).max(14),
