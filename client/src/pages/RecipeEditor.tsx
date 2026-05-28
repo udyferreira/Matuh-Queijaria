@@ -204,7 +204,7 @@ function StageRow({ stage, index, total, onMove, onChange, onRemove }: {
         </div>
         <button type="button" onClick={() => setOpen(!open)} className="flex-1 flex items-center gap-3 text-left" data-testid={`button-stage-expand-${index}`}>
           <span className="w-7 h-7 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">
-            {stage.id}
+            {index + 1}
           </span>
           <span className="font-medium flex-1">{stage.name || "Nova Etapa"}</span>
           <Badge variant="outline" className="text-xs capitalize mr-2">{stage.type || "action"}</Badge>
@@ -219,8 +219,8 @@ function StageRow({ stage, index, total, onMove, onChange, onRemove }: {
           {/* Identity */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">ID</label>
-              <Input type="number" value={stage.id} onChange={e => set("id", Number(e.target.value))} data-testid={`input-stage-id-${index}`} />
+              <label className="text-xs text-muted-foreground">Posição (ID atribuído ao salvar)</label>
+              <Input readOnly value={index + 1} className="bg-muted/50 cursor-default" data-testid={`input-stage-id-${index}`} />
             </div>
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">Nome</label>
@@ -468,8 +468,11 @@ export default function RecipeEditor() {
   // ── Payload builder ──
 
   const buildPayload = () => {
-    const cleanStages = stages.map(s => {
-      const c: any = { ...s };
+    // Resequence stage IDs to be 1-based consecutive so RecipeManager.getNextStage()
+    // (which uses id+1) always produces the correct next stage regardless of any
+    // reorder or remove operations performed in the editor.
+    const cleanStages = stages.map((s, index) => {
+      const c: any = { ...s, id: index + 1 };
       if (c.timer) {
         const t: any = {};
         if (c.timer.duration_min != null && c.timer.duration_min !== "") t.duration_min = Number(c.timer.duration_min);
