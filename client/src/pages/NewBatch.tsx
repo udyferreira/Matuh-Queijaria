@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { ArrowLeft, Beaker, AlertTriangle, Lock } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
@@ -23,9 +23,11 @@ export default function NewBatch() {
     queryKey: ["/api/recipes"],
   });
 
-  if (!selectedCheese && recipes.length > 0) {
-    setSelectedCheese(recipes[0].recipeId);
-  }
+  useEffect(() => {
+    if (!selectedCheese && recipes.length > 0) {
+      setSelectedCheese(recipes[0].recipeId);
+    }
+  }, [recipes, selectedCheese]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

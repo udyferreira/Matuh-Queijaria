@@ -177,11 +177,12 @@ export async function deleteRecipe(recipeId: string): Promise<{ deleted: boolean
     .from(productionBatches)
     .where(eq(productionBatches.recipeId, recipeId));
 
-  const blockers = allBatchesForRecipe.filter(b => b.status === 'active');
+  const ACTIVE_STATUSES = ['active', 'in_progress'];
+  const blockers = allBatchesForRecipe.filter(b => ACTIVE_STATUSES.includes(b.status ?? ''));
   if (blockers.length > 0) {
     return {
       deleted: false,
-      reason: `Há ${blockers.length} lote(s) ativo(s) usando esta receita. Conclua ou cancele os lotes antes de excluir.`,
+      reason: `Há ${blockers.length} lote(s) em andamento usando esta receita. Conclua ou cancele os lotes antes de excluir.`,
     };
   }
 
