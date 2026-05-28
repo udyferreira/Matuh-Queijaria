@@ -1365,7 +1365,7 @@ export async function registerRoutes(
     if (parts.length > 0) {
       context = ' ' + parts.join(', ') + '.';
     }
-    context += " Informe o pH dizendo: 'pH é cinco vírgula três', por exemplo.";
+    context += " Informe o pH dizendo: 'pH é cinco vírgula dois', por exemplo.";
     return context;
   }
 
@@ -1505,16 +1505,12 @@ export async function registerRoutes(
             if (batch && (batch.status === "active" || (batch.status as string) === "in_progress")) {
               const stage = recipeManager.getStage(batch.currentStageId);
               const recipeName = recipeManager.getRecipeName();
-              const stageCtx = batch.currentStageId === 15 ? buildStage15Context(batch) : '';
-              const repromptText = batch.currentStageId === 15
-                ? "Informe o pH ou diga 'continuar'."
-                : "Diga 'continuar' ou 'trocar lote'.";
-              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${stageCtx} Continuar ou trocar de lote?`;
+              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}. Continuar ou trocar de lote?`;
               console.log(`[LaunchRequest] Resuming persisted batch=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
               return res.status(200).json(buildAlexaResponse(
                 speechText,
                 false,
-                repromptText,
+                "Diga 'continuar' ou 'trocar lote'.",
                 { activeBatchId: batch.id, state: "CONFIRM_CONTINUE_OR_SWITCH" }
               ));
             } else {

@@ -245,7 +245,7 @@ stages:
       - ph_measurements[]
       - turning_cycles_count
     expected_intent: "RegisterPHAndPiecesIntent"
-    input_prompt: "Informe o pH atual dos queijos dizendo: 'pH cinco vírgula três'."
+    input_prompt: "Informe o pH atual dos queijos dizendo: 'pH cinco vírgula dois'."
     llm_guidance: >
       Se o pH atingir valor menor que 5,3 antes de completar 1 hora e 30 minutos,
       o loop pode ser encerrado imediatamente.
