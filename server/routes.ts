@@ -28,6 +28,14 @@ export async function registerRoutes(
   registerChatRoutes(app);
   registerImageRoutes(app);
 
+  // Seed recipes from YAML on first run, then backfill existing batches
+  try {
+    await seedRecipesIfEmpty();
+    await backfillBatchSnapshots();
+  } catch (err) {
+    console.error('[startup] Recipe seed/backfill error:', err);
+  }
+
   // --- Auth Routes ---
 
   app.post("/api/auth/login", async (req, res) => {
@@ -100,20 +108,64 @@ export async function registerRoutes(
     res.json({ message: "Usuário removido" });
   });
 
-  // --- Recipe Routes ---
+  // --- Recipe Routes (DB-backed CRUD) ---
 
   app.get("/api/recipes", async (req, res) => {
-    const recipes = recipeManager.getAllRecipes();
-    res.json(recipes);
+    try {
+      const list = await getAllRecipes();
+      res.json(list);
+    } catch (err) {
+      console.error('[GET /api/recipes]', err);
+      res.status(500).json({ message: "Erro ao buscar receitas" });
+    }
   });
 
   app.get("/api/recipes/:recipeId", async (req, res) => {
-    const { recipeId } = req.params;
-    if (recipeId !== "QUEIJO_NETE") {
-      return res.status(404).json({ message: "Recipe not found" });
+    try {
+      const recipe = await getRecipeById(req.params.recipeId);
+      if (!recipe) return res.status(404).json({ message: "Receita não encontrada" });
+      res.json(recipe);
+    } catch (err) {
+      console.error('[GET /api/recipes/:recipeId]', err);
+      res.status(500).json({ message: "Erro ao buscar receita" });
     }
-    const recipe = recipeManager.getRecipeDetail();
-    res.json(recipe);
+  });
+
+  app.post("/api/recipes", async (req, res) => {
+    try {
+      const data = req.body;
+      if (!data.recipeId || !data.name) {
+        return res.status(400).json({ message: "recipeId e name são obrigatórios" });
+      }
+      const recipe = await createRecipe(data);
+      res.status(201).json(recipe);
+    } catch (err: any) {
+      console.error('[POST /api/recipes]', err);
+      if (err.code === '23505') return res.status(409).json({ message: "Já existe uma receita com esse ID" });
+      res.status(500).json({ message: "Erro ao criar receita" });
+    }
+  });
+
+  app.put("/api/recipes/:recipeId", async (req, res) => {
+    try {
+      const recipe = await updateRecipe(req.params.recipeId, req.body);
+      if (!recipe) return res.status(404).json({ message: "Receita não encontrada" });
+      res.json(recipe);
+    } catch (err) {
+      console.error('[PUT /api/recipes/:recipeId]', err);
+      res.status(500).json({ message: "Erro ao atualizar receita" });
+    }
+  });
+
+  app.delete("/api/recipes/:recipeId", async (req, res) => {
+    try {
+      const result = await deleteRecipe(req.params.recipeId);
+      if (!result.deleted) return res.status(409).json({ message: result.reason || "Não é possível excluir esta receita" });
+      res.json({ success: true });
+    } catch (err) {
+      console.error('[DELETE /api/recipes/:recipeId]', err);
+      res.status(500).json({ message: "Erro ao excluir receita" });
+    }
   });
 
   // --- Batch Routes ---
@@ -179,7 +231,7 @@ export async function registerRoutes(
     const batch = await storage.getBatch(Number(req.params.id));
     if (!batch) return res.status(404).json({ message: "Batch not found" });
 
-    const stage = recipeManager.getStage(batch.currentStageId);
+    const stage = getRecipeForBatch(batch).getStage(batch.currentStageId);
     const activeTimers = (batch.activeTimers as any[]) || [];
     
     // Mark timers as complete but don't remove them (removal happens on advance)
@@ -208,10 +260,10 @@ export async function registerRoutes(
     const batch = await storage.getBatch(Number(req.params.id));
     if (!batch) return res.status(404).json({ message: "Batch not found" });
 
-    const stage = recipeManager.getStage(batch.currentStageId);
+    const stage = getRecipeForBatch(batch).getStage(batch.currentStageId);
     if (!stage) return res.status(500).json({ message: "Invalid stage" });
 
-    res.json(recipeManager.formatStageDetail(stage));
+    res.json(getRecipeForBatch(batch).formatStageDetail(stage));
   });
 
   // --- Operational State Endpoints ---
@@ -346,7 +398,7 @@ export async function registerRoutes(
         // e.g. flocculation time
         // We need to know WHICH time it is. 
         // For MVP, we'll map the current stage to the expected input
-        const stage = recipeManager.getStage(batch.currentStageId);
+        const stage = getRecipeForBatch(batch).getStage(batch.currentStageId);
         if (stage?.stored_values?.includes('flocculation_time')) {
             measurements.flocculation_time = value; // assuming value is string/time
         } else if (stage?.stored_values?.includes('cut_point_time')) {
@@ -409,7 +461,7 @@ export async function registerRoutes(
     }
 
     // Validate that the key is expected for current stage
-    const expectedInputs = recipeManager.getExpectedInputsForStage(batch.currentStageId);
+    const expectedInputs = getRecipeForBatch(batch).getExpectedInputsForStage(batch.currentStageId);
     if (expectedInputs.length > 0 && !expectedInputs.includes(key)) {
       return res.status(400).json({ 
         message: "Key não esperado para esta etapa",
@@ -962,7 +1014,7 @@ export async function registerRoutes(
           await storage.setLastActiveBatch(alexaUserId, result.batch.id);
           console.log(`[start_batch] Persisted activeBatch=${result.batch.id} for user`);
         }
-        const currentStage = recipeManager.getStage(result.batch.currentStageId || 3);
+        const currentStage = getRecipeForBatch(result.batch).getStage(result.batch.currentStageId || 3);
         const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage);
         const speech = await speechRenderer.renderSpeech(payload);
         return { speech, shouldEndSession: false };
@@ -982,7 +1034,7 @@ export async function registerRoutes(
         if (!status) {
           return { speech: "Erro ao obter status.", shouldEndSession: false };
         }
-        const stage = recipeManager.getStage(status.currentStageId);
+        const stage = getRecipeForBatch(activeBatch).getStage(status.currentStageId);
         const payload = speechRenderer.buildStatusPayload(activeBatch, stage, "status", pendingInputReminder);
         const speech = await speechRenderer.renderSpeech(payload);
         return { speech, shouldEndSession: false };
@@ -996,7 +1048,7 @@ export async function registerRoutes(
         if (activeBatch.currentStageId === 13) {
           const s13 = getStage13EntryPrompt(activeBatch, {});
           if (s13) {
-            const stage = recipeManager.getStage(13);
+            const stage = getRecipeForBatch(activeBatch).getStage(13);
             const speech = `Etapa 13: ${stage?.name || 'Medir pH inicial e registrar quantidade de peças'}.${s13.prompt}`;
             console.log(`[advance] Already on stage 13, starting guided entry: pending=${s13.newAttrs.pending}`);
             return { speech, shouldEndSession: false, sessionAttrsOverride: s13.newAttrs };
@@ -1006,7 +1058,7 @@ export async function registerRoutes(
         const result = await batchService.advanceBatch(activeBatch.id, apiCtxParam);
         
         if (!result.success) {
-          const stage = recipeManager.getStage(activeBatch.currentStageId);
+          const stage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
           const payload = speechRenderer.buildErrorPayload(result.error || "Não é possível avançar agora.", stage);
           const speech = await speechRenderer.renderSpeech(payload);
           return { speech, shouldEndSession: false };
@@ -1023,7 +1075,7 @@ export async function registerRoutes(
         }
         
         const updatedBatch = result.batch || activeBatch;
-        const nextStage = recipeManager.getStage(result.nextStage?.id || 0);
+        const nextStage = getRecipeForBatch(updatedBatch).getStage(result.nextStage?.id || 0);
 
         if (nextStage?.id === 13) {
           const s13 = getStage13EntryPrompt(updatedBatch, {});
@@ -1133,7 +1185,7 @@ export async function registerRoutes(
         if (!activeBatch) {
           return { speech: "Não há lote ativo.", shouldEndSession: false };
         }
-        const stage = recipeManager.getStage(activeBatch.currentStageId);
+        const stage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
         if (!stage) {
           return { speech: "Etapa não encontrada.", shouldEndSession: false };
         }
@@ -1213,7 +1265,7 @@ export async function registerRoutes(
       }
       
       case "help": {
-        const stage = activeBatch ? recipeManager.getStage(activeBatch.currentStageId) : undefined;
+        const stage = activeBatch ? getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId) : undefined;
         const payload = speechRenderer.buildHelpPayload(stage, activeBatch);
         const speech = await speechRenderer.renderSpeech(payload);
         return { speech, shouldEndSession: false };
@@ -1316,7 +1368,7 @@ export async function registerRoutes(
       if (stage.input_prompt) {
         return ` ${stage.input_prompt}`;
       }
-      const lock = recipeManager.getStageInputLock(stage.id);
+      const lock = getRecipeForBatch(batch).getStageInputLock(stage.id);
       if (lock?.inputPrompt) {
         return ` ${lock.inputPrompt}`;
       }
@@ -1407,7 +1459,7 @@ export async function registerRoutes(
       } else {
         const fullBatch = await batchService.getBatch(b.batchId);
         if (fullBatch) {
-          const stage = recipeManager.getStage(b.currentStageId);
+          const stage = getRecipeForBatch(fullBatch).getStage(b.currentStageId);
           stageCtx = buildStageGuidance(fullBatch, stage);
           if (stage?.operator_input_required?.length > 0) {
             reprompt = "Diga o valor solicitado ou 'qual é o status'.";
@@ -1569,15 +1621,14 @@ export async function registerRoutes(
             if (activeBatch.currentStageId === 13) {
               const s13 = getStage13EntryPrompt(activeBatch, baseAttrs);
               if (s13) {
-                const recipeName = recipeManager.getRecipeName();
-                const stage = recipeManager.getStage(activeBatch.currentStageId);
+                const stage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
                 const speech = `Continuando o lote. Etapa 13: ${stage?.name || 'Medir pH inicial e registrar quantidade de peças'}.${s13.prompt}`;
                 console.log(`[${intentName}] Stage 13 guided entry: pending=${s13.newAttrs.pending}`);
                 return res.status(200).json(buildAlexaResponse(speech, false, s13.reprompt, s13.newAttrs));
               }
             }
 
-            const stage = recipeManager.getStage(activeBatch.currentStageId);
+            const stage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
 
             if (activeBatch.currentStageId === 15) {
               const stageCtx = buildStage15Context(activeBatch);
@@ -1683,7 +1734,7 @@ export async function registerRoutes(
           } else {
             const fullBatch = await batchService.getBatch(selected.batchId);
             if (fullBatch) {
-              const stage = recipeManager.getStage(selected.currentStageId);
+              const stage = getRecipeForBatch(fullBatch).getStage(selected.currentStageId);
               stageCtx = buildStageGuidance(fullBatch, stage);
               if (stage?.operator_input_required?.length > 0) {
                 repromptText = "Diga o valor solicitado ou 'qual é o status'.";
@@ -1711,7 +1762,7 @@ export async function registerRoutes(
         
         if (intentName === "AMAZON.HelpIntent") {
           const activeBatch = activeBatchResolved;
-          const stage = activeBatch ? recipeManager.getStage(activeBatch.currentStageId) : undefined;
+          const stage = activeBatch ? getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId) : undefined;
           const payload = speechRenderer.buildHelpPayload(stage, activeBatch);
           const speech = await speechRenderer.renderSpeech(payload);
           return res.status(200).json(buildAlexaResponse(speech, false, "Diga um comando.", sessionAttributes));
@@ -1825,10 +1876,10 @@ export async function registerRoutes(
         let pendingInputReminder: string | undefined;
         
         if (activeBatchForGating) {
-          const stageLock = recipeManager.getStageInputLock(activeBatchForGating.currentStageId);
+          const stageLock = getRecipeForBatch(activeBatchForGating).getStageInputLock(activeBatchForGating.currentStageId);
           
           if (stageLock.locked && stageLock.expectedIntent) {
-            const currentStageForGating = recipeManager.getStage(activeBatchForGating.currentStageId);
+            const currentStageForGating = getRecipeForBatch(activeBatchForGating).getStage(activeBatchForGating.currentStageId);
             const pendingInputs = speechRenderer.getPendingInputs(
               activeBatchForGating, 
               activeBatchForGating.currentStageId,
@@ -1869,7 +1920,7 @@ export async function registerRoutes(
               } else if (!systemIntents.includes(intentName || '')) {
                 // Block other intents
                 console.log(`[GATING] Blocked intent ${intentName} at stage ${activeBatchForGating.currentStageId}. Expected: ${stageLock.expectedIntent}`);
-                const stage = recipeManager.getStage(activeBatchForGating.currentStageId);
+                const stage = getRecipeForBatch(activeBatchForGating).getStage(activeBatchForGating.currentStageId);
                 const payload = speechRenderer.buildErrorPayload(
                   stageLock.inputPrompt || `Esta etapa requer input específico.`,
                   stage
@@ -1896,7 +1947,7 @@ export async function registerRoutes(
           const result = await batchService.advanceBatch(activeBatch.id, apiCtx);
 
           if (!result.success) {
-            const stage = recipeManager.getStage(activeBatch.currentStageId);
+            const stage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
             const payload = speechRenderer.buildErrorPayload(result.error || "Não é possível avançar agora.", stage);
             const speech = await speechRenderer.renderSpeech(payload);
             return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", sessionAttributes));
@@ -1913,7 +1964,7 @@ export async function registerRoutes(
           }
 
           const updatedBatch = result.batch || activeBatch;
-          const nextStage = recipeManager.getStage(result.nextStage?.id || 0);
+          const nextStage = getRecipeForBatch(updatedBatch).getStage(result.nextStage?.id || 0);
           const payload = speechRenderer.buildAdvancePayload(updatedBatch, nextStage, false);
           let speech = await speechRenderer.renderSpeech(payload);
           if (result.reminderScheduled && result.waitDurationText) {
@@ -1952,7 +2003,7 @@ export async function registerRoutes(
           }
 
           const updatedBatch = result.batch || activeBatch;
-          const targetStage = recipeManager.getStage(result.targetStageId || 0);
+          const targetStage = getRecipeForBatch(updatedBatch).getStage(result.targetStageId || 0);
           const stageName = targetStage?.name || `etapa ${result.targetStageId}`;
           let speech = `Etapa revertida. Estamos agora na etapa ${result.targetStageId}: ${stageName}.`;
 
@@ -2014,7 +2065,7 @@ export async function registerRoutes(
           
           // STAGE VALIDATION: Reject if not at the expected stage
           if (expectedStage && activeBatch.currentStageId !== expectedStage) {
-            const currentStage = recipeManager.getStage(activeBatch.currentStageId);
+            const currentStage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
             const typeInfo = timeType ? timeTypeMapping[timeType] : null;
             return res.status(200).json(buildAlexaResponse(
               `Não é possível registrar horário de ${typeInfo?.label || 'evento'} nesta etapa. Estamos na etapa ${activeBatch.currentStageId}: ${currentStage?.name || 'em andamento'}.`,
@@ -2097,7 +2148,7 @@ export async function registerRoutes(
           
           const advanceResult = await batchService.advanceBatch(activeBatch.id, apiCtx);
           if (advanceResult.success && advanceResult.nextStage) {
-            const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
+            const nextStage = getRecipeForBatch(activeBatch).getStage(advanceResult.nextStage.id);
             const updatedBatch = await batchService.getBatch(activeBatch.id);
             console.log(`[LogTimeIntent] Auto-advancing to stage ${advanceResult.nextStage.id}.`);
             
@@ -2181,7 +2232,7 @@ export async function registerRoutes(
             }
             
             const newAttrs = { ...sessionAttributes, startBatchDraft: undefined, pending: undefined, activeBatchId: result.batch?.id };
-            const currentStage = recipeManager.getStage(result.batch.currentStageId || 3);
+            const currentStage = getRecipeForBatch(result.batch).getStage(result.batch.currentStageId || 3);
             const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage);
             const speech = await speechRenderer.renderSpeech(payload);
             return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", newAttrs));
@@ -2204,7 +2255,7 @@ export async function registerRoutes(
             // At stage 13, let empty slots fall through to start multi-turn guided flow
             // Stage 15 keeps misroute guard (its handler already elicits pH via ElicitSlot)
             if (stageId !== 13) {
-              const currentStage = recipeManager.getStage(stageId);
+              const currentStage = activeBatch ? getRecipeForBatch(activeBatch).getStage(stageId) : recipeManager.getStage(stageId);
               
               console.log(`[MISROUTE] intent=RegisterPHAndPiecesIntent stage=${stageId} missingSlots=ph_value,pieces_quantity dialogState=${alexaRequest?.request?.dialogState || 'N/A'}`);
               
@@ -2237,7 +2288,7 @@ export async function registerRoutes(
           }
           
           const stageId = activeBatch.currentStageId;
-          const currentStage = recipeManager.getStage(stageId);
+          const currentStage = getRecipeForBatch(activeBatch).getStage(stageId);
           
           console.log(`[Stage ${stageId}] Slots received - pH: ${phSlot}, pieces: ${piecesSlot}`);
           
@@ -2326,7 +2377,7 @@ export async function registerRoutes(
               const confirmationMsg = `${piecesQuantity} peças registradas. pH ${effectivePh} e ${piecesQuantity} peças confirmados.`;
               const advanceResult = await batchService.advanceBatch(activeBatch.id, apiCtx);
               if (advanceResult.success && advanceResult.nextStage) {
-                const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
+                const nextStage = getRecipeForBatch(activeBatch).getStage(advanceResult.nextStage.id);
                 const updatedBatch = await batchService.getBatch(activeBatch.id);
                 console.log(`[Stage 13] Auto-advancing to stage ${advanceResult.nextStage.id}.`);
                 if (nextStage && updatedBatch) {
@@ -2412,7 +2463,7 @@ export async function registerRoutes(
             
             const advanceResult = await batchService.advanceBatch(activeBatch.id, apiCtx);
             if (advanceResult.success && advanceResult.nextStage) {
-              const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
+              const nextStage = getRecipeForBatch(activeBatch).getStage(advanceResult.nextStage.id);
               const updatedBatch = await batchService.getBatch(activeBatch.id);
               console.log(`[Stage 13] Auto-advancing to stage ${advanceResult.nextStage.id}.`);
               
@@ -2502,7 +2553,7 @@ export async function registerRoutes(
               
               const advanceResult = await batchService.advanceBatch(activeBatch.id, apiCtx);
               if (advanceResult.success && advanceResult.nextStage) {
-                const nextStage = recipeManager.getStage(advanceResult.nextStage.id);
+                const nextStage = getRecipeForBatch(activeBatch).getStage(advanceResult.nextStage.id);
                 const updatedBatch = await batchService.getBatch(activeBatch.id);
                 console.log(`[Stage 15] pH ${phValue} reached target. Loop complete. Auto-advancing to stage ${advanceResult.nextStage.id}.`);
                 
@@ -2535,7 +2586,7 @@ export async function registerRoutes(
               if (apiCtx) {
                 try {
                   const updatedBatchForReminder = await batchService.getBatch(activeBatch.id);
-                  const loopStage = recipeManager.getStage(15);
+                  const loopStage = getRecipeForBatch(activeBatch).getStage(15);
                   const maxHours = loopStage?.max_loop_duration_hours || 1.5;
                   const reminderSeconds = TEST_MODE ? 2 * 60 : maxHours * 60 * 60;
                   
@@ -2621,7 +2672,7 @@ export async function registerRoutes(
           if (dateEmpty) {
             const activeBatch = activeBatchResolved;
             const stageId = activeBatch?.currentStageId || 0;
-            const currentStage = recipeManager.getStage(stageId);
+            const currentStage = activeBatch ? getRecipeForBatch(activeBatch).getStage(stageId) : recipeManager.getStage(stageId);
             
             console.log(`[MISROUTE] intent=RegisterChamberEntryDateIntent stage=${stageId} missingSlots=entry_date dialogState=${alexaRequest?.request?.dialogState || 'N/A'}`);
             
@@ -2659,7 +2710,7 @@ export async function registerRoutes(
           }
           
           // Check if we're at the correct stage (19)
-          const currentStage = recipeManager.getStage(activeBatch.currentStageId);
+          const currentStage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
           if (activeBatch.currentStageId !== 19) {
             const utterances = speechRenderer.getContextualUtterances(currentStage, activeBatch);
             const examples = utterances.slice(0, 2).map(u => `"${u}"`).join(' ou ');
@@ -2869,7 +2920,7 @@ export async function registerRoutes(
           // Clear guided flow state
           const newAttrs = { ...sessionAttributes, startBatchDraft: undefined, pending: undefined, activeBatchId: result.batch?.id };
           
-          const currentStage = recipeManager.getStage(result.batch.currentStageId || 3);
+          const currentStage = getRecipeForBatch(result.batch).getStage(result.batch.currentStageId || 3);
           const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage);
           const speech = await speechRenderer.renderSpeech(payload);
           return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", newAttrs));
@@ -2936,7 +2987,7 @@ export async function registerRoutes(
           if (continueWords.some(w => lowerText === w || lowerText.startsWith(w + " "))) {
             const activeBatch = activeBatchResolved;
             if (activeBatch) {
-              const stage = recipeManager.getStage(activeBatch.currentStageId);
+              const stage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
               if (stage) {
                 const payload = speechRenderer.buildStatusPayload(activeBatch, stage);
                 const speech = await speechRenderer.renderSpeech(payload);

@@ -269,7 +269,7 @@ export default function BatchDetail() {
                 Iniciado em {new Date(batch.startedAt).toLocaleDateString('pt-BR')}
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-display font-bold">Produção {getCheeseTypeName(batch.recipeId)}</h1>
+            <h1 className="text-2xl sm:text-3xl font-display font-bold">Produção {(batch as any).recipeName || getCheeseTypeName(batch.recipeId)}</h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap w-full md:w-auto">
             <div className="bg-card px-3 py-2 sm:px-6 sm:py-3 rounded-xl border border-border shadow-lg flex items-center gap-2 sm:gap-4">

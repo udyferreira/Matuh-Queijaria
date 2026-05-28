@@ -69,7 +69,7 @@ export default function Home() {
                       </span>
                     </div>
 
-                    <h3 className="text-2xl font-bold mb-1">Queijo {getCheeseTypeName(batch.recipeId)}</h3>
+                    <h3 className="text-2xl font-bold mb-1">Queijo {(batch as any).recipeName || getCheeseTypeName(batch.recipeId)}</h3>
                     <div className="text-sm text-muted-foreground">
                       Vol: <span className="text-foreground font-medium">{batch.milkVolumeL}L</span> • Iniciado em {new Date(batch.startedAt).toLocaleDateString('pt-BR')}
                     </div>

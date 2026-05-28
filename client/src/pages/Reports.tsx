@@ -199,7 +199,7 @@ function exportToExcel(batches: ProductionBatch[], stageTimers: Record<number, n
       stageRows.forEach((row) => {
         data.push({
           "Lote": formatBatchCode(batch.startedAt),
-          "Tipo": getCheeseTypeName(batch.recipeId),
+          "Tipo": (batch as any).recipeName || getCheeseTypeName(batch.recipeId),
           "Volume (L)": batch.milkVolumeL,
           "Data Conclusão": batch.completedAt ? new Date(batch.completedAt).toLocaleDateString("pt-BR") : "N/A",
           "Etapa": `${stageId} - ${STAGE_NAMES[stageId] || `Etapa ${stageId}`}`,
@@ -409,7 +409,7 @@ function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionB
                 )}
               </div>
               <p className="text-sm text-muted-foreground">
-                {getCheeseTypeName(batch.recipeId)} - {batch.milkVolumeL}L - Concluído em {batch.completedAt ? new Date(batch.completedAt).toLocaleDateString("pt-BR") : "N/A"}
+                {(batch as any).recipeName || getCheeseTypeName(batch.recipeId)} - {batch.milkVolumeL}L - Concluído em {batch.completedAt ? new Date(batch.completedAt).toLocaleDateString("pt-BR") : "N/A"}
                 {batch.chamber2EntryDate && ` | Entrada Câmara 2: ${parseDateOnly(batch.chamber2EntryDate)}`}
                 {batch.maturationEndDate && ` | Fim Maturação: ${parseDateOnly(batch.maturationEndDate)}`}
               </p>
@@ -497,7 +497,7 @@ function PrintableReport({ batches, stageTimers = {} }: { batches: ProductionBat
             <div className="border-b-2 border-black pb-2 mb-4">
               <h3 className="text-lg font-bold">Lote {formatBatchCode(batch.startedAt)}</h3>
               <p className="text-sm">
-                {getCheeseTypeName(batch.recipeId)} - {batch.milkVolumeL}L - 
+                {(batch as any).recipeName || getCheeseTypeName(batch.recipeId)} - {batch.milkVolumeL}L - 
                 Concluído em {batch.completedAt ? new Date(batch.completedAt).toLocaleDateString("pt-BR") : "N/A"}
               </p>
             </div>
