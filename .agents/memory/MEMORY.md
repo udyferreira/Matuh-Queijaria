@@ -1,0 +1,1 @@
+- [Stage-15 timer and recipe isolation](stage15-recipe-isolation.md) — key architectural patterns for the stage-15 pH loop, timer management, and per-batch recipe isolation

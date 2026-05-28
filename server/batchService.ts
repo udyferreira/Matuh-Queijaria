@@ -1,5 +1,6 @@
 import { storage } from "./storage";
-import { recipeManager, getTimerDurationMinutes, getIntervalDurationMinutes, getWaitSpecForStage, TEST_MODE } from "./recipe";
+import { recipeManager, RecipeManager, getRecipeForBatch, getTimerDurationMinutes, getIntervalDurationMinutes, getWaitSpecForStage, TEST_MODE } from "./recipe";
+import { getRecipeSnapshotForBatch } from "./recipeService";
 import { CHEESE_TYPES } from "@shared/schema";
 import { randomBytes } from "crypto";
 import { ApiContext, ScheduledAlert, scheduleReminderForWait, cancelReminder, cancelAllBatchReminders } from "./alexaReminders";
@@ -153,13 +154,9 @@ export interface AdvanceBatchResult {
 export async function startBatch(params: StartBatchParams): Promise<StartBatchResult> {
   const { milkVolumeL, milkTemperatureC: rawMilkTemp, milkPh: rawMilkPh, recipeId: rawRecipeId = "QUEIJO_NETE" } = params;
   
-  // Normalize recipeId to uppercase for CHEESE_TYPES lookup
   const recipeId = rawRecipeId.toUpperCase();
   
-  // Normalize milk pH (handles values like 66 → 6.6, 55 → 5.5)
   const milkPh = normalizePHValue(rawMilkPh);
-  
-  // Normalize milk temperature (handles values like 69 → 6.9, "6,9" → 6.9)
   const milkTemperatureC = normalizeTemperatureValue(rawMilkTemp);
   
   const missingFields: string[] = [];
@@ -176,23 +173,26 @@ export async function startBatch(params: StartBatchParams): Promise<StartBatchRe
     };
   }
   
-  const cheeseType = CHEESE_TYPES[recipeId as keyof typeof CHEESE_TYPES];
-  if (!cheeseType) {
-    return {
-      success: false,
-      error: `Tipo de queijo inválido: ${recipeId}`,
-      code: "INVALID_CHEESE_TYPE"
-    };
-  }
-  if (!cheeseType.available) {
-    return {
-      success: false,
-      error: `O queijo ${cheeseType.name} ainda não está disponível.`,
-      code: "CHEESE_TYPE_UNAVAILABLE"
-    };
+  // Look up recipe in DB (primary) or fall back to CHEESE_TYPES for Alexa backward compat
+  const recipeSnapshotData = await getRecipeSnapshotForBatch(recipeId);
+  if (!recipeSnapshotData) {
+    // Fallback: check legacy CHEESE_TYPES for Alexa backward compat
+    const cheeseType = CHEESE_TYPES[recipeId as keyof typeof CHEESE_TYPES];
+    if (!cheeseType) {
+      return {
+        success: false,
+        error: `Receita não encontrada: ${recipeId}`,
+        code: "INVALID_CHEESE_TYPE"
+      };
+    }
   }
   
-  const inputs = recipeManager.calculateInputs(milkVolumeL);
+  // Build a RecipeManager from the snapshot for input calculations
+  const rm = recipeSnapshotData
+    ? RecipeManager.fromData(recipeSnapshotData.snapshot)
+    : recipeManager;
+  
+  const inputs = rm.calculateInputs(milkVolumeL);
   
   const initialMeasurements: Record<string, any> = {
     milk_volume_l: milkVolumeL,
@@ -207,6 +207,8 @@ export async function startBatch(params: StartBatchParams): Promise<StartBatchRe
 
   const batch = await storage.createBatch({
     recipeId: recipeId,
+    recipeName: recipeSnapshotData?.name || recipeId.replace('QUEIJO_', ''),
+    recipeSnapshot: recipeSnapshotData?.snapshot || null,
     currentStageId: 3,
     milkVolumeL: String(milkVolumeL),
     calculatedInputs: inputs,
@@ -217,7 +219,7 @@ export async function startBatch(params: StartBatchParams): Promise<StartBatchRe
       { stageId: 2, action: "complete", timestamp: new Date().toISOString(), auto: true },
       { stageId: 3, action: "start", timestamp: new Date().toISOString() }
     ]
-  });
+  } as any);
 
   await storage.logBatchAction({
     batchId: batch.id,
@@ -235,14 +237,15 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     return { success: false, error: "Lote não encontrado", code: "BATCH_NOT_FOUND" };
   }
 
-  const currentStage = recipeManager.getStage(batch.currentStageId);
+  const rm = getRecipeForBatch(batch);
+  const currentStage = rm.getStage(batch.currentStageId);
   if (!currentStage) {
     return { success: false, error: "Etapa inválida", code: "INVALID_STAGE" };
   }
 
-  if (recipeManager.isLoopStage(batch.currentStageId)) {
+  if (rm.isLoopStage(batch.currentStageId)) {
     const measurements = (batch.measurements as Record<string, any>) || {};
-    const canExitByPh = recipeManager.checkLoopExitCondition(batch.currentStageId, measurements);
+    const canExitByPh = rm.checkLoopExitCondition(batch.currentStageId, measurements);
     
     if (!canExitByPh) {
       const phMessage = measurements.ph_value 
@@ -273,7 +276,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     }
   }
 
-  const validation = recipeManager.validateAdvance(batch, currentStage);
+  const validation = rm.validateAdvance(batch, currentStage);
   if (!validation.allowed) {
     return {
       success: false,
@@ -282,7 +285,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     };
   }
 
-  const nextStage = recipeManager.getNextStage(batch.currentStageId);
+  const nextStage = rm.getNextStage(batch.currentStageId);
   if (!nextStage) {
     const alerts = (batch.scheduledAlerts as Record<string, ScheduledAlert>) || {};
     if (apiCtx && Object.keys(alerts).length > 0) {
@@ -531,10 +534,9 @@ export interface BatchSummary {
 export async function listInProgressBatches(): Promise<BatchSummary[]> {
   const allBatches = await storage.getActiveBatches();
   
-  const recipeName = recipeManager.getRecipeName();
-  
   const summaries: BatchSummary[] = allBatches.map(batch => {
-    const stage = recipeManager.getStage(batch.currentStageId);
+    const rm = getRecipeForBatch(batch);
+    const stage = rm.getStage(batch.currentStageId);
     const startedAtISO = batch.startedAt 
       ? new Date(batch.startedAt).toISOString() 
       : new Date().toISOString();
@@ -542,7 +544,7 @@ export async function listInProgressBatches(): Promise<BatchSummary[]> {
     return {
       batchId: batch.id,
       recipeId: batch.recipeId,
-      recipeName: recipeName,
+      recipeName: (batch as any).recipeName || rm.getRecipeName(),
       startedAt: startedAtISO,
       currentStageId: batch.currentStageId,
       currentStageName: stage?.name || `Etapa ${batch.currentStageId}`,
@@ -561,7 +563,7 @@ export async function getBatchStatus(batchId: number) {
   const batch = await storage.getBatch(batchId);
   if (!batch) return null;
   
-  const stage = recipeManager.getStage(batch.currentStageId);
+  const stage = getRecipeForBatch(batch).getStage(batch.currentStageId);
   const activeTimers = (batch.activeTimers as any[]) || [];
   const now = new Date();
   
@@ -959,7 +961,7 @@ export async function logDate(batchId: number, dateValue: string, dateType?: str
  * Used when advancing to provide complete guidance
  */
 export function buildStageSpeech(batch: any, stageId: number): string {
-  const stage = recipeManager.getStage(stageId);
+  const stage = getRecipeForBatch(batch).getStage(stageId);
   if (!stage) return `Etapa ${stageId} não encontrada.`;
   
   const parts: string[] = [];
@@ -1060,7 +1062,7 @@ export async function rollbackBatch(batchId: number, apiCtx?: ApiContext | null)
 
   let targetStageId = batch.currentStageId - 1;
   while (targetStageId > 0) {
-    const s = recipeManager.getStage(targetStageId);
+    const s = getRecipeForBatch(batch).getStage(targetStageId);
     if (s && s.type !== "system") break;
     targetStageId--;
   }

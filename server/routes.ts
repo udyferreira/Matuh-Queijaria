@@ -3,7 +3,8 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { CHEESE_TYPES, getCheeseTypeName } from "@shared/schema";
-import { recipeManager, getTimerDurationMinutes, getIntervalDurationMinutes, TEST_MODE } from "./recipe";
+import { recipeManager, getRecipeForBatch, getTimerDurationMinutes, getIntervalDurationMinutes, TEST_MODE } from "./recipe";
+import { seedRecipesIfEmpty, backfillBatchSnapshots, getAllRecipes, getRecipeById, createRecipe, updateRecipe, deleteRecipe } from "./recipeService";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import * as batchService from "./batchService";
@@ -1503,14 +1504,19 @@ export async function registerRoutes(
           if (lastBatchId) {
             const batch = await batchService.getBatch(lastBatchId);
             if (batch && (batch.status === "active" || (batch.status as string) === "in_progress")) {
-              const stage = recipeManager.getStage(batch.currentStageId);
-              const recipeName = recipeManager.getRecipeName();
-              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}. Continuar ou trocar de lote?`;
+              const rm = getRecipeForBatch(batch);
+              const stage = rm.getStage(batch.currentStageId);
+              const recipeName = (batch as any).recipeName || rm.getRecipeName();
+              let stageCtx = '';
+              if (batch.currentStageId === 15) {
+                stageCtx = buildStage15Context(batch);
+              }
+              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${stageCtx} Continuar ou trocar de lote?`;
               console.log(`[LaunchRequest] Resuming persisted batch=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
               return res.status(200).json(buildAlexaResponse(
                 speechText,
                 false,
-                "Diga 'continuar' ou 'trocar lote'.",
+                batch.currentStageId === 15 ? "Informe o pH ou diga 'continuar'." : "Diga 'continuar' ou 'trocar lote'.",
                 { activeBatchId: batch.id, state: "CONFIRM_CONTINUE_OR_SWITCH" }
               ));
             } else {
@@ -1572,6 +1578,15 @@ export async function registerRoutes(
             }
 
             const stage = recipeManager.getStage(activeBatch.currentStageId);
+
+            if (activeBatch.currentStageId === 15) {
+              const stageCtx = buildStage15Context(activeBatch);
+              const speech = `Continuando o lote. Etapa 15: ${stage?.name || 'Virar queijos e medir pH'}.${stageCtx}`;
+              console.log(`[${intentName}] Stage 15 guidance with timer context`);
+              return res.status(200).json(buildAlexaResponse(
+                speech, false, "Informe o pH ou diga 'qual é o status'.", baseAttrs
+              ));
+            }
 
             if (activeBatch.currentStageId !== 15) {
               const ctx = buildStageGuidance(activeBatch, stage);

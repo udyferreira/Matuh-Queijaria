@@ -66,16 +66,24 @@ interface Recipe {
 export class RecipeManager {
   private recipe: Recipe;
 
-  constructor() {
-    try {
-      const recipePath = path.join(process.cwd(), 'server', 'recipe.yml');
-      const fileContents = fs.readFileSync(recipePath, 'utf8');
-      this.recipe = yaml.load(fileContents) as Recipe;
-      console.log(`Loaded recipe: ${this.recipe.name} with ${this.recipe.stages.length} stages`);
-    } catch (e) {
-      console.error("Failed to load recipe:", e);
-      throw new Error("Recipe loading failed");
+  constructor(recipeData?: Recipe) {
+    if (recipeData) {
+      this.recipe = recipeData;
+    } else {
+      try {
+        const recipePath = path.join(process.cwd(), 'server', 'recipe.yml');
+        const fileContents = fs.readFileSync(recipePath, 'utf8');
+        this.recipe = yaml.load(fileContents) as Recipe;
+        console.log(`Loaded recipe: ${this.recipe.name} with ${this.recipe.stages.length} stages`);
+      } catch (e) {
+        console.error("Failed to load recipe:", e);
+        throw new Error("Recipe loading failed");
+      }
     }
+  }
+
+  static fromData(data: any): RecipeManager {
+    return new RecipeManager(data as Recipe);
   }
 
   getRecipeName(): string {
@@ -385,6 +393,16 @@ export const recipeManager = new RecipeManager();
 
 // Export TEST_MODE for use in routes
 export { TEST_MODE };
+
+// Returns a RecipeManager for the given batch, using the batch's snapshot if available.
+// Synchronous because the snapshot is already loaded with the batch from DB.
+export function getRecipeForBatch(batch: any): RecipeManager {
+  const snapshot = batch?.recipeSnapshot;
+  if (snapshot && snapshot.stages && snapshot.stages.length > 0) {
+    return RecipeManager.fromData(snapshot);
+  }
+  return recipeManager;
+}
 
 // Helper function to get timer duration in minutes, respecting TEST_MODE
 export function getTimerDurationMinutes(stage: RecipeStage | undefined): number {

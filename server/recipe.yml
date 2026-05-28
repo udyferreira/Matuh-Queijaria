@@ -247,9 +247,12 @@ stages:
     expected_intent: "RegisterPHAndPiecesIntent"
     input_prompt: "Informe o pH atual dos queijos dizendo: 'pH cinco vírgula dois'."
     llm_guidance: >
+      O pH alvo para encerrar o loop é menor que 5,3.
+      Ao citar exemplos de pH ao operador, use sempre valores próximos a 5,3 (ex: 5,4 ou 5,3).
       Se o pH atingir valor menor que 5,3 antes de completar 1 hora e 30 minutos,
       o loop pode ser encerrado imediatamente.
-      Cada loop representa uma virada dos queijos.
+      Cada loop representa uma virada dos queijos com medição de pH.
+      Informe o operador que deve dizer o pH atual, por exemplo: 'pH cinco vírgula três'.
 
   - id: 16
     name: "Transferir para câmara de secagem"
