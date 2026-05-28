@@ -154,7 +154,7 @@ export interface AdvanceBatchResult {
 export async function startBatch(params: StartBatchParams): Promise<StartBatchResult> {
   const { milkVolumeL, milkTemperatureC: rawMilkTemp, milkPh: rawMilkPh, recipeId: rawRecipeId = "QUEIJO_NETE" } = params;
   
-  const recipeId = rawRecipeId.toUpperCase();
+  const recipeId = rawRecipeId;
   
   const milkPh = normalizePHValue(rawMilkPh);
   const milkTemperatureC = normalizeTemperatureValue(rawMilkTemp);
@@ -475,11 +475,15 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
         await cancelReminder(apiCtx, scheduledAlerts[newKey].reminderId);
         delete scheduledAlerts[newKey];
       }
+      const batchRecipeManager = getRecipeForBatch(batch);
       const reminderResult = await scheduleReminderForWait(
         apiCtx,
         { id: batchId, recipeId: batch.recipeId },
         nextStage.id,
-        waitSpec.seconds
+        waitSpec.seconds,
+        undefined,
+        nextStage.name,
+        batchRecipeManager.getRecipeName()
       );
       if (reminderResult.reminderId) {
         scheduledAlerts[newKey] = {

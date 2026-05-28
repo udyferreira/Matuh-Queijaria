@@ -64,11 +64,17 @@ export async function scheduleReminderForWait(
   batch: { id: number; recipeId: string },
   stageId: number,
   seconds: number,
-  timezone?: string
+  timezone?: string,
+  overrideStageName?: string,
+  overrideRecipeName?: string
 ): Promise<ReminderResult> {
-  const stage = recipeManager.getStage(stageId);
-  const recipeName = recipeManager.getRecipeName();
-  const stageName = alexaProofText(stage?.name || `Etapa ${stageId}`);
+  // Prefer batch-snapshot-derived names when supplied by the caller.
+  // Fall back to global recipeManager only when no override is provided
+  // (e.g. legacy call sites without a batch object in scope).
+  const resolvedRecipeName = overrideRecipeName ?? recipeManager.getRecipeName();
+  const resolvedStageRaw = overrideStageName ?? recipeManager.getStage(stageId)?.name ?? `Etapa ${stageId}`;
+  const stageName = alexaProofText(resolvedStageRaw);
+  const recipeName = resolvedRecipeName;
   const tz = timezone || 'America/Sao_Paulo';
 
   const now = new Date();

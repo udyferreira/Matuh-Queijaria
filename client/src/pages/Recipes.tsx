@@ -77,6 +77,9 @@ export default function Recipes() {
                           {recipe.stages?.length > 0 && (
                             <span>{recipe.stages.length} etapas</span>
                           )}
+                          {recipe.createdAt && (
+                            <span>Criada em {new Date(recipe.createdAt).toLocaleDateString('pt-BR')}</span>
+                          )}
                         </div>
                       </div>
                     </div>

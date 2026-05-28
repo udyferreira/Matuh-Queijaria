@@ -2590,7 +2590,8 @@ export async function registerRoutes(
               if (apiCtx) {
                 try {
                   const updatedBatchForReminder = await batchService.getBatch(activeBatch.id);
-                  const loopStage = getRecipeForBatch(activeBatch).getStage(15);
+                  const batchRM = getRecipeForBatch(activeBatch);
+                  const loopStage = batchRM.getStage(15);
                   const maxHours = loopStage?.max_loop_duration_hours || 1.5;
                   const reminderSeconds = TEST_MODE ? 2 * 60 : maxHours * 60 * 60;
                   
@@ -2619,7 +2620,10 @@ export async function registerRoutes(
                     apiCtx,
                     { id: activeBatch.id, recipeId: (updatedBatchForReminder as any).recipeId },
                     15,
-                    reminderSeconds
+                    reminderSeconds,
+                    undefined,
+                    loopStage?.name,
+                    batchRM.getRecipeName()
                   );
                   if (reminderResult.reminderId) {
                     scheduledAlerts[alertKey] = {
