@@ -131,14 +131,22 @@ export async function registerRoutes(
     }
   });
 
+  // Defensively resequence stage IDs to 1..N based on array order.
+  // RecipeManager.getNextStage() uses id+1, so consecutive IDs are required
+  // for correct batch progression.
+  function resequenceStages(stages: any[]): any[] {
+    if (!Array.isArray(stages)) return stages;
+    return stages.map((s, i) => ({ ...s, id: i + 1 }));
+  }
+
   function validateStageGraph(stages: any[]): string | null {
-    if (!Array.isArray(stages) || stages.length === 0) return null; // empty is allowed (no stages yet)
+    if (!Array.isArray(stages) || stages.length === 0) return null;
     const ids: number[] = stages.map(s => Number(s.id));
     const unique = new Set(ids);
-    if (unique.size !== ids.length) return "Etapas com IDs duplicados detectadas. Salve novamente pelo editor.";
+    if (unique.size !== ids.length) return "Etapas com IDs duplicados detectadas.";
     const sorted = [...ids].sort((a, b) => a - b);
     for (let i = 0; i < sorted.length; i++) {
-      if (sorted[i] !== i + 1) return `IDs de etapas devem ser sequenciais a partir de 1 (encontrado: ${sorted.join(', ')}). Salve novamente pelo editor para corrigir automaticamente.`;
+      if (sorted[i] !== i + 1) return `IDs de etapas devem ser sequenciais a partir de 1 (encontrado: ${sorted.join(', ')}).`;
     }
     return null;
   }
@@ -149,9 +157,11 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.flatten() });
       }
-      const stageError = validateStageGraph((parsed.data as any).stages || []);
+      const incomingStages = (parsed.data as any).stages || [];
+      const resequenced = resequenceStages(incomingStages);
+      const stageError = validateStageGraph(resequenced);
       if (stageError) return res.status(400).json({ message: stageError });
-      const recipe = await createRecipe(parsed.data as any);
+      const recipe = await createRecipe({ ...(parsed.data as any), stages: resequenced });
       res.status(201).json(recipe);
     } catch (err: any) {
       console.error('[POST /api/recipes]', err);
@@ -166,11 +176,13 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.flatten() });
       }
-      if ((parsed.data as any).stages) {
-        const stageError = validateStageGraph((parsed.data as any).stages);
+      let updateData: any = { ...parsed.data };
+      if (updateData.stages) {
+        updateData.stages = resequenceStages(updateData.stages);
+        const stageError = validateStageGraph(updateData.stages);
         if (stageError) return res.status(400).json({ message: stageError });
       }
-      const recipe = await updateRecipe(req.params.recipeId, parsed.data as any);
+      const recipe = await updateRecipe(req.params.recipeId, updateData);
       if (!recipe) return res.status(404).json({ message: "Receita não encontrada" });
       res.json(recipe);
     } catch (err) {

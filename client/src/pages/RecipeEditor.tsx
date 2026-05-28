@@ -517,9 +517,14 @@ export default function RecipeEditor() {
         toast({ title: "Recipe ID e Nome são obrigatórios", variant: "destructive" });
         return;
       }
-      createMutation.mutate(buildPayload());
+    }
+    // Always use buildPayload() so stage IDs are resequenced 1..N before saving,
+    // ensuring RecipeManager.getNextStage() progression works correctly.
+    const payload = buildPayload();
+    if (isNew) {
+      createMutation.mutate(payload);
     } else {
-      updateMutation.mutate({ ...meta, stages, inputs });
+      updateMutation.mutate(payload);
     }
   };
 
