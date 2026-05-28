@@ -116,7 +116,7 @@ export default function NewBatch() {
                 ) : recipes.length === 0 ? (
                   <div className="text-muted-foreground text-sm py-4">Nenhuma receita cadastrada.</div>
                 ) : (
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {recipes.map((recipe: any) => (
                       <button
                         key={recipe.recipeId}

@@ -1,4 +1,4 @@
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { BookOpen, Plus, ChevronRight, Beaker } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
@@ -24,6 +24,11 @@ export default function Recipes() {
               Gerencie as receitas de queijo disponíveis para produção
             </p>
           </div>
+          <Link href="/recipes/new">
+            <Button data-testid="button-new-recipe">
+              <Plus className="w-4 h-4 mr-2" /> Nova Receita
+            </Button>
+          </Link>
         </div>
 
         {isLoading ? (

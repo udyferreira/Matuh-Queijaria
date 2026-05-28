@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import { CHEESE_TYPES, getCheeseTypeName } from "@shared/schema";
+import { CHEESE_TYPES, getCheeseTypeName, insertRecipeSchema } from "@shared/schema";
 import { recipeManager, getRecipeForBatch, getTimerDurationMinutes, getIntervalDurationMinutes, TEST_MODE } from "./recipe";
 import { seedRecipesIfEmpty, backfillBatchSnapshots, getAllRecipes, getRecipeById, createRecipe, updateRecipe, deleteRecipe } from "./recipeService";
 import { registerChatRoutes } from "./replit_integrations/chat";
@@ -133,11 +133,11 @@ export async function registerRoutes(
 
   app.post("/api/recipes", async (req, res) => {
     try {
-      const data = req.body;
-      if (!data.recipeId || !data.name) {
-        return res.status(400).json({ message: "recipeId e name são obrigatórios" });
+      const parsed = insertRecipeSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.flatten() });
       }
-      const recipe = await createRecipe(data);
+      const recipe = await createRecipe(parsed.data as any);
       res.status(201).json(recipe);
     } catch (err: any) {
       console.error('[POST /api/recipes]', err);
@@ -148,7 +148,11 @@ export async function registerRoutes(
 
   app.put("/api/recipes/:recipeId", async (req, res) => {
     try {
-      const recipe = await updateRecipe(req.params.recipeId, req.body);
+      const parsed = insertRecipeSchema.partial().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.flatten() });
+      }
+      const recipe = await updateRecipe(req.params.recipeId, parsed.data as any);
       if (!recipe) return res.status(404).json({ message: "Receita não encontrada" });
       res.json(recipe);
     } catch (err) {

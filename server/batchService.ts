@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import { recipeManager, RecipeManager, getRecipeForBatch, getTimerDurationMinutes, getIntervalDurationMinutes, getWaitSpecForStage, TEST_MODE } from "./recipe";
+import { recipeManager, RecipeManager, getRecipeForBatch, getTimerDurationMinutes, getIntervalDurationMinutes, getWaitSpecForStage, getWaitSpecForStageData, TEST_MODE } from "./recipe";
 import { getRecipeSnapshotForBatch } from "./recipeService";
 import { CHEESE_TYPES } from "@shared/schema";
 import { randomBytes } from "crypto";
@@ -452,7 +452,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
 
   let reminderScheduled = false;
   let needsPermission = false;
-  const waitSpec = getWaitSpecForStage(nextStage.id);
+  const waitSpec = getWaitSpecForStageData(nextStage);
 
   let waitDurationText: string | undefined;
   if (waitSpec) {

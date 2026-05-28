@@ -430,6 +430,12 @@ export function getIntervalDurationMinutes(stage: RecipeStage | undefined): numb
 
 export function getWaitSpecForStage(stageId: number): WaitSpec | null {
   const stage = recipeManager.getStage(stageId);
+  return getWaitSpecForStageData(stage);
+}
+
+// Batch-isolated variant: accepts a stage object already resolved from the batch's snapshot.
+// Use this instead of getWaitSpecForStage() whenever a batch object is in scope.
+export function getWaitSpecForStageData(stage: RecipeStage | undefined | null): WaitSpec | null {
   if (!stage) return null;
 
   if (stage.timer && (stage.timer.duration_min || stage.timer.duration_hours)) {
@@ -440,9 +446,7 @@ export function getWaitSpecForStage(stageId: number): WaitSpec | null {
   }
 
   if (stage.type === 'loop' && stage.max_loop_duration_hours) {
-    // Stage 15 (pH loop) manages its own Alexa reminders after each pH measurement
-    // via the routes.ts pH handler. No entry reminder should be scheduled here.
-    if (stageId === 15) return null;
+    if (stage.id === 15) return null;
     const hours = stage.max_loop_duration_hours;
     const seconds = TEST_MODE ? 120 : hours * 3600;
     return { seconds, kind: 'loop_timeout', stageName: stage.name };
