@@ -14,8 +14,6 @@ import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import TermsOfUse from "@/pages/TermsOfUse";
 import Users from "@/pages/Users";
 import Login from "@/pages/Login";
-import Recipes from "@/pages/Recipes";
-import RecipeEditor from "@/pages/RecipeEditor";
 
 function AuthenticatedRouter() {
   const { data: user, isLoading, refetch } = useQuery<any>({
@@ -53,8 +51,6 @@ function AuthenticatedRouter() {
       <Route path="/alexa" component={AlexaIntegration} />
       <Route path="/reports" component={Reports} />
       <Route path="/users" component={Users} />
-      <Route path="/recipes" component={Recipes} />
-      <Route path="/recipes/:recipeId" component={RecipeEditor} />
       <Route path="/privacy" component={PrivacyPolicy} />
       <Route path="/terms" component={TermsOfUse} />
       <Route component={NotFound} />

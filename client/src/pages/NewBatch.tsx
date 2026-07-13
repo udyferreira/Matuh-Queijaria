@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, Beaker, AlertTriangle, Lock } from "lucide-react";
+import { ArrowLeft, Beaker, AlertTriangle } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
@@ -8,26 +8,18 @@ import { Input } from "@/components/ui/input";
 import { useStartBatch } from "@/hooks/use-batches";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { CHEESE_TYPES } from "@shared/schema";
+
+const cheeseOptions = Object.values(CHEESE_TYPES).filter(c => c.available);
 
 export default function NewBatch() {
   const [milkVolume, setMilkVolume] = useState<string>("50");
   const [milkTemperature, setMilkTemperature] = useState<string>("");
   const [milkPh, setMilkPh] = useState<string>("");
-  const [selectedCheese, setSelectedCheese] = useState<string>("");
+  const [selectedCheese, setSelectedCheese] = useState<string>(cheeseOptions[0]?.id || "");
   const { mutate, isPending } = useStartBatch();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-
-  const { data: recipes = [], isLoading: recipesLoading } = useQuery<any[]>({
-    queryKey: ["/api/recipes"],
-  });
-
-  useEffect(() => {
-    if (!selectedCheese && recipes.length > 0) {
-      setSelectedCheese(recipes[0].recipeId);
-    }
-  }, [recipes, selectedCheese]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,37 +105,26 @@ export default function NewBatch() {
                 <label className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
                   Tipo de Queijo
                 </label>
-                {recipesLoading ? (
-                  <div className="text-muted-foreground text-sm py-4">Carregando receitas...</div>
-                ) : recipes.length === 0 ? (
-                  <div className="text-muted-foreground text-sm py-4">Nenhuma receita cadastrada.</div>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {recipes.map((recipe: any) => (
-                      <button
-                        key={recipe.recipeId}
-                        type="button"
-                        onClick={() => setSelectedCheese(recipe.recipeId)}
-                        className={`relative p-4 rounded-xl border-2 transition-all text-left ${
-                          selectedCheese === recipe.recipeId
-                            ? "border-primary bg-primary/10"
-                            : "border-border hover:border-primary/50"
-                        }`}
-                        data-testid={`button-cheese-${recipe.recipeId}`}
-                      >
-                        <div className="font-bold text-lg">{recipe.name}</div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {recipe.description || recipe.family || "Artesanal"}
-                        </div>
-                        {recipe.batchMinL && recipe.batchMaxL && (
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {recipe.batchMinL}–{recipe.batchMaxL}L
-                          </div>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {cheeseOptions.map((cheese) => (
+                    <button
+                      key={cheese.id}
+                      type="button"
+                      onClick={() => setSelectedCheese(cheese.id)}
+                      className={`relative p-4 rounded-xl border-2 transition-all text-left ${
+                        selectedCheese === cheese.id
+                          ? "border-primary bg-primary/10"
+                          : "border-border hover:border-primary/50"
+                      }`}
+                      data-testid={`button-cheese-${cheese.id}`}
+                    >
+                      <div className="font-bold text-lg">{cheese.name}</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {cheese.description}
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="space-y-4">
@@ -222,7 +203,7 @@ export default function NewBatch() {
                   type="submit" 
                   size="lg" 
                   className="w-full h-16 text-lg font-bold premium-gradient text-amber-400"
-                  disabled={isPending || recipesLoading || recipes.length === 0}
+                  disabled={isPending}
                   data-testid="button-start-production"
                 >
                   {isPending ? "Inicializando..." : "Iniciar Produção"}

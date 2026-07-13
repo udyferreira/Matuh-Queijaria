@@ -5,29 +5,9 @@ import { relations } from "drizzle-orm";
 
 // === TABLE DEFINITIONS ===
 
-export const recipes = pgTable("recipes", {
-  id: serial("id").primaryKey(),
-  recipeId: text("recipe_id").notNull().unique(),
-  name: text("name").notNull(),
-  family: text("family"),
-  description: text("description"),
-  schemaVersion: text("schema_version").default("1.0"),
-  batchMinL: numeric("batch_min_l"),
-  batchMaxL: numeric("batch_max_l"),
-  targetTemperatureC: numeric("target_temperature_c"),
-  targetFinalPh: numeric("target_final_ph"),
-  maturationTargetDays: integer("maturation_target_days"),
-  inputs: jsonb("inputs").notNull().default([]),
-  stages: jsonb("stages").notNull().default([]),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
 export const productionBatches = pgTable("production_batches", {
   id: serial("id").primaryKey(),
   recipeId: text("recipe_id").notNull(),
-  recipeName: text("recipe_name"),
-  recipeSnapshot: jsonb("recipe_snapshot"),
   currentStageId: integer("current_stage_id").notNull().default(1),
   milkVolumeL: numeric("milk_volume_l").notNull(),
   status: text("status", { enum: ["active", "paused", "completed", "cancelled"] }).notNull().default("active"),
@@ -150,28 +130,6 @@ export const insertLogSchema = createInsertSchema(batchLogs).omit({
   id: true, 
   timestamp: true 
 });
-
-// === RECIPE DB TYPES ===
-
-export type Recipe = typeof recipes.$inferSelect;
-export type InsertRecipe = z.infer<typeof insertRecipeSchema>;
-
-export const insertRecipeSchema = createInsertSchema(recipes).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export type RecipeListItem = {
-  id: number;
-  recipeId: string;
-  name: string;
-  family: string | null;
-  schemaVersion: string | null;
-  stageCount: number;
-  createdAt: Date;
-  updatedAt: Date;
-};
 
 // === CHEESE TYPES (legacy — kept for Alexa backward compat) ===
 

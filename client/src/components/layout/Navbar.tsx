@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, FileText, Users, LogOut, Menu, X, BookOpen } from "lucide-react";
+import { Activity, FileText, Users, LogOut, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -16,7 +16,6 @@ export function Navbar() {
 
   const navItems = [
     { href: "/", label: "Painel", icon: Activity },
-    { href: "/recipes", label: "Receitas", icon: BookOpen },
     { href: "/reports", label: "Relatórios", icon: FileText },
     { href: "/users", label: "Usuários", icon: Users },
   ];

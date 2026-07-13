@@ -2,9 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import { CHEESE_TYPES, getCheeseTypeName, insertRecipeSchema } from "@shared/schema";
+import { CHEESE_TYPES, getCheeseTypeName } from "@shared/schema";
 import { recipeManager, getRecipeForBatch, getTimerDurationMinutes, getIntervalDurationMinutes, TEST_MODE } from "./recipe";
-import { seedRecipesIfEmpty, backfillBatchSnapshots, getAllRecipes, getRecipeById, createRecipe, updateRecipe, deleteRecipe } from "./recipeService";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import * as batchService from "./batchService";
@@ -27,14 +26,6 @@ export async function registerRoutes(
   // Register AI Integrations
   registerChatRoutes(app);
   registerImageRoutes(app);
-
-  // Seed recipes from YAML on first run, then backfill existing batches
-  try {
-    await seedRecipesIfEmpty();
-    await backfillBatchSnapshots();
-  } catch (err) {
-    console.error('[startup] Recipe seed/backfill error:', err);
-  }
 
   // --- Auth Routes ---
 
@@ -108,98 +99,10 @@ export async function registerRoutes(
     res.json({ message: "Usuário removido" });
   });
 
-  // --- Recipe Routes (DB-backed CRUD) ---
+  // --- Recipe Info Route (read-only, YAML-based) ---
 
-  app.get("/api/recipes", async (req, res) => {
-    try {
-      const list = await getAllRecipes();
-      res.json(list);
-    } catch (err) {
-      console.error('[GET /api/recipes]', err);
-      res.status(500).json({ message: "Erro ao buscar receitas" });
-    }
-  });
-
-  app.get("/api/recipes/:recipeId", async (req, res) => {
-    try {
-      const recipe = await getRecipeById(req.params.recipeId);
-      if (!recipe) return res.status(404).json({ message: "Receita não encontrada" });
-      res.json(recipe);
-    } catch (err) {
-      console.error('[GET /api/recipes/:recipeId]', err);
-      res.status(500).json({ message: "Erro ao buscar receita" });
-    }
-  });
-
-  // Defensively resequence stage IDs to 1..N based on array order.
-  // RecipeManager.getNextStage() uses id+1, so consecutive IDs are required
-  // for correct batch progression.
-  function resequenceStages(stages: any[]): any[] {
-    if (!Array.isArray(stages)) return stages;
-    return stages.map((s, i) => ({ ...s, id: i + 1 }));
-  }
-
-  function validateStageGraph(stages: any[]): string | null {
-    if (!Array.isArray(stages) || stages.length === 0) return null;
-    const ids: number[] = stages.map(s => Number(s.id));
-    const unique = new Set(ids);
-    if (unique.size !== ids.length) return "Etapas com IDs duplicados detectadas.";
-    const sorted = [...ids].sort((a, b) => a - b);
-    for (let i = 0; i < sorted.length; i++) {
-      if (sorted[i] !== i + 1) return `IDs de etapas devem ser sequenciais a partir de 1 (encontrado: ${sorted.join(', ')}).`;
-    }
-    return null;
-  }
-
-  app.post("/api/recipes", async (req, res) => {
-    try {
-      const parsed = insertRecipeSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.flatten() });
-      }
-      const incomingStages = (parsed.data as any).stages || [];
-      const resequenced = resequenceStages(incomingStages);
-      const stageError = validateStageGraph(resequenced);
-      if (stageError) return res.status(400).json({ message: stageError });
-      const recipe = await createRecipe({ ...(parsed.data as any), stages: resequenced });
-      res.status(201).json(recipe);
-    } catch (err: any) {
-      console.error('[POST /api/recipes]', err);
-      if (err.code === '23505') return res.status(409).json({ message: "Já existe uma receita com esse ID" });
-      res.status(500).json({ message: "Erro ao criar receita" });
-    }
-  });
-
-  app.put("/api/recipes/:recipeId", async (req, res) => {
-    try {
-      const parsed = insertRecipeSchema.partial().safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.flatten() });
-      }
-      let updateData: any = { ...parsed.data };
-      if (updateData.stages) {
-        updateData.stages = resequenceStages(updateData.stages);
-        const stageError = validateStageGraph(updateData.stages);
-        if (stageError) return res.status(400).json({ message: stageError });
-      }
-      const recipe = await updateRecipe(req.params.recipeId, updateData);
-      if (!recipe) return res.status(404).json({ message: "Receita não encontrada" });
-      res.json(recipe);
-    } catch (err) {
-      console.error('[PUT /api/recipes/:recipeId]', err);
-      res.status(500).json({ message: "Erro ao atualizar receita" });
-    }
-  });
-
-  app.delete("/api/recipes/:recipeId", async (req, res) => {
-    try {
-      const result = await deleteRecipe(req.params.recipeId);
-      if (!result.deleted) return res.status(409).json({ message: result.reason || "Não é possível excluir esta receita" });
-      res.json({ success: true });
-    } catch (err) {
-      console.error('[DELETE /api/recipes/:recipeId]', err);
-      res.status(500).json({ message: "Erro ao excluir receita" });
-    }
+  app.get("/api/recipe", (req, res) => {
+    res.json(recipeManager.getRecipeDetail());
   });
 
   // --- Batch Routes ---

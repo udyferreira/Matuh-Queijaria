@@ -1,6 +1,5 @@
 import { storage } from "./storage";
 import { recipeManager, RecipeManager, getRecipeForBatch, getTimerDurationMinutes, getIntervalDurationMinutes, getWaitSpecForStage, getWaitSpecForStageData, TEST_MODE } from "./recipe";
-import { getRecipeSnapshotForBatch } from "./recipeService";
 import { CHEESE_TYPES } from "@shared/schema";
 import { randomBytes } from "crypto";
 import { ApiContext, ScheduledAlert, scheduleReminderForWait, cancelReminder, cancelAllBatchReminders } from "./alexaReminders";
@@ -173,26 +172,17 @@ export async function startBatch(params: StartBatchParams): Promise<StartBatchRe
     };
   }
   
-  // Look up recipe in DB (primary) or fall back to CHEESE_TYPES for Alexa backward compat
-  const recipeSnapshotData = await getRecipeSnapshotForBatch(recipeId);
-  if (!recipeSnapshotData) {
-    // Fallback: check legacy CHEESE_TYPES for Alexa backward compat
-    const cheeseType = CHEESE_TYPES[recipeId as keyof typeof CHEESE_TYPES];
-    if (!cheeseType) {
-      return {
-        success: false,
-        error: `Receita não encontrada: ${recipeId}`,
-        code: "INVALID_CHEESE_TYPE"
-      };
-    }
+  // Validate recipeId against known cheese types
+  const cheeseType = CHEESE_TYPES[recipeId as keyof typeof CHEESE_TYPES];
+  if (!cheeseType) {
+    return {
+      success: false,
+      error: `Receita não encontrada: ${recipeId}`,
+      code: "INVALID_CHEESE_TYPE"
+    };
   }
-  
-  // Build a RecipeManager from the snapshot for input calculations
-  const rm = recipeSnapshotData
-    ? RecipeManager.fromData(recipeSnapshotData.snapshot)
-    : recipeManager;
-  
-  const inputs = rm.calculateInputs(milkVolumeL);
+
+  const inputs = recipeManager.calculateInputs(milkVolumeL);
   
   const initialMeasurements: Record<string, any> = {
     milk_volume_l: milkVolumeL,
@@ -207,8 +197,6 @@ export async function startBatch(params: StartBatchParams): Promise<StartBatchRe
 
   const batch = await storage.createBatch({
     recipeId: recipeId,
-    recipeName: recipeSnapshotData?.name || recipeId.replace('QUEIJO_', ''),
-    recipeSnapshot: recipeSnapshotData?.snapshot || null,
     currentStageId: 3,
     milkVolumeL: String(milkVolumeL),
     calculatedInputs: inputs,
@@ -548,7 +536,7 @@ export async function listInProgressBatches(): Promise<BatchSummary[]> {
     return {
       batchId: batch.id,
       recipeId: batch.recipeId,
-      recipeName: (batch as any).recipeName || rm.getRecipeName(),
+      recipeName: rm.getRecipeName(),
       startedAt: startedAtISO,
       currentStageId: batch.currentStageId,
       currentStageName: stage?.name || `Etapa ${batch.currentStageId}`,

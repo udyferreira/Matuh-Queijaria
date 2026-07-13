@@ -394,13 +394,8 @@ export const recipeManager = new RecipeManager();
 // Export TEST_MODE for use in routes
 export { TEST_MODE };
 
-// Returns a RecipeManager for the given batch, using the batch's snapshot if available.
-// Synchronous because the snapshot is already loaded with the batch from DB.
+// Returns the global RecipeManager for the given batch (YAML-based).
 export function getRecipeForBatch(batch: any): RecipeManager {
-  const snapshot = batch?.recipeSnapshot;
-  if (snapshot && snapshot.stages && snapshot.stages.length > 0) {
-    return RecipeManager.fromData(snapshot);
-  }
   return recipeManager;
 }
 

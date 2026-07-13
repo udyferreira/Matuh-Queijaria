@@ -534,7 +534,7 @@ export default function Reports() {
   const printRef = useRef<HTMLDivElement>(null);
 
   const { data: recipeData } = useQuery<{ stages: Array<{ stageId: number; timer?: { durationMin?: number } }> }>({
-    queryKey: ['/api/recipes/QUEIJO_NETE'],
+    queryKey: ['/api/recipe'],
   });
 
   const stageTimers: Record<number, number> = {};
