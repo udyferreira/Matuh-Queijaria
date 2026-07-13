@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { FileText, ArrowLeft, ChevronDown, ChevronUp, Printer, FileDown, FileSpreadsheet, Pencil, Layers, Milk, Package } from "lucide-react";
+import { FileText, ArrowLeft, ChevronDown, ChevronUp, Printer, FileDown, FileSpreadsheet, Pencil, Layers, Milk, Package, FlaskConical } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
@@ -517,6 +517,135 @@ function currentMonthKey(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// ─── Fermentos 2026 ───────────────────────────────────────────────────────────
+
+interface MonthFermentos {
+  key: string;
+  label: string;
+  lr: number;
+  dx: number;
+  kl: number;
+  rennet: number;
+}
+
+function computeFermentosByMonth(batches: ProductionBatch[]): MonthFermentos[] {
+  const monthMap = new Map<string, MonthFermentos>();
+
+  for (const batch of batches) {
+    if (!batch.completedAt) continue;
+    const d = new Date(batch.completedAt);
+    if (d.getFullYear() !== 2026) continue;
+
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+
+    if (!monthMap.has(key)) {
+      monthMap.set(key, { key, label, lr: 0, dx: 0, kl: 0, rennet: 0 });
+    }
+
+    const entry = monthMap.get(key)!;
+    const ci = (batch.calculatedInputs as Record<string, any>) || {};
+
+    entry.lr     += Number(ci["FERMENT_LR"] ?? 0);
+    entry.dx     += Number(ci["FERMENT_DX"] ?? 0);
+    entry.kl     += Number(ci["FERMENT_KL"] ?? 0);
+    entry.rennet += Number(ci["RENNET"]      ?? 0);
+  }
+
+  return Array.from(monthMap.values()).sort((a, b) => b.key.localeCompare(a.key));
+}
+
+function fmtMl(v: number): string {
+  return v % 1 === 0 ? String(v) : v.toFixed(1);
+}
+
+// ─── Fermentos Card ───────────────────────────────────────────────────────────
+
+function FermentosCard({ batches }: { batches: ProductionBatch[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const months = computeFermentosByMonth(batches);
+
+  const totals = months.reduce(
+    (acc, m) => ({ lr: acc.lr + m.lr, dx: acc.dx + m.dx, kl: acc.kl + m.kl, rennet: acc.rennet + m.rennet }),
+    { lr: 0, dx: 0, kl: 0, rennet: 0 }
+  );
+
+  const fermentos = [
+    { label: "LR",     value: totals.lr,     testId: "lr" },
+    { label: "DX",     value: totals.dx,     testId: "dx" },
+    { label: "KL",     value: totals.kl,     testId: "kl" },
+    { label: "Coalho", value: totals.rennet, testId: "coalho" },
+  ];
+
+  return (
+    <Card
+      className="cursor-pointer select-none hover-elevate transition-all"
+      onClick={() => months.length > 0 && setExpanded((v) => !v)}
+      data-testid="card-kpi-fermentos"
+    >
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-muted-foreground text-sm font-medium uppercase tracking-wider">
+            <FlaskConical className="w-4 h-4" />
+            Fermentos 2026
+          </div>
+          {months.length > 0 && (
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              {expanded ? "Menos" : "Histórico"}
+            </span>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {/* Acumulado anual */}
+        <div className="grid grid-cols-4 gap-2 mb-3" data-testid="fermentos-totais">
+          {fermentos.map((f) => (
+            <div key={f.testId} className="text-center" data-testid={`value-kpi-fermentos-${f.testId}`}>
+              <p className="text-xl font-bold tracking-tight text-foreground">{fmtMl(f.value)}</p>
+              <p className="text-xs text-muted-foreground">mL {f.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Detalhamento mensal */}
+        {expanded && months.length > 0 && (
+          <div
+            className="border-t border-border pt-3 mt-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Cabeçalho da tabela */}
+            <div className="grid grid-cols-5 text-xs text-muted-foreground font-medium px-2 pb-1">
+              <span>Mês</span>
+              <span className="text-right">LR</span>
+              <span className="text-right">DX</span>
+              <span className="text-right">KL</span>
+              <span className="text-right">Coalho</span>
+            </div>
+            <div className="space-y-1">
+              {months.map((m) => (
+                <div
+                  key={m.key}
+                  className="grid grid-cols-5 text-sm px-2 py-1 rounded bg-secondary/30"
+                  data-testid={`row-kpi-fermentos-${m.key}`}
+                >
+                  <span className="text-muted-foreground">
+                    {m.label.charAt(0).toUpperCase() + m.label.slice(1)}
+                  </span>
+                  <span className="text-right font-medium">{fmtMl(m.lr)}</span>
+                  <span className="text-right font-medium">{fmtMl(m.dx)}</span>
+                  <span className="text-right font-medium">{fmtMl(m.kl)}</span>
+                  <span className="text-right font-medium">{fmtMl(m.rennet)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── KPI Card ────────────────────────────────────────────────────────────────
 
 interface KpiCardProps {
@@ -634,6 +763,7 @@ function KpiDashboard({ batches }: { batches: ProductionBatch[] }) {
         />
       </div>
 
+      <FermentosCard batches={batches} />
     </div>
   );
 }
