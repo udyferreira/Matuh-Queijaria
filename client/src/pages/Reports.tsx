@@ -815,7 +815,7 @@ export default function Reports() {
         ) : (
           <Tabs defaultValue="kpi" data-testid="tabs-reports">
             <TabsList className="mb-6" data-testid="tabslist-reports">
-              <TabsTrigger value="kpi" data-testid="tab-kpi">Painel</TabsTrigger>
+              <TabsTrigger value="kpi" data-testid="tab-kpi">KPIs</TabsTrigger>
               <TabsTrigger value="lotes" data-testid="tab-lotes">Lotes</TabsTrigger>
             </TabsList>
 
