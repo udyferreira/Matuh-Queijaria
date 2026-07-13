@@ -1,10 +1,11 @@
 import { Link } from "wouter";
-import { FileText, ArrowLeft, ChevronDown, ChevronUp, Printer, FileDown, FileSpreadsheet, Pencil, BarChart3, Layers, Milk, Package } from "lucide-react";
+import { FileText, ArrowLeft, ChevronDown, ChevronUp, Printer, FileDown, FileSpreadsheet, Pencil, Layers, Milk, Package } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { useCompletedBatches } from "@/hooks/use-batches";
 import { getCheeseTypeName, formatBatchCode, ProductionBatch } from "@shared/schema";
@@ -575,7 +576,7 @@ function KpiCard({ title, icon, currentValue, unit, months, getValue, testId }: 
                 className="flex justify-between items-center text-sm px-2 py-1 rounded bg-secondary/30"
                 data-testid={`row-kpi-${testId}-${m.key}`}
               >
-                <span className="text-muted-foreground capitalize">{m.label}</span>
+                <span className="text-muted-foreground">{m.label.charAt(0).toUpperCase() + m.label.slice(1)}</span>
                 <span className="font-medium">
                   {getValue(m)}
                   {unit ? ` ${unit}` : ""}
@@ -591,13 +592,7 @@ function KpiCard({ title, icon, currentValue, unit, months, getValue, testId }: 
 
 // ─── KPI Dashboard ───────────────────────────────────────────────────────────
 
-function KpiDashboard({
-  batches,
-  onShowDetailed,
-}: {
-  batches: ProductionBatch[];
-  onShowDetailed: () => void;
-}) {
+function KpiDashboard({ batches }: { batches: ProductionBatch[] }) {
   const months = computeKpiByMonth(batches);
   const curKey = currentMonthKey();
   const curMonthIdx = months.findIndex((m) => m.key === curKey);
@@ -639,24 +634,6 @@ function KpiDashboard({
         />
       </div>
 
-      <div
-        className="border border-border rounded-xl p-4 flex items-center justify-between bg-secondary/20 cursor-pointer hover-elevate transition-all"
-        onClick={onShowDetailed}
-        data-testid="card-detailed-report"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-            <FileText className="w-5 h-5 text-primary" />
-          </div>
-          <div>
-            <p className="font-semibold">Relatório Detalhado</p>
-            <p className="text-sm text-muted-foreground">
-              Ver medições por lote, exportar PDF e Excel
-            </p>
-          </div>
-        </div>
-        <ChevronDown className="w-5 h-5 text-muted-foreground rotate-[-90deg]" />
-      </div>
     </div>
   );
 }
@@ -724,7 +701,6 @@ function PrintableReport({ batches, stageTimers = {} }: { batches: ProductionBat
 export default function Reports() {
   const { data: completedBatches, isLoading } = useCompletedBatches();
   const printRef = useRef<HTMLDivElement>(null);
-  const [view, setView] = useState<"kpi" | "relatorio">("kpi");
 
   const { data: recipeData } = useQuery<{ stages: Array<{ stageId: number; timer?: { durationMin?: number } }> }>({
     queryKey: ['/api/recipe'],
@@ -804,49 +780,18 @@ export default function Reports() {
       <Navbar />
       
       <main className="container mx-auto px-4 py-8">
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Link href="/">
-                <Button variant="ghost" size="icon" data-testid="button-back-home">
-                  <ArrowLeft className="w-5 h-5" />
-                </Button>
-              </Link>
-              <h1 className="text-3xl md:text-4xl font-display font-bold">
-                <span className="text-primary text-glow">Relatórios</span>
-              </h1>
-            </div>
-            <p className="text-muted-foreground">
-              {view === "kpi"
-                ? "Resumo mensal de produção."
-                : "Medições detalhadas por lote concluído."}
-            </p>
+        <header className="mb-8">
+          <div className="flex items-center gap-2 mb-2">
+            <Link href="/">
+              <Button variant="ghost" size="icon" data-testid="button-back-home">
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+            </Link>
+            <h1 className="text-3xl md:text-4xl font-display font-bold">
+              <span className="text-primary text-glow">Relatórios</span>
+            </h1>
           </div>
-
-          {view === "relatorio" && completedBatches && completedBatches.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setView("kpi")}
-                data-testid="button-back-kpi"
-              >
-                <BarChart3 className="w-4 h-4 mr-2" />
-                Painel de KPIs
-              </Button>
-              <Button variant="outline" onClick={handlePrint} data-testid="button-print">
-                <Printer className="w-4 h-4 mr-2" />
-                Imprimir
-              </Button>
-              <Button variant="outline" onClick={handleExportPDF} data-testid="button-export-pdf">
-                <FileDown className="w-4 h-4 mr-2" />
-                Salvar PDF
-              </Button>
-              <Button variant="outline" onClick={handleExportExcel} data-testid="button-export-excel">
-                <FileSpreadsheet className="w-4 h-4 mr-2" />
-                Exportar Excel
-              </Button>
-            </div>
-          )}
+          <p className="text-muted-foreground">Acompanhe a produção mensal e os lotes concluídos.</p>
         </header>
 
         {isLoading ? (
@@ -867,26 +812,39 @@ export default function Reports() {
               </p>
             </CardContent>
           </Card>
-        ) : view === "kpi" ? (
-          <section>
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-primary" />
-              Painel de Produção
-            </h2>
-            <KpiDashboard batches={completedBatches} onShowDetailed={() => setView("relatorio")} />
-          </section>
         ) : (
-          <section>
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <FileText className="w-5 h-5 text-primary" />
-              Lotes Concluídos
-            </h2>
-            <div>
-              {completedBatches.map((batch) => (
-                <BatchReport key={batch.id} batch={batch} stageTimers={stageTimers} />
-              ))}
-            </div>
-          </section>
+          <Tabs defaultValue="kpi" data-testid="tabs-reports">
+            <TabsList className="mb-6" data-testid="tabslist-reports">
+              <TabsTrigger value="kpi" data-testid="tab-kpi">Painel</TabsTrigger>
+              <TabsTrigger value="lotes" data-testid="tab-lotes">Lotes</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="kpi">
+              <KpiDashboard batches={completedBatches} />
+            </TabsContent>
+
+            <TabsContent value="lotes">
+              <div className="flex flex-wrap gap-2 mb-6">
+                <Button variant="outline" onClick={handlePrint} data-testid="button-print">
+                  <Printer className="w-4 h-4 mr-2" />
+                  Imprimir
+                </Button>
+                <Button variant="outline" onClick={handleExportPDF} data-testid="button-export-pdf">
+                  <FileDown className="w-4 h-4 mr-2" />
+                  Salvar PDF
+                </Button>
+                <Button variant="outline" onClick={handleExportExcel} data-testid="button-export-excel">
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Exportar Excel
+                </Button>
+              </div>
+              <div>
+                {completedBatches.map((batch) => (
+                  <BatchReport key={batch.id} batch={batch} stageTimers={stageTimers} />
+                ))}
+              </div>
+            </TabsContent>
+          </Tabs>
         )}
       </main>
       
