@@ -584,7 +584,7 @@ function FermentosCard({ batches, forceExpanded }: { batches: ProductionBatch[];
   return (
     <Card
       className="cursor-pointer select-none hover-elevate transition-all"
-      onClick={() => months.length > 0 && setExpanded((v) => !v)}
+      onClick={() => !forceExpanded && months.length > 0 && setExpanded((v) => !v)}
       data-testid="card-kpi-fermentos"
     >
       <CardHeader className="pb-2">
@@ -677,7 +677,7 @@ function KpiCard({ title, icon, currentValue, unit, months, getValue, testId, fo
   return (
     <Card
       className="cursor-pointer select-none hover-elevate transition-all"
-      onClick={() => priorMonths.length > 0 && setExpanded((v) => !v)}
+      onClick={() => !forceExpanded && priorMonths.length > 0 && setExpanded((v) => !v)}
       data-testid={`card-kpi-${testId}`}
     >
       <CardHeader className="pb-2">
