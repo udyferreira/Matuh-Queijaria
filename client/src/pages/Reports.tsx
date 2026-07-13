@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { FileText, ArrowLeft, ChevronDown, ChevronUp, Printer, FileDown, FileSpreadsheet, Pencil } from "lucide-react";
+import { FileText, ArrowLeft, ChevronDown, ChevronUp, Printer, FileDown, FileSpreadsheet, Pencil, BarChart3, Layers, Milk, Package } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
@@ -471,6 +471,198 @@ function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionB
   );
 }
 
+// ─── KPI utilities ───────────────────────────────────────────────────────────
+
+type MonthKpi = {
+  key: string;
+  label: string;
+  batches: number;
+  pecas: number;
+  leite: number;
+};
+
+function computeKpiByMonth(batches: ProductionBatch[]): MonthKpi[] {
+  const monthMap = new Map<string, MonthKpi>();
+
+  for (const batch of batches) {
+    if (!batch.completedAt) continue;
+    const d = new Date(batch.completedAt);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+
+    if (!monthMap.has(key)) {
+      monthMap.set(key, { key, label, batches: 0, pecas: 0, leite: 0 });
+    }
+
+    const entry = monthMap.get(key)!;
+    entry.batches += 1;
+
+    const measurements = (batch.measurements as Record<string, any>) || {};
+    const piecesRaw = measurements.pieces_quantity;
+    if (piecesRaw != null && !isNaN(Number(piecesRaw))) {
+      entry.pecas += Number(piecesRaw);
+    }
+
+    if (batch.milkVolumeL) {
+      entry.leite += Number(batch.milkVolumeL);
+    }
+  }
+
+  return Array.from(monthMap.values()).sort((a, b) => b.key.localeCompare(a.key));
+}
+
+function currentMonthKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// ─── KPI Card ────────────────────────────────────────────────────────────────
+
+interface KpiCardProps {
+  title: string;
+  icon: React.ReactNode;
+  currentValue: string;
+  unit?: string;
+  months: MonthKpi[];
+  getValue: (m: MonthKpi) => number | string;
+  formatValue?: (v: number) => string;
+  testId: string;
+}
+
+function KpiCard({ title, icon, currentValue, unit, months, getValue, testId }: KpiCardProps) {
+  const [expanded, setExpanded] = useState(false);
+  const priorMonths = months.slice(1);
+
+  return (
+    <Card
+      className="cursor-pointer select-none hover-elevate transition-all"
+      onClick={() => priorMonths.length > 0 && setExpanded((v) => !v)}
+      data-testid={`card-kpi-${testId}`}
+    >
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-muted-foreground text-sm font-medium uppercase tracking-wider">
+            {icon}
+            {title}
+          </div>
+          {priorMonths.length > 0 && (
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              {expanded ? "Menos" : "Histórico"}
+            </span>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-1">
+          <span className="text-4xl font-bold tracking-tight text-foreground" data-testid={`value-kpi-${testId}`}>
+            {currentValue}
+          </span>
+          {unit && <span className="text-muted-foreground text-base ml-1">{unit}</span>}
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          {months[0]?.label ?? "mês corrente"}
+        </p>
+
+        {expanded && priorMonths.length > 0 && (
+          <div
+            className="border-t border-border pt-3 mt-2 space-y-1"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {priorMonths.map((m) => (
+              <div
+                key={m.key}
+                className="flex justify-between items-center text-sm px-2 py-1 rounded bg-secondary/30"
+                data-testid={`row-kpi-${testId}-${m.key}`}
+              >
+                <span className="text-muted-foreground capitalize">{m.label}</span>
+                <span className="font-medium">
+                  {getValue(m)}
+                  {unit ? ` ${unit}` : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── KPI Dashboard ───────────────────────────────────────────────────────────
+
+function KpiDashboard({
+  batches,
+  onShowDetailed,
+}: {
+  batches: ProductionBatch[];
+  onShowDetailed: () => void;
+}) {
+  const months = computeKpiByMonth(batches);
+  const curKey = currentMonthKey();
+  const curMonthIdx = months.findIndex((m) => m.key === curKey);
+
+  const sortedMonths =
+    curMonthIdx === -1
+      ? [{ key: curKey, label: new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" }), batches: 0, pecas: 0, leite: 0 }, ...months]
+      : [months[curMonthIdx], ...months.filter((_, i) => i !== curMonthIdx)];
+
+  const cur = sortedMonths[0];
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" data-testid="section-kpi-dashboard">
+        <KpiCard
+          title="Lotes"
+          icon={<Layers className="w-4 h-4" />}
+          currentValue={String(cur.batches)}
+          months={sortedMonths}
+          getValue={(m) => m.batches}
+          testId="lotes"
+        />
+        <KpiCard
+          title="Peças"
+          icon={<Package className="w-4 h-4" />}
+          currentValue={String(cur.pecas)}
+          months={sortedMonths}
+          getValue={(m) => m.pecas}
+          testId="pecas"
+        />
+        <KpiCard
+          title="Leite"
+          icon={<Milk className="w-4 h-4" />}
+          currentValue={cur.leite % 1 === 0 ? String(cur.leite) : cur.leite.toFixed(1)}
+          unit="L"
+          months={sortedMonths}
+          getValue={(m) => (m.leite % 1 === 0 ? m.leite : Number(m.leite.toFixed(1)))}
+          testId="leite"
+        />
+      </div>
+
+      <div
+        className="border border-border rounded-xl p-4 flex items-center justify-between bg-secondary/20 cursor-pointer hover-elevate transition-all"
+        onClick={onShowDetailed}
+        data-testid="card-detailed-report"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+            <FileText className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <p className="font-semibold">Relatório Detalhado</p>
+            <p className="text-sm text-muted-foreground">
+              Ver medições por lote, exportar PDF e Excel
+            </p>
+          </div>
+        </div>
+        <ChevronDown className="w-5 h-5 text-muted-foreground rotate-[-90deg]" />
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function PrintableReport({ batches, stageTimers = {} }: { batches: ProductionBatch[]; stageTimers?: Record<number, number> }) {
   return (
     <div className="p-8">
@@ -532,6 +724,7 @@ function PrintableReport({ batches, stageTimers = {} }: { batches: ProductionBat
 export default function Reports() {
   const { data: completedBatches, isLoading } = useCompletedBatches();
   const printRef = useRef<HTMLDivElement>(null);
+  const [view, setView] = useState<"kpi" | "relatorio">("kpi");
 
   const { data: recipeData } = useQuery<{ stages: Array<{ stageId: number; timer?: { durationMin?: number } }> }>({
     queryKey: ['/api/recipe'],
@@ -598,9 +791,7 @@ export default function Reports() {
     printWindow.print();
   };
 
-  const handleExportPDF = () => {
-    handlePrint();
-  };
+  const handleExportPDF = () => handlePrint();
 
   const handleExportExcel = () => {
     if (completedBatches && completedBatches.length > 0) {
@@ -626,33 +817,31 @@ export default function Reports() {
               </h1>
             </div>
             <p className="text-muted-foreground">
-              Visualize o histórico de medições dos lotes concluídos.
+              {view === "kpi"
+                ? "Resumo mensal de produção."
+                : "Medições detalhadas por lote concluído."}
             </p>
           </div>
-          
-          {completedBatches && completedBatches.length > 0 && (
+
+          {view === "relatorio" && completedBatches && completedBatches.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              <Button 
-                variant="outline" 
-                onClick={handlePrint}
-                data-testid="button-print"
+              <Button
+                variant="outline"
+                onClick={() => setView("kpi")}
+                data-testid="button-back-kpi"
               >
+                <BarChart3 className="w-4 h-4 mr-2" />
+                Painel de KPIs
+              </Button>
+              <Button variant="outline" onClick={handlePrint} data-testid="button-print">
                 <Printer className="w-4 h-4 mr-2" />
                 Imprimir
               </Button>
-              <Button 
-                variant="outline" 
-                onClick={handleExportPDF}
-                data-testid="button-export-pdf"
-              >
+              <Button variant="outline" onClick={handleExportPDF} data-testid="button-export-pdf">
                 <FileDown className="w-4 h-4 mr-2" />
                 Salvar PDF
               </Button>
-              <Button 
-                variant="outline" 
-                onClick={handleExportExcel}
-                data-testid="button-export-excel"
-              >
+              <Button variant="outline" onClick={handleExportExcel} data-testid="button-export-excel">
                 <FileSpreadsheet className="w-4 h-4 mr-2" />
                 Exportar Excel
               </Button>
@@ -660,38 +849,45 @@ export default function Reports() {
           )}
         </header>
 
-        <section>
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-            <FileText className="w-5 h-5 text-primary" />
-            Lotes Concluídos
-          </h2>
-          
-          {isLoading ? (
-            <div className="space-y-4">
-              {[1, 2].map((i) => (
-                <div key={i} className="h-24 rounded-xl bg-secondary/30 animate-pulse" />
-              ))}
-            </div>
-          ) : !completedBatches || completedBatches.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <div className="w-16 h-16 bg-secondary/50 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <FileText className="w-8 h-8 text-muted-foreground" />
-                </div>
-                <h3 className="text-lg font-semibold mb-2">Nenhum Lote Concluído</h3>
-                <p className="text-muted-foreground">
-                  Quando um lote for concluído, ele aparecerá aqui com todas as medições registradas.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
+        {isLoading ? (
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-28 rounded-xl bg-secondary/30 animate-pulse" />
+            ))}
+          </div>
+        ) : !completedBatches || completedBatches.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <div className="w-16 h-16 bg-secondary/50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <FileText className="w-8 h-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Nenhum Lote Concluído</h3>
+              <p className="text-muted-foreground">
+                Quando um lote for concluído, ele aparecerá aqui com todas as medições registradas.
+              </p>
+            </CardContent>
+          </Card>
+        ) : view === "kpi" ? (
+          <section>
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-primary" />
+              Painel de Produção
+            </h2>
+            <KpiDashboard batches={completedBatches} onShowDetailed={() => setView("relatorio")} />
+          </section>
+        ) : (
+          <section>
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              Lotes Concluídos
+            </h2>
             <div>
               {completedBatches.map((batch) => (
                 <BatchReport key={batch.id} batch={batch} stageTimers={stageTimers} />
               ))}
             </div>
-          )}
-        </section>
+          </section>
+        )}
       </main>
       
       <div className="hidden">
