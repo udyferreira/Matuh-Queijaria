@@ -10,7 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCompletedBatches } from "@/hooks/use-batches";
 import { getCheeseTypeName, formatBatchCode, ProductionBatch } from "@shared/schema";
 import { parseDateOnly } from "@/lib/utils";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { zipSync, strToU8 } from "fflate";
 import { EditBatchModal } from "@/components/EditBatchModal";
 
@@ -509,7 +509,7 @@ function computeKpiByMonth(batches: ProductionBatch[]): MonthKpi[] {
     }
   }
 
-  return Array.from(monthMap.values()).sort((a, b) => b.key.localeCompare(a.key));
+  return Array.from(monthMap.values()).sort((a, b) => a.key.localeCompare(b.key));
 }
 
 function currentMonthKey(): string {
@@ -552,7 +552,7 @@ function computeFermentosByMonth(batches: ProductionBatch[]): MonthFermentos[] {
     entry.rennet += Number(ci["RENNET"]      ?? 0);
   }
 
-  return Array.from(monthMap.values()).sort((a, b) => b.key.localeCompare(a.key));
+  return Array.from(monthMap.values()).sort((a, b) => a.key.localeCompare(b.key));
 }
 
 function fmtMl(v: number): string {
@@ -561,9 +561,13 @@ function fmtMl(v: number): string {
 
 // ─── Fermentos Card ───────────────────────────────────────────────────────────
 
-function FermentosCard({ batches }: { batches: ProductionBatch[] }) {
+function FermentosCard({ batches, forceExpanded }: { batches: ProductionBatch[]; forceExpanded?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const months = computeFermentosByMonth(batches);
+
+  useEffect(() => {
+    if (forceExpanded !== undefined) setExpanded(forceExpanded);
+  }, [forceExpanded]);
 
   const totals = months.reduce(
     (acc, m) => ({ lr: acc.lr + m.lr, dx: acc.dx + m.dx, kl: acc.kl + m.kl, rennet: acc.rennet + m.rennet }),
@@ -602,8 +606,10 @@ function FermentosCard({ batches }: { batches: ProductionBatch[] }) {
         <div className="grid grid-cols-4 gap-2 mb-3" data-testid="fermentos-totais">
           {fermentos.map((f) => (
             <div key={f.testId} className="text-center" data-testid={`value-kpi-fermentos-${f.testId}`}>
-              <p className="text-xl font-bold tracking-tight text-foreground">{fmtMl(f.value)}</p>
-              <p className="text-xs text-muted-foreground">mL {f.label}</p>
+              <p className="text-base font-bold text-foreground tracking-wide">{f.label}</p>
+              <p className="text-xl font-bold tracking-tight text-foreground">
+                {fmtMl(f.value)} <span className="text-sm font-normal text-muted-foreground">mL</span>
+              </p>
             </div>
           ))}
         </div>
@@ -657,11 +663,16 @@ interface KpiCardProps {
   getValue: (m: MonthKpi) => number | string;
   formatValue?: (v: number) => string;
   testId: string;
+  forceExpanded?: boolean;
 }
 
-function KpiCard({ title, icon, currentValue, unit, months, getValue, testId }: KpiCardProps) {
+function KpiCard({ title, icon, currentValue, unit, months, getValue, testId, forceExpanded }: KpiCardProps) {
   const [expanded, setExpanded] = useState(false);
   const priorMonths = months.slice(1);
+
+  useEffect(() => {
+    if (forceExpanded !== undefined) setExpanded(forceExpanded);
+  }, [forceExpanded]);
 
   return (
     <Card
@@ -722,6 +733,7 @@ function KpiCard({ title, icon, currentValue, unit, months, getValue, testId }: 
 // ─── KPI Dashboard ───────────────────────────────────────────────────────────
 
 function KpiDashboard({ batches }: { batches: ProductionBatch[] }) {
+  const [expandAll, setExpandAll] = useState(false);
   const months = computeKpiByMonth(batches);
   const curKey = currentMonthKey();
   const curMonthIdx = months.findIndex((m) => m.key === curKey);
@@ -735,6 +747,16 @@ function KpiDashboard({ batches }: { batches: ProductionBatch[] }) {
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <button
+          className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+          onClick={() => setExpandAll((v) => !v)}
+          data-testid="button-expand-all"
+        >
+          {expandAll ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          {expandAll ? "Recolher tudo" : "Expandir tudo"}
+        </button>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" data-testid="section-kpi-dashboard">
         <KpiCard
           title="Lotes"
@@ -743,6 +765,7 @@ function KpiDashboard({ batches }: { batches: ProductionBatch[] }) {
           months={sortedMonths}
           getValue={(m) => m.batches}
           testId="lotes"
+          forceExpanded={expandAll}
         />
         <KpiCard
           title="Peças"
@@ -751,6 +774,7 @@ function KpiDashboard({ batches }: { batches: ProductionBatch[] }) {
           months={sortedMonths}
           getValue={(m) => m.pecas}
           testId="pecas"
+          forceExpanded={expandAll}
         />
         <KpiCard
           title="Leite"
@@ -760,10 +784,11 @@ function KpiDashboard({ batches }: { batches: ProductionBatch[] }) {
           months={sortedMonths}
           getValue={(m) => (m.leite % 1 === 0 ? m.leite : Number(m.leite.toFixed(1)))}
           testId="leite"
+          forceExpanded={expandAll}
         />
       </div>
 
-      <FermentosCard batches={batches} />
+      <FermentosCard batches={batches} forceExpanded={expandAll} />
     </div>
   );
 }
