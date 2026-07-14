@@ -55,7 +55,10 @@ export default function BatchDetail() {
     setHeatTimerDone(false);
     setHeatTempReached(false);
   }, []);
-  const handleHeatConfirm = useCallback(() => setHeatTempReached(true), []);
+  const handleHeatConfirm = useCallback(() => {
+    setHeatTempReached(true);
+    handleAdvance();
+  }, [handleAdvance]);
   
   // Redirect to home if invalid id (after all hooks are called)
   if (id === 0) {
