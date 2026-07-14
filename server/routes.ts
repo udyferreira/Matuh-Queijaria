@@ -1311,24 +1311,26 @@ export async function registerRoutes(
 
   function buildStageGuidance(batch: any, stage: any): string {
     if (!stage) return '';
+    // Calculated-input hints (ingredient quantities, derived volumes) for any recipe stage
+    const calcHint = batchService.getCalculatedInputHint(batch, stage.id);
     if (stage.operator_input_required && stage.operator_input_required.length > 0) {
       const pending = speechRenderer.getPendingInputs(batch, stage.id, stage);
       if (pending.length === 0) {
-        return " Todos os dados já foram registrados. Diga 'próxima etapa' para avançar.";
+        return `${calcHint} Todos os dados já foram registrados. Diga 'próxima etapa' para avançar.`.trimStart();
       }
       if (stage.input_prompt) {
-        return ` ${stage.input_prompt}`;
+        return `${calcHint} ${stage.input_prompt}`.trimStart();
       }
       const lock = getRecipeForBatch(batch).getStageInputLock(stage.id);
       if (lock?.inputPrompt) {
-        return ` ${lock.inputPrompt}`;
+        return `${calcHint} ${lock.inputPrompt}`.trimStart();
       }
-      return ` Esta etapa requer: ${pending.join(', ')}.`;
+      return `${calcHint} Esta etapa requer: ${pending.join(', ')}.`.trimStart();
     }
     if (stage.instructions && stage.instructions.length > 0) {
-      return ` ${stage.instructions.join('. ')}.`;
+      return `${calcHint} ${stage.instructions.join('. ')}.`.trimStart();
     }
-    return '';
+    return calcHint;
   }
 
   function buildStage15Context(batch: any): string {

@@ -982,9 +982,58 @@ export async function logDate(batchId: number, dateValue: string, dateType?: str
 
 
 /**
- * Build speech for a stage including instructions and calculated quantities
- * Used when advancing to provide complete guidance
+ * Returns calculated-input quantity hints for the given stage (e.g. "Use 65 ml de coalho.").
+ * Used by both buildStageSpeech and the Alexa buildStageGuidance path in routes.ts.
  */
+export function getCalculatedInputHint(batch: any, stageId: number): string {
+  const calculatedInputs = (batch.calculatedInputs as Record<string, number>) || {};
+  const recipeId = batch.recipeId || 'QUEIJO_NETE';
+  const hints: string[] = [];
+
+  if (recipeId === 'QUEIJO_NETE') {
+    if (stageId === 3 && calculatedInputs.FERMENT_KL) {
+      hints.push(`Use ${calculatedInputs.FERMENT_KL} ml de fermento KL.`);
+    }
+    if (stageId === 4) {
+      const lr = calculatedInputs.FERMENT_LR;
+      const dx = calculatedInputs.FERMENT_DX;
+      if (lr && dx) hints.push(`Use ${lr} ml de fermento LR e ${dx} ml de DX.`);
+    }
+    if (stageId === 5 && calculatedInputs.RENNET) {
+      hints.push(`Use ${calculatedInputs.RENNET} ml de coalho.`);
+    }
+  } else if (recipeId === 'QUEIJO_NINA') {
+    if (stageId === 2) {
+      const dx = calculatedInputs.FERMENT_DX;
+      const ht = calculatedInputs.FERMENT_HT;
+      const rennet = calculatedInputs.RENNET;
+      const smallTank = calculatedInputs.SMALL_TANK_MILK;
+      if (dx && ht) hints.push(`Use ${dx} ml de fermento DX e ${ht} ml de fermento HT.`);
+      if (rennet) hints.push(`Use ${rennet} ml de coalho.`);
+      if (smallTank) hints.push(`Leite para tanque pequeno: ${smallTank} litros (10% do total).`);
+    }
+    if (stageId === 3 && calculatedInputs.SMALL_TANK_MILK) {
+      hints.push(`Retirar ${calculatedInputs.SMALL_TANK_MILK} litros de leite para o tanque pequeno.`);
+    }
+    if (stageId === 7) {
+      const dx = calculatedInputs.FERMENT_DX;
+      const ht = calculatedInputs.FERMENT_HT;
+      if (dx && ht) hints.push(`Use ${dx} ml de DX e ${ht} ml de HT.`);
+    }
+    if (stageId === 8 && calculatedInputs.RENNET) {
+      hints.push(`Use ${calculatedInputs.RENNET} ml de coalho.`);
+    }
+    if (stageId === 9 && calculatedInputs.HOT_WATER) {
+      hints.push(`Aquecer ${calculatedInputs.HOT_WATER} litros de água a 60°C.`);
+    }
+    if (stageId === 14 && calculatedInputs.WHEY_TO_REMOVE) {
+      hints.push(`Retirar ${calculatedInputs.WHEY_TO_REMOVE} litros de soro.`);
+    }
+  }
+
+  return hints.length > 0 ? ' ' + hints.join(' ') : '';
+}
+
 export function buildStageSpeech(batch: any, stageId: number): string {
   const stage = getRecipeForBatch(batch).getStage(stageId);
   if (!stage) return `Etapa ${stageId} não encontrada.`;
@@ -994,53 +1043,9 @@ export function buildStageSpeech(batch: any, stageId: number): string {
   // Stage name
   parts.push(`Etapa ${stageId}: ${stage.name}.`);
   
-  // Add calculated quantities for stages that use them
-  const calculatedInputs = batch.calculatedInputs || {};
-  
-  const recipeId = batch.recipeId || 'QUEIJO_NETE';
-
-  if (recipeId === 'QUEIJO_NETE') {
-    // Nete stage-specific quantity injection
-    if (stageId === 3 && calculatedInputs.FERMENT_KL) {
-      parts.push(`Use ${calculatedInputs.FERMENT_KL} ml de fermento KL.`);
-    }
-    if (stageId === 4) {
-      const lr = calculatedInputs.FERMENT_LR;
-      const dx = calculatedInputs.FERMENT_DX;
-      if (lr && dx) parts.push(`Use ${lr} ml de fermento LR e ${dx} ml de DX.`);
-    }
-    if (stageId === 5 && calculatedInputs.RENNET) {
-      parts.push(`Use ${calculatedInputs.RENNET} ml de coalho.`);
-    }
-  } else if (recipeId === 'QUEIJO_NINA') {
-    // Nina stage-specific quantity injection
-    if (stageId === 2) {
-      const dx = calculatedInputs.FERMENT_DX;
-      const ht = calculatedInputs.FERMENT_HT;
-      const rennet = calculatedInputs.RENNET;
-      const smallTank = calculatedInputs.SMALL_TANK_MILK;
-      if (dx && ht) parts.push(`Use ${dx} ml de fermento DX e ${ht} ml de fermento HT.`);
-      if (rennet) parts.push(`Use ${rennet} ml de coalho.`);
-      if (smallTank) parts.push(`Leite para tanque pequeno: ${smallTank} litros (10% do total).`);
-    }
-    if (stageId === 3 && calculatedInputs.SMALL_TANK_MILK) {
-      parts.push(`Retirar ${calculatedInputs.SMALL_TANK_MILK} litros de leite para o tanque pequeno.`);
-    }
-    if (stageId === 7) {
-      const dx = calculatedInputs.FERMENT_DX;
-      const ht = calculatedInputs.FERMENT_HT;
-      if (dx && ht) parts.push(`Use ${dx} ml de DX e ${ht} ml de HT.`);
-    }
-    if (stageId === 8 && calculatedInputs.RENNET) {
-      parts.push(`Use ${calculatedInputs.RENNET} ml de coalho.`);
-    }
-    if (stageId === 9 && calculatedInputs.HOT_WATER) {
-      parts.push(`Aquecer ${calculatedInputs.HOT_WATER} litros de água a 60°C.`);
-    }
-    if (stageId === 14 && calculatedInputs.WHEY_TO_REMOVE) {
-      parts.push(`Retirar ${calculatedInputs.WHEY_TO_REMOVE} litros de soro.`);
-    }
-  }
+  // Inject calculated quantities via shared helper
+  const hint = getCalculatedInputHint(batch, stageId);
+  if (hint) parts.push(hint.trim());
   
   // Add instructions (first 2 if long)
   if (stage.instructions && stage.instructions.length > 0) {
