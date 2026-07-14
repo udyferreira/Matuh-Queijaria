@@ -4,6 +4,12 @@ import yaml from 'js-yaml';
 import { ProductionBatch } from '@shared/schema';
 
 // TEST_MODE: When enabled, all timers are reduced to 1 minute for faster testing
+// SAFETY GUARD: TEST_MODE is forbidden in production to prevent accidental timer reduction
+if (process.env.TEST_MODE === 'true' && process.env.NODE_ENV === 'production') {
+  console.error('[FATAL] TEST_MODE=true is not allowed in production (NODE_ENV=production). Remove or unset TEST_MODE before starting the server.');
+  process.exit(1);
+}
+
 const TEST_MODE = process.env.TEST_MODE === 'true';
 
 if (TEST_MODE) {
