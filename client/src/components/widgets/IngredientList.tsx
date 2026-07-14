@@ -3,6 +3,7 @@ import { Droplet, TestTube } from "lucide-react";
 interface CalculatedInputs {
   FERMENT_LR?: number;
   FERMENT_DX?: number;
+  FERMENT_HT?: number;
   FERMENT_KL?: number;
   RENNET?: number;
 }
@@ -13,6 +14,7 @@ export function IngredientList({ inputs }: { inputs: CalculatedInputs }) {
   const items = [
     { name: "Fermento LR", value: inputs.FERMENT_LR, unit: "ml", icon: TestTube, color: "text-blue-400" },
     { name: "Fermento DX", value: inputs.FERMENT_DX, unit: "ml", icon: TestTube, color: "text-purple-400" },
+    { name: "Fermento HT", value: inputs.FERMENT_HT, unit: "ml", icon: TestTube, color: "text-green-400" },
     { name: "Fermento KL", value: inputs.FERMENT_KL, unit: "ml", icon: TestTube, color: "text-pink-400" },
     { name: "Coalho", value: inputs.RENNET, unit: "ml", icon: Droplet, color: "text-amber-400" },
   ].filter(item => item.value !== undefined);
