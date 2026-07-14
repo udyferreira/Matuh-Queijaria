@@ -1,0 +1,458 @@
+schema_version: "1.4"
+recipe_id: "QUEIJO_NINA"
+name: "Nina"
+family: "semi-cozido"
+authorial: true
+
+description: >
+  Queijo de leite cru, massa prensada semi-cozida. Maturado por 6 meses
+  em prateleira de madeira, recebe tratamento na casca ao longo dos meses
+  de cura. Textura firme, macia e levemente elástica, com sabor amigável
+  que traz notas de frutas amarelas e um leve ardidinho na língua.
+  Processo envolve extração parcial do leite, desnatação, semi-cozimento
+  da massa com água quente a 38°C e prensagem com controle de pH.
+
+llm_policy:
+  allowed_actions:
+    - explain_step
+    - clarify_doubts
+    - rephrase_instruction
+    - warn_risk
+    - remind_action
+  forbidden_actions:
+    - calculate_proportions
+    - advance_stage
+    - skip_stage
+    - override_measurements
+    - change_timers
+
+units:
+  volume: "L"
+  liquid: "ml"
+  temperature: "C"
+  time: "min"
+  ph: "pH"
+
+batch:
+  milk_volume_l:
+    required: true
+    min: 10
+    max: 200
+
+inputs:
+  - id: "MILK"
+    name: "Leite"
+    unit: "L"
+    required: true
+
+  - id: "FERMENT_DX"
+    name: "Fermento DX"
+    unit: "ml"
+    dosing:
+      mode: "per_2_liters"
+      value: 2
+    required: true
+    storage: "freezer"
+
+  - id: "FERMENT_HT"
+    name: "Fermento HT"
+    unit: "ml"
+    dosing:
+      mode: "per_2_liters"
+      value: 2
+    required: true
+    storage: "freezer"
+
+  - id: "RENNET"
+    name: "Coalho"
+    unit: "ml"
+    dosing:
+      mode: "per_20_liters"
+      value: 1
+    required: true
+
+derived_volumes:
+  - id: "SMALL_TANK_MILK"
+    name: "Leite para tanque pequeno"
+    description: "10% do volume total de leite — separado para aquecimento e desnatação"
+    pct_of_milk: 0.10
+    unit: "L"
+
+  - id: "HOT_WATER"
+    name: "Água quente para semi-cozimento"
+    description: "20% do volume total de leite — aquecida a 60°C para semi-cozimento da massa"
+    pct_of_milk: 0.20
+    unit: "L"
+
+  - id: "WHEY_TO_REMOVE"
+    name: "Soro a retirar"
+    description: "20% do volume total de leite — retirado antes do semi-cozimento"
+    pct_of_milk: 0.20
+    unit: "L"
+
+process:
+  target_temperature_c: 32
+  temperature_tolerance_c: 1
+  target_final_ph: 5.3
+  semi_cook_target_temp_c: 38
+  semi_cook_rate_c_per_min: 0.33
+  maturation_target_days: 180
+
+stages:
+
+  - id: 1
+    name: "Separar o leite e medir parâmetros iniciais"
+    type: "input"
+    operator_input_required:
+      - milk_volume_l
+      - milk_temperature_c
+      - milk_ph
+    stored_values:
+      - milk_volume_l
+      - milk_temperature_c
+      - milk_ph
+    llm_guidance: >
+      Confirme volume, temperatura e pH iniciais do leite cru.
+      Esses dados são essenciais para a rastreabilidade do lote e para
+      o cálculo automático de todos os volumes derivados desta receita
+      (leite para tanque pequeno, água quente e soro a retirar).
+
+  - id: 2
+    name: "Calcular fermentos, coalho e volumes derivados"
+    type: "system"
+    system_actions:
+      - calculate_proportions
+      - calculate_derived_volumes
+      - remind_remove_from_freezer
+    instructions:
+      - "Cálculos realizados automaticamente pelo sistema"
+      - "Os volumes de leite para o tanque pequeno, água quente e soro a retirar foram calculados"
+      - "Retire os fermentos DX e HT do freezer"
+      - "Quando terminar, diga 'próxima etapa'"
+    llm_guidance: >
+      Informe ao operador as quantidades calculadas de fermento DX, fermento HT e coalho.
+      Lembre que tanto o DX quanto o HT ficam no freezer e devem ser retirados agora
+      para atingir temperatura ambiente antes do uso.
+
+  - id: 3
+    name: "Retirar 10% do leite e aquecer no tanque pequeno"
+    type: "heat"
+    parameters:
+      target_temp_c: 36
+      volume_source: "SMALL_TANK_MILK"
+    instructions:
+      - "Retirar o volume calculado de leite (10% do total) para o tanque pequeno"
+      - "Aquecer o leite no tanque pequeno até 36 graus"
+      - "Quando terminar, diga 'próxima etapa'"
+    llm_guidance: >
+      O leite separado no tanque pequeno será aquecido a 36°C para facilitar
+      a desnate na etapa seguinte. Essa temperatura é intencional: favorece a
+      separação da gordura sem desnaturar proteínas. Confirme ao operador o
+      volume exato a retirar, conforme calculado pelo sistema.
+
+  - id: 4
+    name: "Aquecer o leite no tanque de queijo até 32 graus"
+    type: "heat"
+    parameters:
+      target_temp_c: 32
+    validations:
+      - rule: "temperature_between(31,33)"
+    instructions:
+      - "Aquecer o leite no tanque de queijo até atingir 32 graus"
+      - "Quando terminar, diga 'próxima etapa'"
+    llm_guidance: >
+      A temperatura de 32°C é a temperatura ideal de trabalho para os fermentos
+      mesófilos desta receita. Variações maiores que 1°C podem comprometer a
+      atividade dos fermentos DX e HT.
+
+  - id: 5
+    name: "Desnatar tanque pequeno e juntar ao tanque de queijo"
+    type: "instruction"
+    instructions:
+      - "Retirar a camada de gordura (nata) que se formou no topo do leite do tanque pequeno"
+      - "Descartar a nata ou reservar para outro uso"
+      - "Juntar o leite desnatado do tanque pequeno ao leite do tanque de queijo"
+      - "Quando terminar, diga 'próxima etapa'"
+    llm_guidance: >
+      A desnatação parcial do leite separado é uma característica do processo do Nina.
+      Contribui para um queijo de textura mais firme e facilita o desenvolvimento
+      da casca durante a maturação. A nata removida pode ser descartada ou usada
+      em outro preparo.
+
+  - id: 6
+    name: "Lavar o tanque pequeno"
+    type: "instruction"
+    instructions:
+      - "Lavar e higienizar o tanque pequeno"
+      - "Ele será usado novamente em breve para aquecer a água de semi-cozimento"
+      - "Quando terminar, diga 'próxima etapa'"
+
+  - id: 7
+    name: "Adicionar fermentos DX e HT"
+    type: "add"
+    auto_record_timestamp: "ferment_add_time"
+    instructions:
+      - "Adicionar fermento DX na quantidade calculada"
+      - "Adicionar fermento HT na quantidade calculada"
+      - "Mexer bem o leite para distribuir os fermentos"
+      - "Aguardar 30 minutos com o leite em repouso"
+    timer:
+      duration_min: 30
+      blocking: true
+    llm_guidance: >
+      Os 30 minutos de repouso após adição dos fermentos DX e HT são essenciais
+      para a pré-acidificação do leite. Interromper esse período compromete a
+      formação adequada da massa e o desenvolvimento de sabor característico do Nina.
+      O horário de adição dos fermentos é registrado automaticamente pelo sistema.
+
+  - id: 8
+    name: "Adicionar coalho e colocar a Lira"
+    type: "add"
+    auto_record_timestamp: "rennet_add_time"
+    instructions:
+      - "Adicionar o coalho na quantidade calculada"
+      - "Mexer bem por cerca de 1 minuto"
+      - "Parar a agitação e colocar a Lira em posição"
+      - "Aguardar a floculação sem mexer o leite"
+      - "Quando terminar, diga 'próxima etapa'"
+    llm_guidance: >
+      Após a adição do coalho, o leite não deve ser agitado. A coagulação começa
+      em minutos. O horário de adição do coalho é registrado automaticamente.
+      Explique ao operador que deve observar a floculação — quando uma película
+      se forma na superfície ao pressionar levemente com o dedo ou uma colher.
+
+  - id: 9
+    name: "Aquecer água a 60 graus no tanque pequeno"
+    type: "heat"
+    parameters:
+      target_temp_c: 60
+      volume_source: "HOT_WATER"
+    instructions:
+      - "No tanque pequeno (já lavado), aquecer o volume calculado de água a 60 graus"
+      - "Esta água será usada para o semi-cozimento da massa na etapa 15"
+      - "Quando terminar, diga 'próxima etapa'"
+    llm_guidance: >
+      A água aquecida a 60°C é fundamental para o semi-cozimento da massa do Nina.
+      Confirme ao operador o volume exato de água a preparar, conforme calculado
+      pelo sistema (20% do volume de leite). Manter a água próxima de 60°C até
+      o momento do uso. Esta etapa pode ser feita enquanto aguarda a floculação.
+
+  - id: 10
+    name: "Anotar horário da floculação"
+    type: "observe"
+    operator_input_required:
+      - flocculation_time
+    stored_values:
+      - flocculation_time
+    expected_intent: "LogTimeIntent"
+    expected_time_type: "floculação"
+    input_prompt: "Registre o horário da floculação dizendo: 'hora da floculação às quinze e vinte'."
+    llm_guidance: >
+      A floculação é identificada quando a massa começa a se separar do soro ao
+      pressionar levemente a superfície. O tempo entre adição do coalho e
+      a floculação é um indicador da qualidade do leite e da atividade do coalho.
+      Peça ao operador para registrar o horário exato observado.
+
+  - id: 11
+    name: "Anotar horário do ponto de corte da massa"
+    type: "observe"
+    operator_input_required:
+      - cut_point_time
+    stored_values:
+      - cut_point_time
+    expected_intent: "LogTimeIntent"
+    expected_time_type: "corte"
+    input_prompt: "Registre o horário do ponto de corte dizendo: 'hora do corte às quinze e vinte'."
+    llm_guidance: >
+      O ponto de corte é identificado quando a massa está firme o suficiente para
+      um corte limpo — ao inserir uma faca ou a Lira, a fenda formada deve ser
+      limpa e os lados devem se separar claramente, liberando soro amarelado.
+      Uma massa muito mole resultará em grãos pequenos e perdas no soro.
+
+  - id: 12
+    name: "Cortar a massa com a Lira"
+    type: "cut"
+    instructions:
+      - "Realizar o corte da massa com a Lira em movimentos horizontais e verticais"
+      - "Os grãos devem ficar uniformes"
+      - "Quando terminar, diga 'próxima etapa'"
+    llm_guidance: >
+      O corte com a Lira deve ser uniforme para garantir grãos de tamanho homogêneo.
+      Grãos maiores resultam em queijo mais úmido; grãos menores, mais seco.
+      Para o Nina, o corte deve ser em tamanho médio, adequado para a textura
+      semi-cozida característica deste queijo.
+
+  - id: 13
+    name: "Mexer a massa por 5 minutos"
+    type: "stir"
+    parameters:
+      style: "gentle"
+      duration_min: 5
+    timer:
+      duration_min: 5
+      blocking: true
+    instructions:
+      - "Mexer a massa delicadamente por 5 minutos"
+      - "O timer avisará quando terminar"
+    llm_guidance: >
+      A mexedura por 5 minutos após o corte ajuda a firmar os grãos e promove
+      a saída do soro. Movimentos suaves evitam quebrar os grãos em pedaços
+      muito pequenos. Após os 5 minutos, prossiga imediatamente para a retirada
+      do soro.
+
+  - id: 14
+    name: "Retirar 20% do soro"
+    type: "drain"
+    parameters:
+      volume_source: "WHEY_TO_REMOVE"
+      volume_pct: 0.20
+    instructions:
+      - "Retirar o volume calculado de soro do tanque (20% do volume de leite)"
+      - "Use um recipiente para medir ou estime visualmente com base no volume calculado"
+      - "Quando terminar, diga 'próxima etapa'"
+    llm_guidance: >
+      A retirada parcial do soro antes do semi-cozimento concentra a massa e
+      prepara o ambiente para a adição da água quente. Confirme ao operador
+      o volume exato de soro a retirar, conforme calculado pelo sistema.
+
+  - id: 15
+    name: "Aquecer massa com água quente até 38 graus"
+    type: "heat_curd"
+    parameters:
+      target_temp_c: 38
+      heat_source: "HOT_WATER"
+      rate_c_per_3min: 1
+    timer:
+      interval_min: 3
+      blocking: false
+    instructions:
+      - "Adicionar a água quente (60°C) preparada no tanque pequeno à massa"
+      - "Mexer devagar enquanto aquece para distribuir o calor de forma uniforme"
+      - "A temperatura deve subir aproximadamente 1°C a cada 3 minutos"
+      - "O sistema avisará a cada 3 minutos — monitore a temperatura"
+      - "Quando a massa atingir 38°C, diga 'próxima etapa'"
+    llm_guidance: >
+      Este é o semi-cozimento, etapa que define a textura característica do Nina.
+      A taxa de aquecimento controlada (1°C a cada 3 minutos) garante que os grãos
+      firmeiem de forma uniforme por dentro sem endurecimento brusco da camada externa.
+      A temperatura alvo de 38°C não deve ser ultrapassada — isso comprometeria a
+      textura macia e levemente elástica do queijo. O operador deve monitorar com
+      termômetro e avançar manualmente ao atingir 38°C.
+
+  - id: 16
+    name: "Retirar todo o soro do tanque"
+    type: "drain"
+    parameters:
+      volume_note: "todo o soro restante"
+    instructions:
+      - "Retirar todo o soro restante do tanque"
+      - "A massa deve ficar consolidada no fundo do tanque"
+      - "Quando terminar, diga 'próxima etapa'"
+
+  - id: 17
+    name: "Cortar a massa e colocar nas formas"
+    type: "mold"
+    instructions:
+      - "Cortar a massa em porções adequadas ao tamanho das formas"
+      - "Colocar a massa nas formas com o paninho"
+      - "Pressionar levemente para conformar o queijo"
+      - "Quando terminar, diga 'próxima etapa'"
+
+  - id: 18
+    name: "Medir pH inicial e registrar quantidade de peças"
+    type: "measure"
+    operator_input_required:
+      - ph_value
+      - pieces_quantity
+    stored_values:
+      - initial_ph
+      - pieces_quantity
+    expected_intent: "RegisterPHAndPiecesIntent"
+    input_prompt: "Informe o pH inicial dizendo: 'pH cinco vírgula dois'."
+    llm_guidance: >
+      O pH neste momento é o ponto de partida da prensagem. Registre também
+      a quantidade de peças produzidas neste lote. Esses dados são importantes
+      para o controle de rendimento e para o acompanhamento da acidificação
+      durante a prensagem.
+
+  - id: 19
+    name: "Colocar na prensa e registrar horário"
+    type: "press"
+    operator_input_required:
+      - press_start_time
+    stored_values:
+      - press_start_time
+    expected_intent: "LogTimeIntent"
+    expected_time_type: "prensa"
+    input_prompt: "Registre o horário de início da prensagem dizendo: 'hora da prensa às quinze e vinte'."
+    instructions:
+      - "Colocar os queijos na prensa"
+      - "Registrar o horário de início da prensagem"
+
+  - id: 20
+    name: "Virar queijos e medir pH"
+    type: "loop"
+    loop_condition:
+      until: "ph_value < 5.3"
+    loop_actions:
+      - "virar_queijos"
+      - "medir_ph"
+      - "registrar_ph"
+    timer:
+      interval_hours: 2
+    operator_input_required:
+      - ph_value
+    stored_values:
+      - ph_measurements[]
+      - turning_cycles_count
+    expected_intent: "RegisterPHAndPiecesIntent"
+    input_prompt: "Informe o pH atual dos queijos dizendo: 'pH cinco vírgula dois'."
+    llm_guidance: >
+      O pH alvo para encerrar o loop é menor que 5,3.
+      Ao citar exemplos de pH ao operador, use sempre valores próximos a 5,3 (ex: 5,4 ou 5,3).
+      A cada 2 horas, o operador deve virar os queijos na prensa e medir o pH.
+      Quando o pH atingir valor menor que 5,3, o loop pode ser encerrado.
+      Informe o operador que deve dizer o pH atual, por exemplo: 'pH cinco vírgula dois'.
+      Cada ciclo representa uma virada com medição de pH.
+
+  - id: 21
+    name: "Entrada na salmoura"
+    type: "brine"
+    timer:
+      duration_hours: 13
+      blocking: true
+    instructions:
+      - "Colocar os queijos no tanque de salmoura"
+      - "O timer de 13 horas será iniciado automaticamente"
+
+  - id: 22
+    name: "Secagem em prateleira"
+    type: "dry"
+    timer:
+      duration_hours: 24
+      blocking: true
+    instructions:
+      - "Dispor os queijos nas prateleiras para secagem por 24 horas"
+      - "Virar os queijos uma vez na metade do tempo se possível"
+
+  - id: 23
+    name: "Transferir para Câmara 2 de maturação"
+    type: "transfer"
+    operator_input_required:
+      - chamber_2_entry_date
+    stored_values:
+      - chamber_2_entry_date
+    expected_intent: "RegisterChamberEntryDateIntent"
+    input_prompt: "Quando transferir, diga: 'coloquei na câmara dois agora'."
+    instructions:
+      - "Colocar os queijos na prateleira de madeira da Câmara 2"
+      - "Colocar plaquinha com data de produção na tábua"
+      - "O sistema calculará automaticamente a data mínima de maturação (6 meses)"
+      - "Virar os queijos diariamente nas primeiras semanas"
+      - "Aplicar tratamento na casca conforme protocolo da queijaria"
+      - "Após registrar a data, o lote será concluído automaticamente"
+    llm_guidance: >
+      A maturação do Nina é de no mínimo 6 meses em prateleira de madeira.
+      Durante esse período o queijo desenvolve a casca característica e as
+      notas de frutas amarelas típicas. O sistema registrará a data de entrada
+      e calculará automaticamente a data mínima de conclusão da maturação.
