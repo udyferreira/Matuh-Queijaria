@@ -13,7 +13,7 @@ if (process.env.TEST_MODE === 'true' && process.env.NODE_ENV === 'production') {
 const TEST_MODE = process.env.TEST_MODE === 'true';
 
 if (TEST_MODE) {
-  console.log('[TEST_MODE] All timers reduced to 1 minute for testing');
+  console.log('[TEST_MODE] All timers reduced to 10 seconds for testing');
 }
 
 export interface WaitSpec {
@@ -486,7 +486,7 @@ export function getRecipeForBatch(batch: any): RecipeManager {
 export function getTimerDurationMinutes(stage: RecipeStage | undefined): number {
   if (!stage?.timer) return 0;
   
-  if (TEST_MODE) return 1;
+  if (TEST_MODE) return 10/60;
   
   const durationMin = stage.timer.duration_min || 0;
   const durationHours = stage.timer.duration_hours || 0;
@@ -498,7 +498,7 @@ export function getTimerDurationMinutes(stage: RecipeStage | undefined): number 
 export function getIntervalDurationMinutes(stage: RecipeStage | undefined): number {
   if (!stage?.timer) return 0;
   
-  if (TEST_MODE) return 1;
+  if (TEST_MODE) return 10/60;
   
   if (stage.timer.interval_min) return stage.timer.interval_min;
   if (stage.timer.interval_hours) return stage.timer.interval_hours * 60;
@@ -526,7 +526,7 @@ export function getWaitSpecForStageData(stage: RecipeStage | undefined | null): 
     // Loop stages controlled by periodic pH checks manage their own timer in logPh
     if (stage.loop_actions?.includes('medir_ph')) return null;
     const hours = stage.max_loop_duration_hours;
-    const seconds = TEST_MODE ? 120 : hours * 3600;
+    const seconds = TEST_MODE ? 10 : hours * 3600;
     return { seconds, kind: 'loop_timeout', stageName: stage.name };
   }
 
@@ -535,7 +535,7 @@ export function getWaitSpecForStageData(stage: RecipeStage | undefined | null): 
   if (stage.timer && (stage.timer.interval_min || stage.timer.interval_hours)) {
     const minutes = getIntervalDurationMinutes(stage);
     if (minutes > 0) {
-      const seconds = TEST_MODE ? 60 : minutes * 60;
+      const seconds = TEST_MODE ? 10 : minutes * 60;
       return { seconds, kind: 'timer', stageName: stage.name };
     }
   }

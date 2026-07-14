@@ -44,6 +44,7 @@ integrations = ["javascript_openai_ai_integrations:2.0.0"]
 [userenv]
 
 [userenv.development]
+TEST_MODE = "true"
 
 [postMerge]
 path = "scripts/post-merge.sh"

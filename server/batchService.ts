@@ -321,8 +321,8 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
 
   if (nextStage.type === 'loop' && nextStage.max_loop_duration_hours) {
     const maxHours = nextStage.max_loop_duration_hours;
-    const phTimerMinutes = TEST_MODE ? 2 : Math.round(maxHours * 60);
-    const timerDesc = TEST_MODE ? "2 minuto(s) (TESTE)" : `${maxHours} hora(s)`;
+    const phTimerMinutes = TEST_MODE ? (10/60) : Math.round(maxHours * 60);
+    const timerDesc = TEST_MODE ? "10 segundos (TESTE)" : `${maxHours} hora(s)`;
     activeTimers.push({
       id: generateId(),
       stageId: nextStage.id,
@@ -341,7 +341,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     
     if (intervalMinutes > 0) {
       const stageTimerDef = nextStage.timer;
-      const intervalDesc = TEST_MODE ? "1 minuto (TESTE)"
+      const intervalDesc = TEST_MODE ? "10 segundos (TESTE)"
         : stageTimerDef?.interval_min ? `${stageTimerDef.interval_min} minutos`
         : `${stageTimerDef?.interval_hours} hora(s)`;
       activeReminders.push({
@@ -360,7 +360,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
       const blocking = nextStage.timer.blocking === true;
       const timer = nextStage.timer as any;
       const timerDesc = TEST_MODE 
-        ? `${durationMinutes} minuto(s) (TESTE)` 
+        ? "10 segundos (TESTE)"
         : (timer.duration || `${durationMinutes} min`);
       activeTimers.push({
         id: generateId(),
@@ -378,7 +378,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
   if (nextStage.reminder) {
     const reminder = nextStage.reminder as any;
     const reminderHours = TEST_MODE 
-      ? (1/60)
+      ? (10/3600)
       : (reminder.interval_hours || 1);
     activeReminders.push({
       id: generateId(),
@@ -705,8 +705,8 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
       activeTimers = activeTimers.filter(t => t.stageId !== stageId);
       
       if (!phReachedTarget) {
-        const phTimerMinutes = TEST_MODE ? 2 : Math.round(maxLoopHours * 60);
-        const timerDesc = TEST_MODE ? "2 minuto(s) (TESTE)" : `${maxLoopHours} hora(s)`;
+        const phTimerMinutes = TEST_MODE ? (10/60) : Math.round(maxLoopHours * 60);
+        const timerDesc = TEST_MODE ? "10 segundos (TESTE)" : `${maxLoopHours} hora(s)`;
         activeTimers.push({
           id: generateId(),
           stageId,

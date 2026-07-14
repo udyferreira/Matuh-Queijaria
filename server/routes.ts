@@ -1547,7 +1547,7 @@ export async function registerRoutes(
                       try { await cancelReminder(apiCtx, existing.reminderId); } catch {}
                       delete scheduledAlerts[alertKey];
                     }
-                    const intervalSeconds = TEST_MODE ? 60 : intervalMinutes * 60;
+                    const intervalSeconds = TEST_MODE ? 10 : intervalMinutes * 60;
                     const reminderResult = await scheduleReminderForWait(
                       apiCtx,
                       { id: batch.id, recipeId: (batch as any).recipeId },
@@ -2633,7 +2633,7 @@ export async function registerRoutes(
                   const batchRM = getRecipeForBatch(activeBatch);
                   const loopStage = batchRM.getStage(15);
                   const maxHours = loopStage?.max_loop_duration_hours || 1.5;
-                  const reminderSeconds = TEST_MODE ? 2 * 60 : maxHours * 60 * 60;
+                  const reminderSeconds = TEST_MODE ? 10 : maxHours * 60 * 60;
                   
                   const scheduledAlerts = ((updatedBatchForReminder as any)?.scheduledAlerts || {}) as Record<string, ScheduledAlert>;
                   const alertKey = 'stage_15';
