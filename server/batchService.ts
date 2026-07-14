@@ -698,15 +698,21 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
       phReachedTarget = true;
     }
     
-    // Only manage max-duration timer for loop stages that define max_loop_duration_hours
-    const maxLoopHours = currentStageData?.max_loop_duration_hours ?? currentStageData?.timer?.interval_hours;
-    if (maxLoopHours) {
+    // Manage timer for loop stages: supports both max_loop_duration_hours (Nete) and interval_hours (Nina)
+    const maxLoopHours = currentStageData?.max_loop_duration_hours;
+    const intervalMinutes = getIntervalDurationMinutes(currentStageData);
+    const hasLoopTimer = !!(maxLoopHours || intervalMinutes > 0);
+    if (hasLoopTimer) {
       let activeTimers = (batch.activeTimers as any[]) || [];
       activeTimers = activeTimers.filter(t => t.stageId !== stageId);
       
       if (!phReachedTarget) {
-        const phTimerMinutes = TEST_MODE ? (10/60) : Math.round(maxLoopHours * 60);
-        const timerDesc = TEST_MODE ? "10 segundos (TESTE)" : `${maxLoopHours} hora(s)`;
+        const phTimerMinutes = TEST_MODE ? (10/60)
+          : maxLoopHours ? Math.round(maxLoopHours * 60)
+          : intervalMinutes;
+        const timerDesc = TEST_MODE ? "10 segundos (TESTE)"
+          : maxLoopHours ? `${maxLoopHours} hora(s)`
+          : `${Math.round(intervalMinutes / 60)} hora(s)`;
         activeTimers.push({
           id: generateId(),
           stageId,
