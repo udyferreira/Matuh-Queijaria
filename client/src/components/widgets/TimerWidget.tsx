@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Clock, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -6,15 +6,20 @@ interface TimerWidgetProps {
   durationMinutes: number;
   startTime: string;
   label: string;
+  onComplete?: () => void;
+  hideCompletionMessage?: boolean;
 }
 
-export function TimerWidget({ durationMinutes, startTime, label }: TimerWidgetProps) {
+export function TimerWidget({ durationMinutes, startTime, label, onComplete, hideCompletionMessage }: TimerWidgetProps) {
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [progress, setProgress] = useState(0);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
     const start = new Date(startTime).getTime();
     const end = start + durationMinutes * 60 * 1000;
+    let fired = false;
 
     const interval = setInterval(() => {
       const now = Date.now();
@@ -24,7 +29,10 @@ export function TimerWidget({ durationMinutes, startTime, label }: TimerWidgetPr
       setTimeLeft(remaining);
       setProgress(((total - remaining) / total) * 100);
 
-      if (remaining <= 0) clearInterval(interval);
+      if (remaining <= 0) {
+        clearInterval(interval);
+        if (!fired) { fired = true; onCompleteRef.current?.(); }
+      }
     }, 1000);
 
     return () => clearInterval(interval);
@@ -71,7 +79,7 @@ export function TimerWidget({ durationMinutes, startTime, label }: TimerWidgetPr
         />
       </div>
       
-      {isComplete && (
+      {isComplete && !hideCompletionMessage && (
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}

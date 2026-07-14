@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRoute, useLocation } from "wouter";
 import { ArrowRight, ChevronLeft, CheckCircle, AlertCircle, Thermometer, Scale, XCircle, Pencil, Check, X } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
@@ -44,6 +44,18 @@ export default function BatchDetail() {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+
+  // Heat curd stage (Nina stage 15) — 3-min repeating timer until 38°C is reached
+  const [heatCycleStart, setHeatCycleStart] = useState(() => new Date().toISOString());
+  const [heatTimerDone, setHeatTimerDone] = useState(false);
+  const [heatTempReached, setHeatTempReached] = useState(false);
+  const handleHeatTimerComplete = useCallback(() => setHeatTimerDone(true), []);
+  const handleHeatRetry = useCallback(() => {
+    setHeatCycleStart(new Date().toISOString());
+    setHeatTimerDone(false);
+    setHeatTempReached(false);
+  }, []);
+  const handleHeatConfirm = useCallback(() => setHeatTempReached(true), []);
   
   // Redirect to home if invalid id (after all hooks are called)
   if (id === 0) {
@@ -73,6 +85,7 @@ export default function BatchDetail() {
   const isInputStage = requiredInputs.length > 0;
   const isMultiInputStage = requiredInputs.includes('ph_value') && requiredInputs.includes('pieces_quantity');
   const isLoopPhStage = stageInfo?.type === 'loop' && requiredInputs.includes('ph_value');
+  const isHeatCurdStage = stageInfo?.type === 'heat_curd';
   const isDateInputStage = requiredInputs.includes('chamber_2_entry_date');
   const isFlocculationStage = requiredInputs.includes('flocculation_time');
   const isCutPointStage = requiredInputs.includes('cut_point_time');
@@ -368,6 +381,62 @@ export default function BatchDetail() {
                         </div>
                       )}
                     </div>
+                  ) : isHeatCurdStage ? (
+                    <div className="space-y-4">
+                      {!heatTempReached ? (
+                        <>
+                          <TimerWidget
+                            key={heatCycleStart}
+                            durationMinutes={stageInfo?.timer?.intervalMin || 3}
+                            startTime={heatCycleStart}
+                            label="Aquecimento — verificar temperatura"
+                            onComplete={handleHeatTimerComplete}
+                            hideCompletionMessage
+                          />
+                          {heatTimerDone && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 8 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 space-y-3"
+                            >
+                              <p className="text-amber-300 font-semibold text-center flex items-center justify-center gap-2">
+                                <Thermometer className="w-5 h-5" />
+                                A massa atingiu 38°C?
+                              </p>
+                              <div className="grid grid-cols-2 gap-3">
+                                <Button
+                                  variant="outline"
+                                  size="lg"
+                                  className="border-red-400/40 text-red-400 hover:bg-red-400/10"
+                                  onClick={handleHeatRetry}
+                                  data-testid="button-heat-no"
+                                >
+                                  Não — mais 3 min
+                                </Button>
+                                <Button
+                                  size="lg"
+                                  className="bg-green-600 hover:bg-green-500 text-white"
+                                  onClick={handleHeatConfirm}
+                                  data-testid="button-heat-yes"
+                                >
+                                  Sim — 38°C atingidos
+                                </Button>
+                              </div>
+                            </motion.div>
+                          )}
+                        </>
+                      ) : (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-green-400 font-semibold text-center flex items-center justify-center gap-2"
+                          data-testid="status-heat-reached"
+                        >
+                          <CheckCircle className="w-5 h-5" />
+                          38°C atingidos! Você pode avançar para a próxima etapa.
+                        </motion.div>
+                      )}
+                    </div>
                   ) : isInputStage ? (
                     <form onSubmit={handleInputLog} className="max-w-md space-y-4">
                        {/* Stage 13: Multi-input (pH + pieces) */}
@@ -597,10 +666,14 @@ export default function BatchDetail() {
                     size="lg" 
                     className="w-full h-16 text-lg font-bold premium-gradient shadow-lg text-amber-400"
                     onClick={handleAdvance}
-                    disabled={isAdvancing || (isTimerStage && isBlockingTimer && !isTimerComplete)}
+                    disabled={isAdvancing || (isTimerStage && isBlockingTimer && !isTimerComplete) || (isHeatCurdStage && !heatTempReached)}
                     data-testid="button-complete-step"
                   >
-                    {isAdvancing ? "Processando..." : isTimerStage && isBlockingTimer && !isTimerComplete ? "Aguarde o Timer..." : isLoopPhStage ? "Concluir Viragem (pH atingido)" : "Marcar Etapa como Concluída"} 
+                    {isAdvancing ? "Processando..." 
+                      : isTimerStage && isBlockingTimer && !isTimerComplete ? "Aguarde o Timer..." 
+                      : isHeatCurdStage && !heatTempReached ? "Aguarde atingir 38°C..."
+                      : isLoopPhStage ? "Concluir Viragem (pH atingido)" 
+                      : "Marcar Etapa como Concluída"} 
                     <ArrowRight className="ml-2 w-5 h-5" />
                   </Button>
                 )}
