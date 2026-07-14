@@ -1503,16 +1503,19 @@ export async function registerRoutes(
               const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${stageCtx} Continuar ou trocar de lote?`;
               console.log(`[LaunchRequest] Resuming persisted batch=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
 
-              // For interval stages (e.g. Nina stage 15 semi-cozimento), reschedule the Alexa
-              // reminder if it has already fired (expired) since the last interaction
+              // For interval stages (e.g. Nina stage 15 semi-cozimento), check if we need to
+              // schedule an initial recurring reminder. Autonomous Alexa recurring reminders
+              // (kind=recurring_interval) fire every N minutes without LaunchRequest involvement.
+              // Only schedule here if there's no existing recurring_interval reminder yet.
               const intervalMinutes = stage ? getIntervalDurationMinutes(stage) : 0;
               if (intervalMinutes > 0 && apiCtx) {
                 try {
                   const scheduledAlerts = ((batch as any)?.scheduledAlerts || {}) as Record<string, ScheduledAlert>;
                   const alertKey = `stage_${batch.currentStageId}`;
                   const existing = scheduledAlerts[alertKey];
-                  const expired = !existing || (existing.dueAtISO && new Date(existing.dueAtISO).getTime() < Date.now());
-                  if (expired) {
+                  // Skip if a recurring_interval reminder is already active — Alexa repeats it autonomously
+                  const alreadyRecurring = existing?.kind === 'recurring_interval';
+                  if (!alreadyRecurring) {
                     if (existing) {
                       try { await cancelReminder(apiCtx, existing.reminderId); } catch {}
                       delete scheduledAlerts[alertKey];
@@ -1525,21 +1528,22 @@ export async function registerRoutes(
                       intervalSeconds,
                       undefined,
                       stage?.name,
-                      rm.getRecipeName()
+                      rm.getRecipeName(),
+                      intervalMinutes
                     );
                     if (reminderResult.reminderId) {
                       scheduledAlerts[alertKey] = {
                         reminderId: reminderResult.reminderId,
                         stageId: batch.currentStageId,
                         dueAtISO: new Date(Date.now() + intervalSeconds * 1000).toISOString(),
-                        kind: 'timer'
+                        kind: 'recurring_interval'
                       };
                       await storage.updateBatch(batch.id, { scheduledAlerts });
-                      console.log(`[LaunchRequest] Interval reminder rescheduled for batch=${batch.id} stage=${batch.currentStageId} in ${intervalMinutes}min`);
+                      console.log(`[LaunchRequest] Recurring interval reminder set for batch=${batch.id} stage=${batch.currentStageId} every ${intervalMinutes}min`);
                     }
                   }
                 } catch (err) {
-                  console.warn(`[LaunchRequest] Failed to reschedule interval reminder: ${err}`);
+                  console.warn(`[LaunchRequest] Failed to schedule recurring interval reminder: ${err}`);
                 }
               }
 

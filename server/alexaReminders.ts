@@ -66,7 +66,8 @@ export async function scheduleReminderForWait(
   seconds: number,
   timezone?: string,
   overrideStageName?: string,
-  overrideRecipeName?: string
+  overrideRecipeName?: string,
+  recurrenceRuleMinutes?: number
 ): Promise<ReminderResult> {
   // Prefer batch-snapshot-derived names when supplied by the caller.
   // Fall back to global recipeManager only when no override is provided
@@ -82,19 +83,29 @@ export async function scheduleReminderForWait(
   const requestTime = toLocalISOString(now, tz);
   const scheduledTime = toLocalISOString(scheduledDate, tz);
 
+  const isRecurring = recurrenceRuleMinutes && recurrenceRuleMinutes > 0;
+  const alertText = isRecurring
+    ? `Alerta de monitoramento do lote ${recipeName}. Etapa ${stageId}: ${stageName}. Continue monitorando.`
+    : `Tempo finalizado do lote ${recipeName}. Etapa ${stageId}: ${stageName}. Você já pode continuar.`;
+
+  const trigger: Record<string, any> = {
+    type: 'SCHEDULED_ABSOLUTE',
+    scheduledTime,
+    timeZoneId: tz,
+  };
+  if (isRecurring) {
+    trigger.recurrenceRule = `FREQ=MINUTELY;INTERVAL=${recurrenceRuleMinutes}`;
+  }
+
   const body = {
     requestTime,
-    trigger: {
-      type: 'SCHEDULED_ABSOLUTE',
-      scheduledTime,
-      timeZoneId: tz,
-    },
+    trigger,
     alertInfo: {
       spokenInfo: {
         content: [
           {
             locale: 'pt-BR',
-            text: `Tempo finalizado do lote ${recipeName}. Etapa ${stageId}: ${stageName}. Você já pode continuar.`,
+            text: alertText,
           },
         ],
       },

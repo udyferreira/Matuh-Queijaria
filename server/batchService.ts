@@ -480,6 +480,9 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
         delete scheduledAlerts[newKey];
       }
       const batchRecipeManager = getRecipeForBatch(batch);
+      // Interval stages (e.g. Nina stage 15) use Alexa's native recurring reminder
+      const stageIntervalMinutes = getIntervalDurationMinutes(nextStage);
+      const recurrenceRuleMinutes = stageIntervalMinutes > 0 ? stageIntervalMinutes : undefined;
       const reminderResult = await scheduleReminderForWait(
         apiCtx,
         { id: batchId, recipeId: batch.recipeId },
@@ -487,14 +490,16 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
         waitSpec.seconds,
         undefined,
         nextStage.name,
-        batchRecipeManager.getRecipeName()
+        batchRecipeManager.getRecipeName(),
+        recurrenceRuleMinutes
       );
       if (reminderResult.reminderId) {
+        const alertKind = recurrenceRuleMinutes ? 'recurring_interval' : waitSpec.kind;
         scheduledAlerts[newKey] = {
           reminderId: reminderResult.reminderId,
           stageId: nextStage.id,
           dueAtISO: new Date(Date.now() + waitSpec.seconds * 1000).toISOString(),
-          kind: waitSpec.kind
+          kind: alertKind
         };
         await storage.updateBatch(batchId, { scheduledAlerts });
         reminderScheduled = true;
