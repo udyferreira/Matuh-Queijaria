@@ -140,6 +140,12 @@ export const CHEESE_TYPES = {
     description: "Queijo artesanal tradicional da Matuh",
     available: true
   },
+  QUEIJO_NINA: {
+    id: "QUEIJO_NINA",
+    name: "Nina",
+    description: "Queijo de leite cru, massa prensada semi-cozida, maturado por 6 meses",
+    available: true
+  },
 } as const;
 
 export type CheeseTypeId = keyof typeof CHEESE_TYPES;

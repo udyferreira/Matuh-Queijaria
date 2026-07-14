@@ -24,11 +24,13 @@ export interface RecipeStage {
   stored_values?: string[];
   system_actions?: string[];
   instructions?: string[];
+  auto_record_timestamp?: string;
   timer?: {
     duration_min?: number;
     duration_hours?: number;
     blocking?: boolean;
     interval_hours?: number;
+    interval_min?: number;
   };
   reminder?: {
     frequency: string;
@@ -54,6 +56,23 @@ interface RecipeInput {
   };
 }
 
+interface DerivedVolume {
+  id: string;
+  name: string;
+  description?: string;
+  pct_of_milk: number;
+  unit: string;
+}
+
+interface RecipeProcess {
+  target_temperature_c?: number;
+  temperature_tolerance_c?: number;
+  target_final_ph?: number;
+  maturation_target_days?: number;
+  semi_cook_target_temp_c?: number;
+  semi_cook_rate_c_per_min?: number;
+}
+
 interface Recipe {
   schema_version: string;
   recipe_id: string;
@@ -61,25 +80,15 @@ interface Recipe {
   description?: string;
   stages: RecipeStage[];
   inputs: RecipeInput[];
+  derived_volumes?: DerivedVolume[];
+  process?: RecipeProcess;
 }
 
 export class RecipeManager {
   private recipe: Recipe;
 
-  constructor(recipeData?: Recipe) {
-    if (recipeData) {
-      this.recipe = recipeData;
-    } else {
-      try {
-        const recipePath = path.join(process.cwd(), 'server', 'recipe.yml');
-        const fileContents = fs.readFileSync(recipePath, 'utf8');
-        this.recipe = yaml.load(fileContents) as Recipe;
-        console.log(`Loaded recipe: ${this.recipe.name} with ${this.recipe.stages.length} stages`);
-      } catch (e) {
-        console.error("Failed to load recipe:", e);
-        throw new Error("Recipe loading failed");
-      }
-    }
+  constructor(recipeData: Recipe) {
+    this.recipe = recipeData;
   }
 
   static fromData(data: any): RecipeManager {
@@ -90,6 +99,18 @@ export class RecipeManager {
     return this.recipe.name;
   }
 
+  getRecipeId(): string {
+    return this.recipe.recipe_id;
+  }
+
+  getMaturationDays(): number {
+    return this.recipe.process?.maturation_target_days ?? 90;
+  }
+
+  getDerivedVolumes(): DerivedVolume[] {
+    return this.recipe.derived_volumes || [];
+  }
+
   getStage(stageId: number): RecipeStage | undefined {
     return this.recipe.stages.find(s => s.id === stageId);
   }
@@ -97,8 +118,6 @@ export class RecipeManager {
   getNextStage(currentStageId: number): RecipeStage | undefined {
     return this.recipe.stages.find(s => s.id === currentStageId + 1);
   }
-
-  // New methods for expanded API
 
   getRecipeSummary() {
     return {
@@ -119,7 +138,8 @@ export class RecipeManager {
         name: i.name,
         unit: i.unit,
         dosing: i.dosing
-      }))
+      })),
+      derivedVolumes: this.recipe.derived_volumes || []
     };
   }
 
@@ -136,7 +156,8 @@ export class RecipeManager {
         durationMin: stage.timer.duration_min,
         durationHours: stage.timer.duration_hours,
         blocking: stage.timer.blocking,
-        intervalHours: stage.timer.interval_hours
+        intervalHours: stage.timer.interval_hours,
+        intervalMin: stage.timer.interval_min
       } : undefined,
       reminder: stage.reminder,
       loopCondition: stage.loop_condition ? {
@@ -149,7 +170,6 @@ export class RecipeManager {
   }
 
   getAllRecipes() {
-    // For MVP, we only have one recipe
     return [this.getRecipeSummary()];
   }
 
@@ -181,8 +201,8 @@ export class RecipeManager {
   // Check if intent matches stage expectation
   isExpectedIntentForStage(stageId: number, intentName: string): boolean {
     const lock = this.getStageInputLock(stageId);
-    if (!lock.locked) return true; // No lock, any intent allowed
-    if (!lock.expectedIntent) return true; // No specific intent required
+    if (!lock.locked) return true;
+    if (!lock.expectedIntent) return true;
     return lock.expectedIntent === intentName;
   }
 
@@ -197,7 +217,6 @@ export class RecipeManager {
     const stage = this.getStage(stageId);
     if (!stage?.loop_condition) return true;
     
-    // Parse the condition (e.g., "ph_value < 5.3")
     const condition = stage.loop_condition.until;
     if (condition.includes('ph_value')) {
       const match = condition.match(/ph_value\s*(<=|<|>=|>|==)\s*([\d.]+)/);
@@ -224,7 +243,7 @@ export class RecipeManager {
   // Check if stage has an interval timer (for loops)
   hasIntervalTimer(stageId: number): boolean {
     const stage = this.getStage(stageId);
-    return !!(stage?.timer?.interval_hours);
+    return !!(stage?.timer?.interval_hours || stage?.timer?.interval_min);
   }
 
   // Check if stage has a reminder
@@ -236,6 +255,7 @@ export class RecipeManager {
   calculateInputs(milkVolumeL: number): Record<string, number> {
     const calculated: Record<string, number> = {};
     
+    // Calculate ferment/rennet inputs
     this.recipe.inputs.forEach(input => {
       if (!input.dosing) return;
       
@@ -246,9 +266,16 @@ export class RecipeManager {
         amount = (milkVolumeL / 20) * input.dosing.value;
       }
       
-      // Round to 2 decimal places
       calculated[input.id] = Math.round(amount * 100) / 100;
     });
+
+    // Calculate derived volumes (e.g. SMALL_TANK_MILK=10%, HOT_WATER=20%, WHEY_TO_REMOVE=20%)
+    if (this.recipe.derived_volumes) {
+      this.recipe.derived_volumes.forEach(dv => {
+        const amount = milkVolumeL * dv.pct_of_milk;
+        calculated[dv.id] = Math.round(amount * 100) / 100;
+      });
+    }
 
     return calculated;
   }
@@ -258,9 +285,10 @@ export class RecipeManager {
     if (currentStage.operator_input_required) {
       const measurements = batch.measurements as Record<string, any>;
       
-      // Map expected measurement keys to what's actually stored
+      // Use stored_values to detect the initial_ph stage (works for any recipe)
+      const isInitialPhStage = currentStage.stored_values?.includes('initial_ph') ?? false;
       const keyMapping: Record<string, string> = {
-        'ph_value': currentStage.id === 13 ? 'initial_ph' : 'ph_value',
+        'ph_value': isInitialPhStage ? 'initial_ph' : 'ph_value',
         'flocculation_time': 'flocculation_time',
         'cut_point_time': 'cut_point_time',
         'press_start_time': 'press_start_time',
@@ -283,7 +311,7 @@ export class RecipeManager {
       });
       
       if (missingInputs.length > 0) {
-        const friendlyMessages = this.getFriendlyInputMessages(currentStage.id, missingInputs);
+        const friendlyMessages = this.getFriendlyInputMessages(currentStage, missingInputs);
         return { 
           allowed: false, 
           reason: friendlyMessages,
@@ -321,9 +349,9 @@ export class RecipeManager {
   }
   
   // Generate friendly messages based on stage and missing inputs
-  // Messages aligned with Alexa interactionModel samples
-  getFriendlyInputMessages(stageId: number, missingInputs: string[]): string {
+  getFriendlyInputMessages(stage: RecipeStage, missingInputs: string[]): string {
     const messages: string[] = [];
+    const isInitialPhStage = stage.stored_values?.includes('initial_ph') ?? false;
     
     for (const input of missingInputs) {
       switch (input) {
@@ -334,7 +362,7 @@ export class RecipeManager {
           messages.push("Registre o horário do ponto de corte. Diga: 'hora do corte às quinze e trinta'");
           break;
         case 'ph_value':
-          if (stageId === 13) {
+          if (isInitialPhStage) {
             messages.push("Registre o pH inicial. Diga: 'pH cinco vírgula dois'");
           } else {
             messages.push("Registre o pH atual. Diga: 'pH cinco vírgula dois'");
@@ -365,23 +393,18 @@ export class RecipeManager {
   }
   
   // Get the intent hint for a missing input
-  // Intent names must match exactly the Alexa interactionModel
   getIntentHintForInput(stageId: number, inputKey: string): string {
     switch (inputKey) {
       case 'flocculation_time':
-        // TIME_TYPE slot values: floculação, floculacao
         return 'LogTimeIntent com timeType=floculação';
       case 'cut_point_time':
-        // TIME_TYPE slot values: corte (synonym: ponto de corte)
         return 'LogTimeIntent com timeType=corte';
       case 'press_start_time':
-        // TIME_TYPE slot values: prensa
         return 'LogTimeIntent com timeType=prensa';
       case 'ph_value':
       case 'pieces_quantity':
         return 'RegisterPHAndPiecesIntent';
       case 'chamber_2_entry_date':
-        // Fixed: correct intent name from interactionModel
         return 'RegisterChamberEntryDateIntent';
       default:
         return 'ProcessCommandIntent';
@@ -389,13 +412,67 @@ export class RecipeManager {
   }
 }
 
-export const recipeManager = new RecipeManager();
+// --- RecipeRegistry: loads all recipe-*.yml files at startup ---
+
+class RecipeRegistry {
+  private managers: Map<string, RecipeManager> = new Map();
+
+  constructor() {
+    const serverDir = path.join(process.cwd(), 'server');
+    let files: string[] = [];
+    try {
+      files = fs.readdirSync(serverDir).filter(f => /^recipe-.+\.yml$/.test(f)).sort();
+    } catch (e) {
+      console.error('[RecipeRegistry] Could not read server directory:', e);
+    }
+
+    for (const file of files) {
+      try {
+        const filePath = path.join(serverDir, file);
+        const contents = fs.readFileSync(filePath, 'utf8');
+        const data = yaml.load(contents) as Recipe;
+        const manager = new RecipeManager(data);
+        this.managers.set(data.recipe_id, manager);
+        console.log(`[RecipeRegistry] Loaded: ${data.name} (${data.recipe_id}) — ${data.stages.length} stages`);
+      } catch (e) {
+        console.error(`[RecipeRegistry] Failed to load ${file}:`, e);
+      }
+    }
+
+    if (this.managers.size === 0) {
+      throw new Error('[RecipeRegistry] No recipes loaded. Check server/recipe-*.yml files.');
+    }
+  }
+
+  getForRecipeId(recipeId: string): RecipeManager | undefined {
+    return this.managers.get(recipeId);
+  }
+
+  getDefault(): RecipeManager {
+    return this.managers.get('QUEIJO_NETE') || [...this.managers.values()][0];
+  }
+
+  getAllSummaries() {
+    return [...this.managers.values()].map(m => m.getRecipeSummary());
+  }
+}
+
+export const recipeRegistry = new RecipeRegistry();
+
+// Keep recipeManager pointing to Nete for backward compatibility
+// (used in alexaReminders.ts and places in routes.ts that need any valid recipe)
+export const recipeManager = recipeRegistry.getDefault();
 
 // Export TEST_MODE for use in routes
 export { TEST_MODE };
 
-// Returns the global RecipeManager for the given batch (YAML-based).
+// Returns the RecipeManager for the given batch, dispatching by recipeId
 export function getRecipeForBatch(batch: any): RecipeManager {
+  const recipeId = batch?.recipeId;
+  if (recipeId) {
+    const rm = recipeRegistry.getForRecipeId(recipeId);
+    if (rm) return rm;
+  }
   return recipeManager;
 }
 
@@ -403,10 +480,8 @@ export function getRecipeForBatch(batch: any): RecipeManager {
 export function getTimerDurationMinutes(stage: RecipeStage | undefined): number {
   if (!stage?.timer) return 0;
   
-  // In TEST_MODE, all timers are 1 minute
   if (TEST_MODE) return 1;
   
-  // Normal mode: calculate from stage definition (sum both if present)
   const durationMin = stage.timer.duration_min || 0;
   const durationHours = stage.timer.duration_hours || 0;
   
@@ -415,12 +490,13 @@ export function getTimerDurationMinutes(stage: RecipeStage | undefined): number 
 
 // Helper function to get interval duration in minutes, respecting TEST_MODE
 export function getIntervalDurationMinutes(stage: RecipeStage | undefined): number {
-  if (!stage?.timer?.interval_hours) return 0;
+  if (!stage?.timer) return 0;
   
-  // In TEST_MODE, all intervals are 1 minute
   if (TEST_MODE) return 1;
   
-  return stage.timer.interval_hours * 60;
+  if (stage.timer.interval_min) return stage.timer.interval_min;
+  if (stage.timer.interval_hours) return stage.timer.interval_hours * 60;
+  return 0;
 }
 
 export function getWaitSpecForStage(stageId: number): WaitSpec | null {
@@ -441,7 +517,8 @@ export function getWaitSpecForStageData(stage: RecipeStage | undefined | null): 
   }
 
   if (stage.type === 'loop' && stage.max_loop_duration_hours) {
-    if (stage.id === 15) return null;
+    // Loop stages controlled by periodic pH checks manage their own timer in logPh
+    if (stage.loop_actions?.includes('medir_ph')) return null;
     const hours = stage.max_loop_duration_hours;
     const seconds = TEST_MODE ? 120 : hours * 3600;
     return { seconds, kind: 'loop_timeout', stageName: stage.name };

@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import { recipeManager, RecipeManager, getRecipeForBatch, getTimerDurationMinutes, getIntervalDurationMinutes, getWaitSpecForStage, getWaitSpecForStageData, TEST_MODE } from "./recipe";
+import { recipeManager, recipeRegistry, RecipeManager, getRecipeForBatch, getTimerDurationMinutes, getIntervalDurationMinutes, getWaitSpecForStage, getWaitSpecForStageData, TEST_MODE } from "./recipe";
 import { CHEESE_TYPES } from "@shared/schema";
 import { randomBytes } from "crypto";
 import { ApiContext, ScheduledAlert, scheduleReminderForWait, cancelReminder, cancelAllBatchReminders } from "./alexaReminders";
@@ -182,7 +182,8 @@ export async function startBatch(params: StartBatchParams): Promise<StartBatchRe
     };
   }
 
-  const inputs = recipeManager.calculateInputs(milkVolumeL);
+  const batchRm = recipeRegistry.getForRecipeId(recipeId) || recipeManager;
+  const inputs = batchRm.calculateInputs(milkVolumeL);
   
   const initialMeasurements: Record<string, any> = {
     milk_volume_l: milkVolumeL,
@@ -246,15 +247,16 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
       };
     }
 
-    if (batch.currentStageId === 15) {
+    if (rm.isLoopStage(batch.currentStageId)) {
+      const loopStageId = batch.currentStageId;
       const freshBatch = await storage.getBatch(batchId);
       if (freshBatch) {
         const freshMeasurements = (freshBatch.measurements as Record<string, any>) || {};
         const turningCount = (freshBatch as any).turningCyclesCount || 0;
         const timestamp = new Date().toISOString();
         const historyEntries = [
-          { key: 'turning_cycles_count', value: turningCount, stageId: 15, timestamp },
-          { key: 'loop_exit_reason', value: 'ph_reached', stageId: 15, timestamp }
+          { key: 'turning_cycles_count', value: turningCount, stageId: loopStageId, timestamp },
+          { key: 'loop_exit_reason', value: 'ph_reached', stageId: loopStageId, timestamp }
         ];
         const history = freshMeasurements._history || [];
         history.push(...historyEntries);
@@ -315,12 +317,13 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     scheduledAlerts
   };
 
-  if (nextStage.id === 15) {
-    const phTimerMinutes = TEST_MODE ? 2 : 90;
-    const timerDesc = TEST_MODE ? "2 minuto(s) (TESTE)" : "1 hora e 30 minutos";
+  if (nextStage.type === 'loop' && nextStage.max_loop_duration_hours) {
+    const maxHours = nextStage.max_loop_duration_hours;
+    const phTimerMinutes = TEST_MODE ? 2 : Math.round(maxHours * 60);
+    const timerDesc = TEST_MODE ? "2 minuto(s) (TESTE)" : `${maxHours} hora(s)`;
     activeTimers.push({
       id: generateId(),
-      stageId: 15,
+      stageId: nextStage.id,
       durationMinutes: phTimerMinutes,
       startTime: new Date().toISOString(),
       endTime: new Date(Date.now() + phTimerMinutes * 60000).toISOString(),
@@ -335,7 +338,10 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     const intervalMinutes = getIntervalDurationMinutes(nextStage);
     
     if (intervalMinutes > 0) {
-      const intervalDesc = TEST_MODE ? "1 minuto (TESTE)" : `${nextStage.timer.interval_hours} horas`;
+      const stageTimerDef = nextStage.timer;
+      const intervalDesc = TEST_MODE ? "1 minuto (TESTE)"
+        : stageTimerDef?.interval_min ? `${stageTimerDef.interval_min} minutos`
+        : `${stageTimerDef?.interval_hours} hora(s)`;
       activeReminders.push({
         id: generateId(),
         stageId: nextStage.id,
@@ -343,7 +349,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
         intervalHours: intervalMinutes / 60,
         nextTrigger: new Date(Date.now() + intervalMinutes * 60000).toISOString(),
         acknowledged: false,
-        description: `Verificar pH a cada ${intervalDesc}`
+        description: `Alerta a cada ${intervalDesc}`
       });
       updates.activeReminders = activeReminders;
     }
@@ -421,6 +427,15 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     measurements.shelf_start_time_iso = nowIso;
     const mHistory = measurements._history || [];
     mHistory.push({ key: 'shelf_start_time_iso', value: nowIso, stageId: 18, timestamp: nowIso });
+    measurements._history = mHistory;
+    touchedMeasurements = true;
+  }
+
+  // Generic: auto_record_timestamp defined in YAML (e.g. Nina stages 7 and 8)
+  if (nextStage.auto_record_timestamp && !measurements[nextStage.auto_record_timestamp]) {
+    measurements[nextStage.auto_record_timestamp] = nowIso;
+    const mHistory = measurements._history || [];
+    mHistory.push({ key: nextStage.auto_record_timestamp, value: nowIso, stageId: nextStage.id, timestamp: nowIso });
     measurements._history = mHistory;
     touchedMeasurements = true;
   }
@@ -608,8 +623,13 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
   const timestamp = new Date().toISOString();
   const stageId = batch.currentStageId;
   
+  const rm = getRecipeForBatch(batch);
+  const currentStageData = rm.getStage(stageId);
+  const isLoopStage = rm.isLoopStage(stageId);
+  const isInitialPhStage = currentStageData?.stored_values?.includes('initial_ph') ?? false;
+
   const DEDUP_WINDOW_MS = 30_000;
-  if (stageId === 15) {
+  if (isLoopStage) {
     const phMeasurements = measurements.ph_measurements || [];
     if (phMeasurements.length > 0) {
       const last = phMeasurements[phMeasurements.length - 1];
@@ -634,17 +654,17 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
     }
   }
   
-  // Stage 13: Store as initial_ph (per recipe.yml stored_values)
-  if (stageId === 13) {
+  // Initial pH stage (stored_values contains 'initial_ph'): store as initial_ph + pieces
+  if (isInitialPhStage) {
     measurements.initial_ph = phValue;
-    inputHistory.push({ key: 'initial_ph', value: phValue, timestamp, stageId: 13 });
+    inputHistory.push({ key: 'initial_ph', value: phValue, timestamp, stageId });
     
     if (piecesQuantity !== undefined) {
       measurements.pieces_quantity = piecesQuantity;
-      inputHistory.push({ key: 'pieces_quantity', value: piecesQuantity, timestamp, stageId: 13 });
+      inputHistory.push({ key: 'pieces_quantity', value: piecesQuantity, timestamp, stageId });
     }
   } else {
-    // For loop stages (15) and others, use ph_value and add to history
+    // Loop stages and others: store as ph_value in history array
     measurements.ph_value = phValue;
     const phHistory = measurements.ph_measurements || [];
     phHistory.push({ value: phValue, timestamp, stageId });
@@ -659,47 +679,48 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
   let shouldExitLoop = false;
   let phReachedTarget = false;
   
-  // Stage 15: Increment turning cycles count, check loop exit, and manage timer
-  if (stageId === 15) {
+  // Loop stage: increment turning cycles, check loop exit, manage timer
+  if (isLoopStage) {
     const currentCount = (batch as any).turningCyclesCount || 0;
     turningCyclesCount = currentCount + 1;
     updates.turningCyclesCount = turningCyclesCount;
     
-    // Check if pH reached target (loop exit condition)
     if (phValue < TARGET_PH) {
       shouldExitLoop = true;
       phReachedTarget = true;
     }
     
-    // Manage stage 15 timer: cancel current, create new if pH not reached
-    let activeTimers = (batch.activeTimers as any[]) || [];
-    activeTimers = activeTimers.filter(t => t.stageId !== 15);
-    
-    if (!phReachedTarget) {
-      const phTimerMinutes = TEST_MODE ? 2 : 90;
-      const timerDesc = TEST_MODE ? "2 minuto(s) (TESTE)" : "1 hora e 30 minutos";
-      activeTimers.push({
-        id: generateId(),
-        stageId: 15,
-        durationMinutes: phTimerMinutes,
-        startTime: new Date().toISOString(),
-        endTime: new Date(Date.now() + phTimerMinutes * 60000).toISOString(),
-        description: timerDesc,
-        blocking: false
-      });
-      console.log(`[logPh] Stage 15: pH ${phValue} not ideal. New 1h30 timer started.`);
-    } else {
-      console.log(`[logPh] Stage 15: pH ${phValue} reached target. Timer cleared.`);
-      // Also clear the DB record of the Alexa scheduled alert so advanceBatch
-      // does not attempt to cancel an already-fired reminder via the Alexa API
-      const currentAlerts = { ...((batch as any).scheduledAlerts || {}) };
-      if (currentAlerts['stage_15']) {
-        delete currentAlerts['stage_15'];
-        updates.scheduledAlerts = currentAlerts;
-        console.log(`[logPh] Stage 15: scheduledAlerts.stage_15 cleared from DB on pH target reached.`);
+    // Only manage max-duration timer for loop stages that define max_loop_duration_hours
+    const maxLoopHours = currentStageData?.max_loop_duration_hours;
+    if (maxLoopHours) {
+      let activeTimers = (batch.activeTimers as any[]) || [];
+      activeTimers = activeTimers.filter(t => t.stageId !== stageId);
+      
+      if (!phReachedTarget) {
+        const phTimerMinutes = TEST_MODE ? 2 : Math.round(maxLoopHours * 60);
+        const timerDesc = TEST_MODE ? "2 minuto(s) (TESTE)" : `${maxLoopHours} hora(s)`;
+        activeTimers.push({
+          id: generateId(),
+          stageId,
+          durationMinutes: phTimerMinutes,
+          startTime: new Date().toISOString(),
+          endTime: new Date(Date.now() + phTimerMinutes * 60000).toISOString(),
+          description: timerDesc,
+          blocking: false
+        });
+        console.log(`[logPh] Stage ${stageId}: pH ${phValue} not at target. Timer reset to ${phTimerMinutes} min.`);
+      } else {
+        console.log(`[logPh] Stage ${stageId}: pH ${phValue} reached target. Timer cleared.`);
+        const currentAlerts = { ...((batch as any).scheduledAlerts || {}) };
+        const alertKey = `stage_${stageId}`;
+        if (currentAlerts[alertKey]) {
+          delete currentAlerts[alertKey];
+          updates.scheduledAlerts = currentAlerts;
+          console.log(`[logPh] Stage ${stageId}: scheduledAlerts.${alertKey} cleared from DB on pH target reached.`);
+        }
       }
+      updates.activeTimers = activeTimers;
     }
-    updates.activeTimers = activeTimers;
   }
   
   await storage.updateBatch(batchId, updates);
@@ -816,12 +837,12 @@ export async function logTime(batchId: number, timeValue: string, timeType?: str
 }
 
 /**
- * Calculate maturation end date: 90 days from batch start date
- * This is the SINGLE SOURCE OF TRUTH for this calculation
+ * Calculate maturation end date based on maturation days (defaults to 90).
+ * This is the SINGLE SOURCE OF TRUTH for this calculation.
  */
-export function getMaturationEndDate(batchStartDate: Date): Date {
+export function getMaturationEndDate(batchStartDate: Date, maturationDays: number = 90): Date {
   const maturationEndDate = new Date(batchStartDate);
-  maturationEndDate.setDate(maturationEndDate.getDate() + 90);
+  maturationEndDate.setDate(maturationEndDate.getDate() + maturationDays);
   return maturationEndDate;
 }
 
@@ -848,13 +869,17 @@ export async function recordChamber2Entry(
     return { success: false, error: "Lote não encontrado", code: "BATCH_NOT_FOUND" };
   }
   
-  const expectedStage = 19;
-  if (batch.currentStageId !== expectedStage) {
-    console.warn(`recordChamber2Entry: Recording on stage ${batch.currentStageId}, expected stage ${expectedStage}`);
+  const batchRm = getRecipeForBatch(batch);
+  const maturationDays = batchRm.getMaturationDays();
+  
+  // Warn if not on the expected final transfer stage (non-blocking)
+  const currentStageDef = batchRm.getStage(batch.currentStageId);
+  if (!currentStageDef?.operator_input_required?.includes('chamber_2_entry_date')) {
+    console.warn(`recordChamber2Entry: Stage ${batch.currentStageId} does not expect chamber_2_entry_date`);
   }
   
   const entryDate = new Date(entryDateValue);
-  const maturationEndDate = getMaturationEndDate(new Date(batch.startedAt));
+  const maturationEndDate = getMaturationEndDate(new Date(batch.startedAt), maturationDays);
   const maturationEndDateISO = maturationEndDate.toISOString();
   
   const measurements = (batch.measurements as any) || {};
@@ -964,23 +989,49 @@ export function buildStageSpeech(batch: any, stageId: number): string {
   // Add calculated quantities for stages that use them
   const calculatedInputs = batch.calculatedInputs || {};
   
-  // Stage 3: Fermento KL
-  if (stageId === 3 && calculatedInputs.FERMENT_KL) {
-    parts.push(`Use ${calculatedInputs.FERMENT_KL} ml de fermento KL.`);
-  }
-  
-  // Stage 4: Fermentos LR e DX
-  if (stageId === 4) {
-    const lr = calculatedInputs.FERMENT_LR;
-    const dx = calculatedInputs.FERMENT_DX;
-    if (lr && dx) {
-      parts.push(`Use ${lr} ml de fermento LR e ${dx} ml de DX.`);
+  const recipeId = batch.recipeId || 'QUEIJO_NETE';
+
+  if (recipeId === 'QUEIJO_NETE') {
+    // Nete stage-specific quantity injection
+    if (stageId === 3 && calculatedInputs.FERMENT_KL) {
+      parts.push(`Use ${calculatedInputs.FERMENT_KL} ml de fermento KL.`);
     }
-  }
-  
-  // Stage 5: Coalho (Rennet)
-  if (stageId === 5 && calculatedInputs.RENNET) {
-    parts.push(`Use ${calculatedInputs.RENNET} ml de coalho.`);
+    if (stageId === 4) {
+      const lr = calculatedInputs.FERMENT_LR;
+      const dx = calculatedInputs.FERMENT_DX;
+      if (lr && dx) parts.push(`Use ${lr} ml de fermento LR e ${dx} ml de DX.`);
+    }
+    if (stageId === 5 && calculatedInputs.RENNET) {
+      parts.push(`Use ${calculatedInputs.RENNET} ml de coalho.`);
+    }
+  } else if (recipeId === 'QUEIJO_NINA') {
+    // Nina stage-specific quantity injection
+    if (stageId === 2) {
+      const dx = calculatedInputs.FERMENT_DX;
+      const ht = calculatedInputs.FERMENT_HT;
+      const rennet = calculatedInputs.RENNET;
+      const smallTank = calculatedInputs.SMALL_TANK_MILK;
+      if (dx && ht) parts.push(`Use ${dx} ml de fermento DX e ${ht} ml de fermento HT.`);
+      if (rennet) parts.push(`Use ${rennet} ml de coalho.`);
+      if (smallTank) parts.push(`Leite para tanque pequeno: ${smallTank} litros (10% do total).`);
+    }
+    if (stageId === 3 && calculatedInputs.SMALL_TANK_MILK) {
+      parts.push(`Retirar ${calculatedInputs.SMALL_TANK_MILK} litros de leite para o tanque pequeno.`);
+    }
+    if (stageId === 7) {
+      const dx = calculatedInputs.FERMENT_DX;
+      const ht = calculatedInputs.FERMENT_HT;
+      if (dx && ht) parts.push(`Use ${dx} ml de DX e ${ht} ml de HT.`);
+    }
+    if (stageId === 8 && calculatedInputs.RENNET) {
+      parts.push(`Use ${calculatedInputs.RENNET} ml de coalho.`);
+    }
+    if (stageId === 9 && calculatedInputs.HOT_WATER) {
+      parts.push(`Aquecer ${calculatedInputs.HOT_WATER} litros de água a 60°C.`);
+    }
+    if (stageId === 14 && calculatedInputs.WHEY_TO_REMOVE) {
+      parts.push(`Retirar ${calculatedInputs.WHEY_TO_REMOVE} litros de soro.`);
+    }
   }
   
   // Add instructions (first 2 if long)
