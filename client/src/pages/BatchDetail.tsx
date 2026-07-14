@@ -511,7 +511,7 @@ export default function BatchDetail() {
                            {isLoopPhStage && (() => {
                              const m = batch.measurements as Record<string, any> || {};
                              const history: Array<{key: string; value: any; stageId: number; timestamp: string}> = m._history || [];
-                             const phEntries = history.filter(e => e.stageId === batch.currentStageId && e.key === 'ph_value').sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                             const phEntries = history.filter(e => e.stageId === batch.currentStageId && (e.key === 'ph_value' || e.key === 'ph_measurement')).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
                              const lastEntry = phEntries[0];
                              const fmtDt = (iso: string) => {
                                try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(iso)); } catch { return iso; }

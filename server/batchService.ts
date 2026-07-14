@@ -699,7 +699,7 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
     }
     
     // Only manage max-duration timer for loop stages that define max_loop_duration_hours
-    const maxLoopHours = currentStageData?.max_loop_duration_hours;
+    const maxLoopHours = currentStageData?.max_loop_duration_hours ?? currentStageData?.timer?.interval_hours;
     if (maxLoopHours) {
       let activeTimers = (batch.activeTimers as any[]) || [];
       activeTimers = activeTimers.filter(t => t.stageId !== stageId);
