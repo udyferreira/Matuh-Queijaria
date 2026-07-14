@@ -1004,15 +1004,21 @@ export default function Reports() {
   const { data: completedBatches, isLoading } = useCompletedBatches();
   const printRef = useRef<HTMLDivElement>(null);
 
-  const { data: recipeData } = useQuery<{ stages: Array<{ stageId: number; timer?: { durationMin?: number } }> }>({
+  const { data: recipeDataNete } = useQuery<{ stages: Array<{ stageId: number; timer?: { durationMin?: number } }> }>({
     queryKey: ['/api/recipe'],
   });
 
+  const { data: recipeDataNina } = useQuery<{ stages: Array<{ stageId: number; timer?: { durationMin?: number } }> }>({
+    queryKey: ['/api/recipe?recipeId=QUEIJO_NINA'],
+  });
+
   const stageTimers: Record<number, number> = {};
-  if (recipeData?.stages) {
-    for (const stage of recipeData.stages) {
-      if (stage.timer?.durationMin !== undefined) {
-        stageTimers[stage.stageId] = stage.timer.durationMin;
+  for (const recipeData of [recipeDataNete, recipeDataNina]) {
+    if (recipeData?.stages) {
+      for (const stage of recipeData.stages) {
+        if (stage.timer?.durationMin !== undefined) {
+          stageTimers[stage.stageId] = stage.timer.durationMin;
+        }
       }
     }
   }

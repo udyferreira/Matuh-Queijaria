@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { CHEESE_TYPES, getCheeseTypeName } from "@shared/schema";
-import { recipeManager, getRecipeForBatch, getTimerDurationMinutes, getIntervalDurationMinutes, TEST_MODE } from "./recipe";
+import { recipeManager, recipeRegistry, getRecipeForBatch, getTimerDurationMinutes, getIntervalDurationMinutes, TEST_MODE } from "./recipe";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import * as batchService from "./batchService";
@@ -102,6 +102,12 @@ export async function registerRoutes(
   // --- Recipe Info Route (read-only, YAML-based) ---
 
   app.get("/api/recipe", (req, res) => {
+    const { recipeId } = req.query;
+    if (recipeId && typeof recipeId === 'string') {
+      const rm = recipeRegistry.getForRecipeId(recipeId);
+      if (!rm) return res.status(404).json({ message: "Recipe not found" });
+      return res.json(rm.getRecipeDetail());
+    }
     res.json(recipeManager.getRecipeDetail());
   });
 
