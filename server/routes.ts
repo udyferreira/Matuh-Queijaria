@@ -165,10 +165,20 @@ export async function registerRoutes(
       isComplete: new Date(t.endTime) <= now
     }));
     
+    const stageInfo = currentStage ? rm.formatStageDetail(currentStage) : undefined;
+    if (stageInfo?.timer) {
+      if (stageInfo.timer.intervalMin != null) {
+        stageInfo.timer.intervalMin = getIntervalDurationMinutes(currentStage);
+      }
+      if (stageInfo.timer.durationMin != null) {
+        stageInfo.timer.durationMin = getTimerDurationMinutes(currentStage);
+      }
+    }
+
     res.json({
       ...batch,
       activeTimers,
-      stageInfo: currentStage ? rm.formatStageDetail(currentStage) : undefined,
+      stageInfo,
       totalStages: rm.getRecipeSummary().stageCount,
       recipeName: rm.getRecipeName()
     });
