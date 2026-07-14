@@ -302,7 +302,9 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
       ? new Date(scheduledAlerts[prevKey].dueAtISO).getTime()
       : 0;
     const alertAlreadyFired = alertDueAt > 0 && alertDueAt < Date.now();
-    if (!alertAlreadyFired) {
+    const isRecurringAlert = scheduledAlerts[prevKey].kind === 'recurring_interval';
+    // Recurring reminders must always be explicitly cancelled — they remain active after the first firing
+    if (!alertAlreadyFired || isRecurringAlert) {
       await cancelReminder(apiCtx, scheduledAlerts[prevKey].reminderId);
     } else {
       console.log(`[advanceBatch] Stage ${currentStage.id} reminder already fired (dueAt=${scheduledAlerts[prevKey].dueAtISO}). Skipping cancelReminder API call.`);

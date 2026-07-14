@@ -421,8 +421,8 @@ export async function registerRoutes(
     inputHistory.push({ key, value, unit, notes, timestamp, stageId: batch.currentStageId });
     measurements._history = inputHistory;
 
-    // Stage 15 pH: delegate to centralized logPh for timer management
-    if (key === 'ph_value' && batch.currentStageId === 15) {
+    // Loop-pH stage: delegate to centralized logPh for timer management
+    if (key === 'ph_value' && isLoopPhStage(batch)) {
       const result = await batchService.logPh(batchId, value);
       if (!result.success) {
         return res.status(400).json({ message: result.error, code: "LOG_PH_FAILED" });
@@ -455,8 +455,8 @@ export async function registerRoutes(
       measurements.pieces_quantity = value;
     }
 
-    // Store initial_ph (Stage 13)
-    if (key === 'ph_value' && batch.currentStageId === 13) {
+    // Store initial_ph (initial-pH stage: Nete=13, Nina=18)
+    if (key === 'ph_value' && isInitialPhStage(batch)) {
       measurements.initial_ph = value;
     }
 
@@ -545,7 +545,7 @@ export async function registerRoutes(
       }
 
       if (key === "ph_value" || key === "initial_ph") {
-        if (stageId === 13) {
+        if (getRecipeForBatch(batch).getStage(stageId)?.stored_values?.includes('initial_ph')) {
           measurements.initial_ph = value;
         }
         measurements[key] = value;
@@ -982,12 +982,13 @@ export async function registerRoutes(
           return { speech: "Não há lote ativo para avançar.", shouldEndSession: false };
         }
 
-        if (activeBatch.currentStageId === 13) {
+        if (isInitialPhStage(activeBatch)) {
           const s13 = getStage13EntryPrompt(activeBatch, {});
           if (s13) {
-            const stage = getRecipeForBatch(activeBatch).getStage(13);
-            const speech = `Etapa 13: ${stage?.name || 'Medir pH inicial e registrar quantidade de peças'}.${s13.prompt}`;
-            console.log(`[advance] Already on stage 13, starting guided entry: pending=${s13.newAttrs.pending}`);
+            const stageNum = activeBatch.currentStageId;
+            const stage = getRecipeForBatch(activeBatch).getStage(stageNum);
+            const speech = `Etapa ${stageNum}: ${stage?.name || 'Medir pH inicial e registrar quantidade de peças'}.${s13.prompt}`;
+            console.log(`[advance] Already on initial-pH stage ${stageNum}, starting guided entry: pending=${s13.newAttrs.pending}`);
             return { speech, shouldEndSession: false, sessionAttrsOverride: s13.newAttrs };
           }
         }
@@ -1014,11 +1015,12 @@ export async function registerRoutes(
         const updatedBatch = result.batch || activeBatch;
         const nextStage = getRecipeForBatch(updatedBatch).getStage(result.nextStage?.id || 0);
 
-        if (nextStage?.id === 13) {
+        if (isInitialPhStage(updatedBatch)) {
           const s13 = getStage13EntryPrompt(updatedBatch, {});
           if (s13) {
-            const speech = `Etapa 13: ${nextStage.name}.${s13.prompt}`;
-            console.log(`[advance] Stage 13 guided entry: pending=${s13.newAttrs.pending}`);
+            const stageNum = updatedBatch.currentStageId;
+            const speech = `Etapa ${stageNum}: ${nextStage?.name || ''}.${s13.prompt}`;
+            console.log(`[advance] Initial-pH stage ${stageNum} guided entry: pending=${s13.newAttrs.pending}`);
             return { speech, shouldEndSession: false, sessionAttrsOverride: s13.newAttrs };
           }
         }
@@ -1086,8 +1088,8 @@ export async function registerRoutes(
         }
         
         if (numberType === "ph_value") {
-          if (activeBatch.currentStageId === 15) {
-            console.log(`[log_number] Redirecting pH registration at stage 15`);
+          if (isLoopPhStage(activeBatch)) {
+            console.log(`[log_number] Redirecting pH registration at loop-pH stage ${activeBatch.currentStageId}`);
             return { speech: "Na etapa de viradas, diga: 'pH cinco vírgula dois'.", shouldEndSession: false };
           }
           const result = await batchService.logPh(activeBatch.id, numberValue);
@@ -1272,8 +1274,20 @@ export async function registerRoutes(
     return batch;
   }
 
+  // --- Recipe-agnostic stage-type helpers ---
+  function isInitialPhStage(batch: any): boolean {
+    const stage = getRecipeForBatch(batch).getStage(batch.currentStageId);
+    return !!(stage?.stored_values?.includes('initial_ph'));
+  }
+
+  function isLoopPhStage(batch: any): boolean {
+    const rm = getRecipeForBatch(batch);
+    const stage = rm.getStage(batch.currentStageId);
+    return rm.isLoopStage(batch.currentStageId) && !!(stage?.loop_actions?.includes('medir_ph'));
+  }
+
   function getStage13EntryPrompt(batch: any, sessionAttrs: Record<string, any>): { prompt: string; reprompt: string; newAttrs: Record<string, any> } | null {
-    if (batch.currentStageId !== 13) return null;
+    if (!isInitialPhStage(batch)) return null;
     const measurements = (batch.measurements as any) || {};
     const existingPh = measurements.initial_ph;
     const existingPieces = measurements.pieces_quantity;
@@ -1282,14 +1296,14 @@ export async function registerRoutes(
       return {
         prompt: " Qual é o pH inicial? Diga, por exemplo: 'pH cinco vírgula dois'.",
         reprompt: "Qual o pH inicial?",
-        newAttrs: { ...sessionAttrs, pending: "STAGE13_PH" },
+        newAttrs: { ...sessionAttrs, pending: "STAGE13_PH", pendingStageId: batch.currentStageId },
       };
     }
     if (existingPieces === undefined) {
       return {
         prompt: ` pH ${existingPh} já registrado. Quantas peças foram enformadas? Diga, por exemplo: 'doze peças'.`,
         reprompt: "Quantas peças?",
-        newAttrs: { ...sessionAttrs, pending: "STAGE13_PIECES" },
+        newAttrs: { ...sessionAttrs, pending: "STAGE13_PIECES", pendingStageId: batch.currentStageId },
       };
     }
     return null;
@@ -1318,7 +1332,7 @@ export async function registerRoutes(
   }
 
   function buildStage15Context(batch: any): string {
-    if (batch.currentStageId !== 15) return '';
+    if (!isLoopPhStage(batch)) return '';
     
     const parts: string[] = [];
     const turningCycles = (batch as any).turningCyclesCount || 0;
@@ -1334,7 +1348,8 @@ export async function registerRoutes(
     }
     
     const activeTimers = (batch.activeTimers as any[]) || [];
-    const stage15Timer = activeTimers.find((t: any) => t.stageId === 15);
+    const loopStageId = batch.currentStageId;
+    const stage15Timer = activeTimers.find((t: any) => t.stageId === loopStageId);
     if (stage15Timer?.endTime) {
       const remainingMs = new Date(stage15Timer.endTime).getTime() - Date.now();
       if (remainingMs > 0) {
@@ -1378,26 +1393,24 @@ export async function registerRoutes(
       let baseAttrs: Record<string, any> = { ...sessionAttrs, activeBatchId: b.batchId, state: undefined, batchChoices: undefined };
       let reprompt = "O que deseja fazer?";
 
-      if (b.currentStageId === 15) {
-        const fullBatch = await batchService.getBatch(b.batchId);
-        if (fullBatch) stageCtx = buildStage15Context(fullBatch);
+      const fullBatchMenu = await batchService.getBatch(b.batchId);
+      if (fullBatchMenu && isLoopPhStage(fullBatchMenu)) {
+        stageCtx = buildStage15Context(fullBatchMenu);
         reprompt = "Informe o pH ou diga 'qual é o status'.";
-      } else if (b.currentStageId === 13) {
-        const fullBatch = await batchService.getBatch(b.batchId);
-        if (fullBatch) {
-          const s13 = getStage13EntryPrompt(fullBatch, baseAttrs);
+      } else if (fullBatchMenu && isInitialPhStage(fullBatchMenu)) {
+        {
+          const s13 = getStage13EntryPrompt(fullBatchMenu, baseAttrs);
           if (s13) {
             stageCtx = s13.prompt;
             baseAttrs = s13.newAttrs;
             reprompt = s13.reprompt;
-            console.log(`[BATCH_MENU] Single batch stage 13 guided entry: pending=${s13.newAttrs.pending}`);
+            console.log(`[BATCH_MENU] Single batch initial-pH stage ${b.currentStageId} guided entry: pending=${s13.newAttrs.pending}`);
           }
         }
       } else {
-        const fullBatch = await batchService.getBatch(b.batchId);
-        if (fullBatch) {
-          const stage = getRecipeForBatch(fullBatch).getStage(b.currentStageId);
-          stageCtx = buildStageGuidance(fullBatch, stage);
+        if (fullBatchMenu) {
+          const stage = getRecipeForBatch(fullBatchMenu).getStage(b.currentStageId);
+          stageCtx = buildStageGuidance(fullBatchMenu, stage);
           if (stage?.operator_input_required?.length > 0) {
             reprompt = "Diga o valor solicitado ou 'qual é o status'.";
           } else {
@@ -1497,7 +1510,7 @@ export async function registerRoutes(
               const stage = rm.getStage(batch.currentStageId);
               const recipeName = (batch as any).recipeName || rm.getRecipeName();
               let stageCtx = '';
-              if (batch.currentStageId === 15) {
+              if (isLoopPhStage(batch)) {
                 stageCtx = buildStage15Context(batch);
               }
               const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${stageCtx} Continuar ou trocar de lote?`;
@@ -1549,7 +1562,7 @@ export async function registerRoutes(
 
               const repromptText = intervalMinutes > 0
                 ? "Diga 'continuar' quando terminar a etapa."
-                : (batch.currentStageId === 15 ? "Informe o pH ou diga 'continuar'." : "Diga 'continuar' ou 'trocar lote'.");
+                : (isLoopPhStage(batch) ? "Informe o pH ou diga 'continuar'." : "Diga 'continuar' ou 'trocar lote'.");
               return res.status(200).json(buildAlexaResponse(
                 speechText,
                 false,
@@ -1603,28 +1616,30 @@ export async function registerRoutes(
             console.log(`[${intentName}] Continuing with batch=${activeBatch.id} stage=${activeBatch.currentStageId}`);
             const baseAttrs = { ...sessionAttributes, activeBatchId: activeBatch.id, state: undefined };
 
-            if (activeBatch.currentStageId === 13) {
+            if (isInitialPhStage(activeBatch)) {
               const s13 = getStage13EntryPrompt(activeBatch, baseAttrs);
               if (s13) {
-                const stage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
-                const speech = `Continuando o lote. Etapa 13: ${stage?.name || 'Medir pH inicial e registrar quantidade de peças'}.${s13.prompt}`;
-                console.log(`[${intentName}] Stage 13 guided entry: pending=${s13.newAttrs.pending}`);
+                const stageNum = activeBatch.currentStageId;
+                const stage = getRecipeForBatch(activeBatch).getStage(stageNum);
+                const speech = `Continuando o lote. Etapa ${stageNum}: ${stage?.name || 'Medir pH inicial e registrar quantidade de peças'}.${s13.prompt}`;
+                console.log(`[${intentName}] Initial-pH stage ${stageNum} guided entry: pending=${s13.newAttrs.pending}`);
                 return res.status(200).json(buildAlexaResponse(speech, false, s13.reprompt, s13.newAttrs));
               }
             }
 
             const stage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
 
-            if (activeBatch.currentStageId === 15) {
+            if (isLoopPhStage(activeBatch)) {
               const stageCtx = buildStage15Context(activeBatch);
-              const speech = `Continuando o lote. Etapa 15: ${stage?.name || 'Virar queijos e medir pH'}.${stageCtx}`;
-              console.log(`[${intentName}] Stage 15 guidance with timer context`);
+              const stageNum = activeBatch.currentStageId;
+              const speech = `Continuando o lote. Etapa ${stageNum}: ${stage?.name || 'Virar queijos e medir pH'}.${stageCtx}`;
+              console.log(`[${intentName}] Loop-pH stage ${stageNum} guidance with timer context`);
               return res.status(200).json(buildAlexaResponse(
                 speech, false, "Informe o pH ou diga 'qual é o status'.", baseAttrs
               ));
             }
 
-            if (activeBatch.currentStageId !== 15) {
+            if (!isLoopPhStage(activeBatch)) {
               const ctx = buildStageGuidance(activeBatch, stage);
               if (ctx) {
                 const repromptText = stage?.operator_input_required?.length > 0
@@ -1701,26 +1716,24 @@ export async function registerRoutes(
           let finalAttrs = newSessionAttrs;
           let repromptText = "O que deseja fazer?";
 
-          if (selected.currentStageId === 15) {
-            const fullBatch = await batchService.getBatch(selected.batchId);
-            if (fullBatch) stageCtx = buildStage15Context(fullBatch);
+          const fullBatchForCtx = await batchService.getBatch(selected.batchId);
+          if (fullBatchForCtx && isLoopPhStage(fullBatchForCtx)) {
+            stageCtx = buildStage15Context(fullBatchForCtx);
             repromptText = "Informe o pH ou diga 'qual é o status'.";
-          } else if (selected.currentStageId === 13) {
-            const fullBatch = await batchService.getBatch(selected.batchId);
-            if (fullBatch) {
-              const s13 = getStage13EntryPrompt(fullBatch, newSessionAttrs);
+          } else if (fullBatchForCtx && isInitialPhStage(fullBatchForCtx)) {
+            {
+              const s13 = getStage13EntryPrompt(fullBatchForCtx, newSessionAttrs);
               if (s13) {
                 stageCtx = s13.prompt;
                 finalAttrs = s13.newAttrs;
                 repromptText = s13.reprompt;
-                console.log(`[BATCH_SELECT] Stage 13 guided entry: pending=${s13.newAttrs.pending}`);
+                console.log(`[BATCH_SELECT] Initial-pH stage ${selected.currentStageId} guided entry: pending=${s13.newAttrs.pending}`);
               }
             }
           } else {
-            const fullBatch = await batchService.getBatch(selected.batchId);
-            if (fullBatch) {
-              const stage = getRecipeForBatch(fullBatch).getStage(selected.currentStageId);
-              stageCtx = buildStageGuidance(fullBatch, stage);
+            if (fullBatchForCtx) {
+              const stage = getRecipeForBatch(fullBatchForCtx).getStage(selected.currentStageId);
+              stageCtx = buildStageGuidance(fullBatchForCtx, stage);
               if (stage?.operator_input_required?.length > 0) {
                 repromptText = "Diga o valor solicitado ou 'qual é o status'.";
               } else {
@@ -1836,13 +1849,13 @@ export async function registerRoutes(
             "STAGE13_PH": {
               expected: "RegisterPHAndPiecesIntent",
               alternates: ["ProcessCommandIntent"],
-              prompt: "Estamos registrando dados da etapa 13. Diga o pH inicial. Por exemplo: 'pH cinco vírgula dois'.",
+              prompt: `Estamos registrando dados da etapa ${sessionAttributes?.pendingStageId ?? 'atual'}. Diga o pH inicial. Por exemplo: 'pH cinco vírgula dois'.`,
               reprompt: "Qual o pH inicial?"
             },
             "STAGE13_PIECES": {
               expected: "RegisterPHAndPiecesIntent",
               alternates: ["ProcessCommandIntent"],
-              prompt: "Estamos registrando dados da etapa 13. Quantas peças foram enformadas? Diga, por exemplo: 'doze peças'.",
+              prompt: `Estamos registrando dados da etapa ${sessionAttributes?.pendingStageId ?? 'atual'}. Quantas peças foram enformadas? Diga, por exemplo: 'doze peças'.`,
               reprompt: "Quantas peças?"
             }
           };
@@ -2290,11 +2303,12 @@ export async function registerRoutes(
           }
           
           // ============================================
-          // STAGE 13: pH inicial + quantidade de peças
+          // INITIAL-PH STAGE: pH inicial + quantidade de peças (Nete:13, Nina:18)
           // Multi-turn guided flow using pending states
           // ============================================
-          if (stageId === 13) {
-            console.log(`[Stage 13] Processing pH and pieces registration. pending=${sessionAttributes?.pending}`);
+          const isInitialPhStageFlag = !!(getRecipeForBatch(activeBatch).getStage(stageId)?.stored_values?.includes('initial_ph'));
+          if (isInitialPhStageFlag) {
+            console.log(`[Stage ${stageId}] Processing pH and pieces registration. pending=${sessionAttributes?.pending}`);
             
             const measurements = (activeBatch.measurements as Record<string, any>) || {};
             const existingPh = measurements["initial_ph"];
@@ -2476,11 +2490,12 @@ export async function registerRoutes(
           }
           
           // ============================================
-          // STAGE 15: Loop de viradas - só pH (ignora peças)
+          // LOOP-PH STAGE: Viradas — só pH (Nete:15, Nina:20)
           // Uses centralized batchService.logPh()
           // ============================================
-          if (stageId === 15) {
-            console.log(`[Stage 15] Processing pH for turning loop`);
+          const isLoopPhStageFlag = getRecipeForBatch(activeBatch).isLoopStage(stageId) && !!(getRecipeForBatch(activeBatch).getStage(stageId)?.loop_actions?.includes('medir_ph'));
+          if (isLoopPhStageFlag) {
+            console.log(`[Stage ${stageId}] Processing pH for turning loop`);
             
             // Step 1: If no pH provided, elicit it
             if (phValue === undefined) {
