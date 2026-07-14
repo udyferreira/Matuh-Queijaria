@@ -435,11 +435,48 @@ export default function BatchDetail() {
                                {isLoopPhStage ? "Registrar pH" : "Registrar e Avançar"}
                              </Button>
                            </div>
-                           {isLoopPhStage && (
-                             <div className="text-sm text-muted-foreground mt-2">
-                               Registre o pH {loopIntervalText}. Quando o pH ficar abaixo de 5.3, clique em "Concluir Etapa" abaixo.
-                             </div>
-                           )}
+                           {isLoopPhStage && (() => {
+                             const m = batch.measurements as Record<string, any> || {};
+                             const history: Array<{key: string; value: any; stageId: number; timestamp: string}> = m._history || [];
+                             const phEntries = history.filter(e => e.stageId === batch.currentStageId && e.key === 'ph_value').sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                             const lastEntry = phEntries[0];
+                             const fmtDt = (iso: string) => {
+                               try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(iso)); } catch { return iso; }
+                             };
+                             const intervalMs = (() => {
+                               const t = stageInfo?.timer;
+                               if (!t) return 90 * 60000;
+                               if (t.intervalHours) return t.intervalHours * 3600000;
+                               if (t.intervalMin) return t.intervalMin * 60000;
+                               return 90 * 60000;
+                             })();
+                             const nextTime = lastEntry?.timestamp ? new Date(new Date(lastEntry.timestamp).getTime() + intervalMs) : null;
+                             const isPastDue = nextTime ? nextTime <= new Date() : false;
+
+                             return (
+                               <div className="space-y-2 mt-2">
+                                 <div className="text-sm text-muted-foreground">
+                                   Registre o pH {loopIntervalText}. Quando o pH ficar abaixo de 5.3, clique em "Concluir Etapa" abaixo.
+                                 </div>
+                                 <div className="grid grid-cols-2 gap-2 mt-2">
+                                   <div className="bg-muted/30 border border-border/50 rounded-lg p-2 text-center">
+                                     <div className="text-xs text-muted-foreground mb-1">Último registro</div>
+                                     <div className="font-mono text-sm font-bold" data-testid="text-last-ph-time">
+                                       {lastEntry ? fmtDt(lastEntry.timestamp) : <span className="italic text-muted-foreground">Nenhum</span>}
+                                     </div>
+                                     {lastEntry && <div className="text-xs text-primary mt-0.5">pH {lastEntry.value}</div>}
+                                   </div>
+                                   <div className={`border rounded-lg p-2 text-center ${isPastDue ? 'bg-amber-400/10 border-amber-400/30' : 'bg-muted/30 border-border/50'}`}>
+                                     <div className="text-xs text-muted-foreground mb-1">Próxima medição</div>
+                                     <div className={`font-mono text-sm font-bold ${isPastDue ? 'text-amber-400' : ''}`} data-testid="text-next-ph-time">
+                                       {nextTime ? fmtDt(nextTime.toISOString()) : <span className="italic text-muted-foreground">—</span>}
+                                     </div>
+                                     {isPastDue && <div className="text-xs text-amber-400 mt-0.5">Hora de medir!</div>}
+                                   </div>
+                                 </div>
+                               </div>
+                             );
+                           })()}
                            {isTimerStage && currentStageTimer && !isBlockingTimer && (
                              <div className="mt-4">
                                <TimerWidget 

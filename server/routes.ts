@@ -925,10 +925,12 @@ export async function registerRoutes(
         const milkPh = command.entities.ph_value;
         
         if (milkVolume === undefined || milkVolume === null) {
+          // No volume — start guided flow asking for recipe first
           return {
-            speech: "Para iniciar um novo lote, diga a quantidade de leite em litros. Por exemplo: 'novo lote com 130 litros'.",
-            shouldEndSession: false
-          };
+            speech: `_GUIDED_START_BATCH_`,
+            shouldEndSession: false,
+            guidedDraft: {}
+          } as any;
         }
         
         if (milkTemperature !== undefined && milkTemperature !== null &&
@@ -1807,6 +1809,15 @@ export async function registerRoutes(
               sessionAttributes
             ));
           }
+          if (sessionAttributes?.pending === "START_BATCH_VOLUME") {
+            console.log(`[FallbackIntent] In START_BATCH_VOLUME state, re-prompting for volume`);
+            return res.status(200).json(buildAlexaResponse(
+              "Não entendi. Qual o volume de leite em litros? Por exemplo: 'cento e trinta litros'.",
+              false,
+              "Diga o volume em litros.",
+              sessionAttributes
+            ));
+          }
           if (sessionAttributes?.pending === "STAGE13_PH") {
             console.log(`[FallbackIntent] In STAGE13_PH state, re-prompting for pH`);
             return res.status(200).json(buildAlexaResponse(
@@ -1853,13 +1864,19 @@ export async function registerRoutes(
         // === GUIDED PENDING STATE GUARD ===
         // During multi-turn flows, block all intents except the expected one
         const pendingState = sessionAttributes?.pending;
-        if (pendingState === "START_BATCH_TEMP" || pendingState === "START_BATCH_PH" || pendingState === "START_BATCH_RECIPE" || pendingState === "STAGE13_PH" || pendingState === "STAGE13_PIECES") {
+        if (pendingState === "START_BATCH_VOLUME" || pendingState === "START_BATCH_TEMP" || pendingState === "START_BATCH_PH" || pendingState === "START_BATCH_RECIPE" || pendingState === "STAGE13_PH" || pendingState === "STAGE13_PIECES") {
           const pendingConfig: Record<string, { expected: string; alternates: string[]; prompt: string; reprompt: string }> = {
             "START_BATCH_RECIPE": {
               expected: "ProcessCommandIntent",
               alternates: [],
               prompt: "Para qual receita? Diga 'Nete' para Queijo Nete ou 'Nina' para Queijo Nina.",
               reprompt: "Diga 'Nete' ou 'Nina'."
+            },
+            "START_BATCH_VOLUME": {
+              expected: "ProcessCommandIntent",
+              alternates: [],
+              prompt: "Qual o volume de leite em litros? Por exemplo: 'cento e trinta litros'.",
+              reprompt: "Diga o volume em litros."
             },
             "START_BATCH_TEMP": {
               expected: "RegisterMilkTemperatureIntent",
@@ -2933,7 +2950,7 @@ export async function registerRoutes(
             milkVolumeL: draft.milk_volume_l,
             milkTemperatureC: draft.milk_temperature_c,
             milkPh: draft.milk_ph,
-            recipeId: "QUEIJO_NETE"
+            recipeId: draft.recipe_id || "QUEIJO_NETE"
           });
           
           if (!result.success) {
@@ -2945,7 +2962,7 @@ export async function registerRoutes(
           // Persist active batch for user
           if (userId && result.batch?.id) {
             await storage.setLastActiveBatch(userId, result.batch.id);
-            console.log(`[RegisterMilkPHIntent] Persisted activeBatch=${result.batch.id} for user`);
+            console.log(`[RegisterMilkPHIntent] Persisted activeBatch=${result.batch.id} for user recipe=${draft.recipe_id || 'QUEIJO_NETE'}`);
           }
           
           // Clear guided flow state
@@ -2990,6 +3007,34 @@ export async function registerRoutes(
           
           // Note: Time registration now uses LogTimeIntent exclusively
           
+          // Handle START_BATCH_VOLUME pending state: extract volume from utterance "130 litros"
+          if (sessionAttributes?.pending === "START_BATCH_VOLUME") {
+            const draft = sessionAttributes.startBatchDraft || {};
+            // Extract number from utterance (e.g. "cento e trinta litros" → 130, "130 litros" → 130)
+            const volumeMatch = utterance.match(/(\d+(?:[.,]\d+)?)\s*litros?/i);
+            const volumeValue = volumeMatch ? parseFloat(volumeMatch[1].replace(',', '.')) : NaN;
+            
+            if (isNaN(volumeValue) || volumeValue <= 0 || volumeValue > 10000) {
+              console.log(`[ProcessCommandIntent] START_BATCH_VOLUME: invalid volume in "${utterance}"`);
+              return res.status(200).json(buildAlexaResponse(
+                "Não entendi o volume. Diga a quantidade em litros. Por exemplo: 'cento e trinta litros'.",
+                false,
+                "Diga o volume em litros.",
+                sessionAttributes
+              ));
+            }
+            
+            draft.milk_volume_l = volumeValue;
+            const newAttrs = { ...sessionAttributes, startBatchDraft: draft, pending: "START_BATCH_TEMP" };
+            console.log(`[ProcessCommandIntent] START_BATCH_VOLUME: volume=${volumeValue}L captured. Asking for temperature.`);
+            return res.status(200).json(buildAlexaResponse(
+              `Perfeito, ${volumeValue} litros. Qual a temperatura do leite?`,
+              false,
+              "Diga a temperatura, por exemplo: '32 graus'.",
+              newAttrs
+            ));
+          }
+
           // Handle START_BATCH_RECIPE pending state: extract "nete" or "nina" from utterance
           if (sessionAttributes?.pending === "START_BATCH_RECIPE") {
             const lower = utterance.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -3010,8 +3055,20 @@ export async function registerRoutes(
             const draft = sessionAttributes.startBatchDraft || {};
             draft.recipe_id = chosenRecipeId;
             const recipeName = chosenRecipeId === "QUEIJO_NINA" ? "Nina" : "Nete";
+            console.log(`[ProcessCommandIntent] START_BATCH_RECIPE: selected recipeId=${chosenRecipeId}, volumeInDraft=${draft.milk_volume_l}`);
+            
+            // If volume was not yet captured (user said "novo lote" without litres), ask for it now
+            if (draft.milk_volume_l === undefined || draft.milk_volume_l === null) {
+              const newAttrs = { ...sessionAttributes, startBatchDraft: draft, pending: "START_BATCH_VOLUME" };
+              return res.status(200).json(buildAlexaResponse(
+                `Perfeito, Queijo ${recipeName}. Qual o volume de leite em litros?`,
+                false,
+                "Diga o volume em litros, por exemplo: 'cento e trinta litros'.",
+                newAttrs
+              ));
+            }
+            
             const newAttrs = { ...sessionAttributes, startBatchDraft: draft, pending: "START_BATCH_TEMP" };
-            console.log(`[ProcessCommandIntent] START_BATCH_RECIPE: selected recipeId=${chosenRecipeId}`);
             return res.status(200).json(buildAlexaResponse(
               `Perfeito, Queijo ${recipeName}. Qual a temperatura do leite?`,
               false,
