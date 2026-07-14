@@ -474,13 +474,18 @@ function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionB
 
 // ─── KPI utilities ───────────────────────────────────────────────────────────
 
+type RecipeKpi = { batches: number; pecas: number; leite: number };
+
 type MonthKpi = {
   key: string;
   label: string;
-  batches: number;
-  pecas: number;
-  leite: number;
+  nete: RecipeKpi;
+  nina: RecipeKpi;
 };
+
+function emptyRecipeKpi(): RecipeKpi {
+  return { batches: 0, pecas: 0, leite: 0 };
+}
 
 function computeKpiByMonth(batches: ProductionBatch[]): MonthKpi[] {
   const monthMap = new Map<string, MonthKpi>();
@@ -492,20 +497,20 @@ function computeKpiByMonth(batches: ProductionBatch[]): MonthKpi[] {
     const label = d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 
     if (!monthMap.has(key)) {
-      monthMap.set(key, { key, label, batches: 0, pecas: 0, leite: 0 });
+      monthMap.set(key, { key, label, nete: emptyRecipeKpi(), nina: emptyRecipeKpi() });
     }
 
     const entry = monthMap.get(key)!;
-    entry.batches += 1;
+    const target = (batch as any).recipeId === "QUEIJO_NINA" ? entry.nina : entry.nete;
 
+    target.batches += 1;
     const measurements = (batch.measurements as Record<string, any>) || {};
     const piecesRaw = measurements.pieces_quantity;
     if (piecesRaw != null && !isNaN(Number(piecesRaw))) {
-      entry.pecas += Number(piecesRaw);
+      target.pecas += Number(piecesRaw);
     }
-
     if (batch.milkVolumeL) {
-      entry.leite += Number(batch.milkVolumeL);
+      target.leite += Number(batch.milkVolumeL);
     }
   }
 
@@ -519,13 +524,14 @@ function currentMonthKey(): string {
 
 // ─── Fermentos 2026 ───────────────────────────────────────────────────────────
 
+interface NeteFermentos { lr: number; dx: number; kl: number; rennet: number }
+interface NinaFermentos { dx: number; ht: number; rennet: number }
+
 interface MonthFermentos {
   key: string;
   label: string;
-  lr: number;
-  dx: number;
-  kl: number;
-  rennet: number;
+  nete: NeteFermentos;
+  nina: NinaFermentos;
 }
 
 function computeFermentosByMonth(batches: ProductionBatch[]): MonthFermentos[] {
@@ -540,16 +546,27 @@ function computeFermentosByMonth(batches: ProductionBatch[]): MonthFermentos[] {
     const label = d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 
     if (!monthMap.has(key)) {
-      monthMap.set(key, { key, label, lr: 0, dx: 0, kl: 0, rennet: 0 });
+      monthMap.set(key, {
+        key, label,
+        nete: { lr: 0, dx: 0, kl: 0, rennet: 0 },
+        nina: { dx: 0, ht: 0, rennet: 0 },
+      });
     }
 
     const entry = monthMap.get(key)!;
     const ci = (batch.calculatedInputs as Record<string, any>) || {};
+    const isNina = (batch as any).recipeId === "QUEIJO_NINA";
 
-    entry.lr     += Number(ci["FERMENT_LR"] ?? 0);
-    entry.dx     += Number(ci["FERMENT_DX"] ?? 0);
-    entry.kl     += Number(ci["FERMENT_KL"] ?? 0);
-    entry.rennet += Number(ci["RENNET"]      ?? 0);
+    if (isNina) {
+      entry.nina.dx     += Number(ci["FERMENT_DX"] ?? 0);
+      entry.nina.ht     += Number(ci["FERMENT_HT"] ?? 0);
+      entry.nina.rennet += Number(ci["RENNET"]      ?? 0);
+    } else {
+      entry.nete.lr     += Number(ci["FERMENT_LR"] ?? 0);
+      entry.nete.dx     += Number(ci["FERMENT_DX"] ?? 0);
+      entry.nete.kl     += Number(ci["FERMENT_KL"] ?? 0);
+      entry.nete.rennet += Number(ci["RENNET"]      ?? 0);
+    }
   }
 
   return Array.from(monthMap.values()).sort((a, b) => a.key.localeCompare(b.key));
@@ -569,17 +586,14 @@ function FermentosCard({ batches, forceExpanded }: { batches: ProductionBatch[];
     if (forceExpanded !== undefined) setExpanded(forceExpanded);
   }, [forceExpanded]);
 
-  const totals = months.reduce(
-    (acc, m) => ({ lr: acc.lr + m.lr, dx: acc.dx + m.dx, kl: acc.kl + m.kl, rennet: acc.rennet + m.rennet }),
+  const totNete = months.reduce(
+    (acc, m) => ({ lr: acc.lr + m.nete.lr, dx: acc.dx + m.nete.dx, kl: acc.kl + m.nete.kl, rennet: acc.rennet + m.nete.rennet }),
     { lr: 0, dx: 0, kl: 0, rennet: 0 }
   );
-
-  const fermentos = [
-    { label: "LR",     value: totals.lr,     testId: "lr" },
-    { label: "DX",     value: totals.dx,     testId: "dx" },
-    { label: "KL",     value: totals.kl,     testId: "kl" },
-    { label: "Coalho", value: totals.rennet, testId: "coalho" },
-  ];
+  const totNina = months.reduce(
+    (acc, m) => ({ dx: acc.dx + m.nina.dx, ht: acc.ht + m.nina.ht, rennet: acc.rennet + m.nina.rennet }),
+    { dx: 0, ht: 0, rennet: 0 }
+  );
 
   return (
     <Card
@@ -602,25 +616,47 @@ function FermentosCard({ batches, forceExpanded }: { batches: ProductionBatch[];
         </div>
       </CardHeader>
       <CardContent>
-        {/* Acumulado anual */}
-        <div className="grid grid-cols-4 gap-2 mb-3" data-testid="fermentos-totais">
-          {fermentos.map((f) => (
-            <div key={f.testId} className="text-center" data-testid={`value-kpi-fermentos-${f.testId}`}>
-              <p className="text-base font-bold text-foreground tracking-wide">{f.label}</p>
-              <p className="text-xl font-bold tracking-tight text-foreground">
-                {fmtMl(f.value)} <span className="text-sm font-normal text-muted-foreground">mL</span>
-              </p>
+        <div className="grid grid-cols-2 gap-4" data-testid="fermentos-totais">
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Nete</p>
+            <div className="grid grid-cols-4 gap-1">
+              {([ 
+                { label: "LR",     value: totNete.lr,     id: "nete-lr" },
+                { label: "DX",     value: totNete.dx,     id: "nete-dx" },
+                { label: "KL",     value: totNete.kl,     id: "nete-kl" },
+                { label: "Coalho", value: totNete.rennet, id: "nete-coalho" },
+              ] as const).map((f) => (
+                <div key={f.id} className="text-center" data-testid={`value-kpi-fermentos-${f.id}`}>
+                  <p className="text-xs font-bold text-muted-foreground">{f.label}</p>
+                  <p className="text-base font-bold tracking-tight text-foreground">{fmtMl(f.value)}</p>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Nina</p>
+            <div className="grid grid-cols-3 gap-1">
+              {([
+                { label: "DX",     value: totNina.dx,     id: "nina-dx" },
+                { label: "HT",     value: totNina.ht,     id: "nina-ht" },
+                { label: "Coalho", value: totNina.rennet, id: "nina-coalho" },
+              ] as const).map((f) => (
+                <div key={f.id} className="text-center" data-testid={`value-kpi-fermentos-${f.id}`}>
+                  <p className="text-xs font-bold text-muted-foreground">{f.label}</p>
+                  <p className="text-base font-bold tracking-tight text-foreground">{fmtMl(f.value)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
+        <p className="text-xs text-muted-foreground mt-1">mL — acumulado anual</p>
 
-        {/* Detalhamento mensal */}
         {expanded && months.length > 0 && (
           <div
-            className="border-t border-border pt-3 mt-2"
+            className="border-t border-border pt-3 mt-3"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Cabeçalho da tabela */}
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Nete</p>
             <div className="grid grid-cols-5 text-xs text-muted-foreground font-medium px-2 pb-1">
               <span>Mês</span>
               <span className="text-right">LR</span>
@@ -628,20 +664,39 @@ function FermentosCard({ batches, forceExpanded }: { batches: ProductionBatch[];
               <span className="text-right">KL</span>
               <span className="text-right">Coalho</span>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 mb-3">
               {months.map((m) => (
                 <div
                   key={m.key}
                   className="grid grid-cols-5 text-sm px-2 py-1 rounded bg-secondary/30"
-                  data-testid={`row-kpi-fermentos-${m.key}`}
+                  data-testid={`row-kpi-fermentos-nete-${m.key}`}
                 >
-                  <span className="text-muted-foreground">
-                    {m.label.charAt(0).toUpperCase() + m.label.slice(1)}
-                  </span>
-                  <span className="text-right font-medium">{fmtMl(m.lr)}</span>
-                  <span className="text-right font-medium">{fmtMl(m.dx)}</span>
-                  <span className="text-right font-medium">{fmtMl(m.kl)}</span>
-                  <span className="text-right font-medium">{fmtMl(m.rennet)}</span>
+                  <span className="text-muted-foreground">{m.label.charAt(0).toUpperCase() + m.label.slice(1)}</span>
+                  <span className="text-right font-medium">{fmtMl(m.nete.lr)}</span>
+                  <span className="text-right font-medium">{fmtMl(m.nete.dx)}</span>
+                  <span className="text-right font-medium">{fmtMl(m.nete.kl)}</span>
+                  <span className="text-right font-medium">{fmtMl(m.nete.rennet)}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Nina</p>
+            <div className="grid grid-cols-4 text-xs text-muted-foreground font-medium px-2 pb-1">
+              <span>Mês</span>
+              <span className="text-right">DX</span>
+              <span className="text-right">HT</span>
+              <span className="text-right">Coalho</span>
+            </div>
+            <div className="space-y-1">
+              {months.map((m) => (
+                <div
+                  key={m.key}
+                  className="grid grid-cols-4 text-sm px-2 py-1 rounded bg-secondary/30"
+                  data-testid={`row-kpi-fermentos-nina-${m.key}`}
+                >
+                  <span className="text-muted-foreground">{m.label.charAt(0).toUpperCase() + m.label.slice(1)}</span>
+                  <span className="text-right font-medium">{fmtMl(m.nina.dx)}</span>
+                  <span className="text-right font-medium">{fmtMl(m.nina.ht)}</span>
+                  <span className="text-right font-medium">{fmtMl(m.nina.rennet)}</span>
                 </div>
               ))}
             </div>
@@ -657,22 +712,28 @@ function FermentosCard({ batches, forceExpanded }: { batches: ProductionBatch[];
 interface KpiCardProps {
   title: string;
   icon: React.ReactNode;
-  currentValue: string;
+  curNete: string;
+  curNina: string;
   unit?: string;
+  curLabel: string;
   months: MonthKpi[];
-  getValue: (m: MonthKpi) => number | string;
-  formatValue?: (v: number) => string;
+  getNete: (m: MonthKpi) => number;
+  getNina: (m: MonthKpi) => number;
+  fmt?: (v: number) => string;
   testId: string;
   forceExpanded?: boolean;
 }
 
-function KpiCard({ title, icon, currentValue, unit, months, getValue, testId, forceExpanded }: KpiCardProps) {
+function KpiCard({ title, icon, curNete, curNina, unit, curLabel, months, getNete, getNina, fmt, testId, forceExpanded }: KpiCardProps) {
   const [expanded, setExpanded] = useState(false);
   const priorMonths = months.slice(1);
 
   useEffect(() => {
     if (forceExpanded !== undefined) setExpanded(forceExpanded);
   }, [forceExpanded]);
+
+  const fmtVal = (v: number) => fmt ? fmt(v) : String(v);
+  const unitStr = unit ? ` ${unit}` : "";
 
   return (
     <Card
@@ -695,14 +756,28 @@ function KpiCard({ title, icon, currentValue, unit, months, getValue, testId, fo
         </div>
       </CardHeader>
       <CardContent>
-        <div className="mb-1">
-          <span className="text-4xl font-bold tracking-tight text-foreground" data-testid={`value-kpi-${testId}`}>
-            {currentValue}
-          </span>
-          {unit && <span className="text-muted-foreground text-base ml-1">{unit}</span>}
+        <div className="grid grid-cols-2 gap-2 mb-1">
+          <div>
+            <p className="text-xs text-muted-foreground mb-0.5">Nete</p>
+            <div>
+              <span className="text-3xl font-bold tracking-tight text-foreground" data-testid={`value-kpi-${testId}-nete`}>
+                {curNete}
+              </span>
+              {unit && <span className="text-muted-foreground text-sm ml-1">{unit}</span>}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-0.5">Nina</p>
+            <div>
+              <span className="text-3xl font-bold tracking-tight text-foreground" data-testid={`value-kpi-${testId}-nina`}>
+                {curNina}
+              </span>
+              {unit && <span className="text-muted-foreground text-sm ml-1">{unit}</span>}
+            </div>
+          </div>
         </div>
         <p className="text-xs text-muted-foreground mb-3">
-          {months[0]?.label ?? "mês corrente"}
+          {curLabel}
         </p>
 
         {expanded && priorMonths.length > 0 && (
@@ -710,17 +785,20 @@ function KpiCard({ title, icon, currentValue, unit, months, getValue, testId, fo
             className="border-t border-border pt-3 mt-2 space-y-1"
             onClick={(e) => e.stopPropagation()}
           >
+            <div className="grid grid-cols-3 text-xs text-muted-foreground font-medium px-2 pb-1">
+              <span>Mês</span>
+              <span className="text-right">Nete</span>
+              <span className="text-right">Nina</span>
+            </div>
             {priorMonths.map((m) => (
               <div
                 key={m.key}
-                className="flex justify-between items-center text-sm px-2 py-1 rounded bg-secondary/30"
+                className="grid grid-cols-3 text-sm px-2 py-1 rounded bg-secondary/30"
                 data-testid={`row-kpi-${testId}-${m.key}`}
               >
                 <span className="text-muted-foreground">{m.label.charAt(0).toUpperCase() + m.label.slice(1)}</span>
-                <span className="font-medium">
-                  {getValue(m)}
-                  {unit ? ` ${unit}` : ""}
-                </span>
+                <span className="text-right font-medium">{fmtVal(getNete(m))}{unitStr}</span>
+                <span className="text-right font-medium">{fmtVal(getNina(m))}{unitStr}</span>
               </div>
             ))}
           </div>
@@ -740,10 +818,11 @@ function KpiDashboard({ batches }: { batches: ProductionBatch[] }) {
 
   const sortedMonths =
     curMonthIdx === -1
-      ? [{ key: curKey, label: new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" }), batches: 0, pecas: 0, leite: 0 }, ...months]
+      ? [{ key: curKey, label: new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" }), nete: emptyRecipeKpi(), nina: emptyRecipeKpi() }, ...months]
       : [months[curMonthIdx], ...months.filter((_, i) => i !== curMonthIdx)];
 
   const cur = sortedMonths[0];
+  const fmtL = (v: number) => (v % 1 === 0 ? String(v) : v.toFixed(1));
 
   return (
     <div className="space-y-6">
@@ -761,28 +840,38 @@ function KpiDashboard({ batches }: { batches: ProductionBatch[] }) {
         <KpiCard
           title="Lotes"
           icon={<Layers className="w-4 h-4" />}
-          currentValue={String(cur.batches)}
+          curNete={String(cur.nete.batches)}
+          curNina={String(cur.nina.batches)}
+          curLabel={cur.label}
           months={sortedMonths}
-          getValue={(m) => m.batches}
+          getNete={(m) => m.nete.batches}
+          getNina={(m) => m.nina.batches}
           testId="lotes"
           forceExpanded={expandAll}
         />
         <KpiCard
           title="Peças"
           icon={<Package className="w-4 h-4" />}
-          currentValue={String(cur.pecas)}
+          curNete={String(cur.nete.pecas)}
+          curNina={String(cur.nina.pecas)}
+          curLabel={cur.label}
           months={sortedMonths}
-          getValue={(m) => m.pecas}
+          getNete={(m) => m.nete.pecas}
+          getNina={(m) => m.nina.pecas}
           testId="pecas"
           forceExpanded={expandAll}
         />
         <KpiCard
           title="Leite"
           icon={<Milk className="w-4 h-4" />}
-          currentValue={cur.leite % 1 === 0 ? String(cur.leite) : cur.leite.toFixed(1)}
+          curNete={fmtL(cur.nete.leite)}
+          curNina={fmtL(cur.nina.leite)}
           unit="L"
+          curLabel={cur.label}
           months={sortedMonths}
-          getValue={(m) => (m.leite % 1 === 0 ? m.leite : Number(m.leite.toFixed(1)))}
+          getNete={(m) => m.nete.leite}
+          getNina={(m) => m.nina.leite}
+          fmt={fmtL}
           testId="leite"
           forceExpanded={expandAll}
         />
