@@ -325,7 +325,11 @@ function formatDoseName(name: string): string {
     "FERMENT_LR": "fermento L R",
     "FERMENT_DX": "fermento D X", 
     "FERMENT_KL": "fermento K L",
+    "FERMENT_HT": "fermento H T",
     "RENNET": "coalho",
+    "SMALL_TANK_MILK": "leite para tanque pequeno",
+    "HOT_WATER": "água quente para semi-cozimento",
+    "WHEY_TO_REMOVE": "soro a retirar",
   };
   return nameMap[name] || name;
 }
@@ -588,10 +592,14 @@ export function buildStartBatchPayload(
   const calculatedInputs = batch.calculatedInputs || {};
   
   const doses: Record<string, DoseInfo> = {};
-  if (calculatedInputs.FERMENT_LR) doses["FERMENT_LR"] = { value: calculatedInputs.FERMENT_LR, unit: "ml" };
-  if (calculatedInputs.FERMENT_DX) doses["FERMENT_DX"] = { value: calculatedInputs.FERMENT_DX, unit: "ml" };
-  if (calculatedInputs.FERMENT_KL) doses["FERMENT_KL"] = { value: calculatedInputs.FERMENT_KL, unit: "ml" };
-  if (calculatedInputs.RENNET) doses["RENNET"] = { value: calculatedInputs.RENNET, unit: "ml" };
+  const fermentKeys = ["FERMENT_LR", "FERMENT_DX", "FERMENT_KL", "FERMENT_HT", "RENNET"];
+  for (const key of fermentKeys) {
+    if (calculatedInputs[key]) doses[key] = { value: calculatedInputs[key], unit: "ml" };
+  }
+  const derivedKeys = ["SMALL_TANK_MILK", "HOT_WATER", "WHEY_TO_REMOVE"];
+  for (const key of derivedKeys) {
+    if (calculatedInputs[key]) doses[key] = { value: calculatedInputs[key], unit: "L" };
+  }
   
   let instructions = currentStage.instructions || [];
   if (instructions.length === 0 && currentStage.type === 'heat' && currentStage.parameters?.target_temp_c) {
@@ -625,10 +633,14 @@ export function buildRepeatDosesPayload(
   const calculatedInputs = batch.calculatedInputs || {};
   
   const doses: Record<string, DoseInfo> = {};
-  if (calculatedInputs.FERMENT_LR) doses["FERMENT_LR"] = { value: calculatedInputs.FERMENT_LR, unit: "ml" };
-  if (calculatedInputs.FERMENT_DX) doses["FERMENT_DX"] = { value: calculatedInputs.FERMENT_DX, unit: "ml" };
-  if (calculatedInputs.FERMENT_KL) doses["FERMENT_KL"] = { value: calculatedInputs.FERMENT_KL, unit: "ml" };
-  if (calculatedInputs.RENNET) doses["RENNET"] = { value: calculatedInputs.RENNET, unit: "ml" };
+  const fermentKeys = ["FERMENT_LR", "FERMENT_DX", "FERMENT_KL", "FERMENT_HT", "RENNET"];
+  for (const key of fermentKeys) {
+    if (calculatedInputs[key]) doses[key] = { value: calculatedInputs[key], unit: "ml" };
+  }
+  const derivedKeys = ["SMALL_TANK_MILK", "HOT_WATER", "WHEY_TO_REMOVE"];
+  for (const key of derivedKeys) {
+    if (calculatedInputs[key]) doses[key] = { value: calculatedInputs[key], unit: "L" };
+  }
   
   return {
     context: "repeat_doses",
@@ -861,8 +873,20 @@ export function getRelevantDosesForStage(
   if (stageText.includes('kl') && calculatedInputs.FERMENT_KL) {
     doses["FERMENT_KL"] = { value: calculatedInputs.FERMENT_KL, unit: "ml" };
   }
+  if (stageText.includes('ht') && calculatedInputs.FERMENT_HT) {
+    doses["FERMENT_HT"] = { value: calculatedInputs.FERMENT_HT, unit: "ml" };
+  }
   if (stageText.includes('coalho') && calculatedInputs.RENNET) {
     doses["RENNET"] = { value: calculatedInputs.RENNET, unit: "ml" };
+  }
+  if ((stageText.includes('tanque pequeno') || stageText.includes('small_tank')) && calculatedInputs.SMALL_TANK_MILK) {
+    doses["SMALL_TANK_MILK"] = { value: calculatedInputs.SMALL_TANK_MILK, unit: "L" };
+  }
+  if ((stageText.includes('água quente') || stageText.includes('hot_water')) && calculatedInputs.HOT_WATER) {
+    doses["HOT_WATER"] = { value: calculatedInputs.HOT_WATER, unit: "L" };
+  }
+  if ((stageText.includes('soro') && stageText.includes('retirar')) && calculatedInputs.WHEY_TO_REMOVE) {
+    doses["WHEY_TO_REMOVE"] = { value: calculatedInputs.WHEY_TO_REMOVE, unit: "L" };
   }
   return doses;
 }

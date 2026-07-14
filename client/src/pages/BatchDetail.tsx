@@ -16,41 +16,6 @@ import { motion } from "framer-motion";
 import { getCheeseTypeName, formatBatchCode } from "@shared/schema";
 import { parseDateOnly } from "@/lib/utils";
 
-const STAGE_NAMES: Record<number, string> = {
-  1: "Separar o leite e medir parâmetros iniciais",
-  2: "Calcular fermentos e coalho",
-  3: "Aquecer o leite",
-  4: "Adicionar fermentos LR e DX",
-  5: "Adicionar fermento KL e coalho",
-  6: "Anotar horário de floculação",
-  7: "Anotar horário do ponto de corte",
-  8: "Corte da massa com a Lira",
-  9: "Corte complementar com espátula",
-  10: "Mexedura progressiva da massa",
-  11: "Enformagem com peneira e paninho",
-  12: "Dessoragem em mesa",
-  13: "Medir pH inicial e registrar quantidade de peças",
-  14: "Colocar na prensa",
-  15: "Virar queijos e medir pH",
-  16: "Transferir para câmara de secagem",
-  17: "Salga em tanque",
-  18: "Secagem em prateleiras",
-  19: "Transferir para Câmara 2 (início da maturação)",
-};
-
-const STAGE_INSTRUCTIONS: Record<number, string[]> = {
-  4: ["Adicione o fermento LR", "Adicione o fermento DX", "Mexa bem o leite", "Aguarde 30 minutos mexendo ocasionalmente"],
-  5: ["Adicione o fermento KL", "Adicione o coalho", "Mexa bem", "Coloque a Lira e aguarde floculação"],
-  10: ["Comece devagar e aumente o vigor progressivamente", "Aguarde 30 minutos de mexedura"],
-  17: ["Mergulhe os queijos no tanque de salmoura", "Tempo de salga: 8 horas"],
-};
-
-const TIMER_LABELS: Record<number, string> = {
-  4: "Maturação dos fermentos LR/DX",
-  10: "Mexedura progressiva",
-  17: "Salga em salmoura",
-};
-
 const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   active: { label: "Em Produção", variant: "default" },
   completed: { label: "Concluído", variant: "outline" },
@@ -94,18 +59,52 @@ export default function BatchDetail() {
     );
   }
 
+  const stageInfo = (batch as any).stageInfo;
+  const totalStages: number = (batch as any).totalStages || 19;
+  const recipeName: string = (batch as any).recipeName || getCheeseTypeName(batch.recipeId);
+
   const activeTimers = (batch.activeTimers as any[]) || [];
   const currentStageTimer = activeTimers.find((t: any) => t.stageId === batch.currentStageId);
   const isBlockingTimer = currentStageTimer?.blocking === true;
   const isTimerStage = !!currentStageTimer;
   const isTimerComplete = currentStageTimer?.isComplete || (currentStageTimer ? new Date(currentStageTimer.endTime) <= new Date() : false);
-  const isInputStage = [6, 7, 13, 14, 15, 19].includes(batch.currentStageId);
-  const isMultiInputStage = batch.currentStageId === 13; // Stage 13 needs ph_value + pieces_quantity
-  const isDateInputStage = batch.currentStageId === 19; // Stage 19 needs chamber_2_entry_date
-  const inputType = [13, 15].includes(batch.currentStageId) ? "ph" : (batch.currentStageId === 19 ? "date" : "time"); 
-  const inputLabel = inputType === "ph" ? "Valor do pH" : (inputType === "date" ? "Data de entrada na Câmara 2" : "Horário (HH:MM)");
-  const stageInstructions = STAGE_INSTRUCTIONS[batch.currentStageId] || [];
-  const timerLabel = TIMER_LABELS[batch.currentStageId] || "Timer da Etapa";
+
+  const requiredInputs: string[] = stageInfo?.requiredInputs || [];
+  const isInputStage = requiredInputs.length > 0;
+  const isMultiInputStage = requiredInputs.includes('ph_value') && requiredInputs.includes('pieces_quantity');
+  const isLoopPhStage = stageInfo?.type === 'loop' && requiredInputs.includes('ph_value');
+  const isDateInputStage = requiredInputs.includes('chamber_2_entry_date');
+  const isFlocculationStage = requiredInputs.includes('flocculation_time');
+  const isCutPointStage = requiredInputs.includes('cut_point_time');
+  const isPressStartStage = requiredInputs.includes('press_start_time');
+
+  const inputType = (isMultiInputStage || isLoopPhStage || requiredInputs.includes('ph_value')) ? "ph"
+    : isDateInputStage ? "date"
+    : "time";
+  const inputLabel = inputType === "ph" ? "Valor do pH"
+    : inputType === "date" ? "Data de entrada na Câmara 2"
+    : "Horário (HH:MM)";
+  const stageInstructions: string[] = stageInfo?.instructions || [];
+
+  const buildTimerLabel = (timer: any): string => {
+    if (!timer) return "Timer da Etapa";
+    if (timer.durationMin) return `Timer de ${timer.durationMin} minutos`;
+    if (timer.durationHours) return `Timer de ${timer.durationHours} hora${timer.durationHours !== 1 ? 's' : ''}`;
+    if (timer.intervalMin) return `Intervalo de ${timer.intervalMin} minutos`;
+    if (timer.intervalHours) return `Intervalo de ${timer.intervalHours} hora${timer.intervalHours !== 1 ? 's' : ''}`;
+    return "Timer da Etapa";
+  };
+  const timerLabel = buildTimerLabel(stageInfo?.timer);
+
+  const loopIntervalText = (() => {
+    const t = stageInfo?.timer;
+    if (!t) return "regularmente";
+    if (t.intervalHours === 2) return "a cada 2 horas";
+    if (t.intervalHours === 1.5) return "a cada 1 hora e 30 minutos";
+    if (t.intervalHours) return `a cada ${t.intervalHours} hora${t.intervalHours !== 1 ? 's' : ''}`;
+    if (t.intervalMin) return `a cada ${t.intervalMin} minutos`;
+    return "a cada 1 hora e 30 minutos";
+  })();
 
   const handleAdvance = () => {
     advance({ id, data: { stageId: batch.currentStageId } }, {
@@ -125,16 +124,14 @@ export default function BatchDetail() {
     e.preventDefault();
     if (!inputVal) return;
 
-    // Stage 13: Multi-input (pH + pieces_quantity)
-    if (batch.currentStageId === 13) {
+    // Multi-input: pH + pieces_quantity (initial pH stage — any recipe)
+    if (isMultiInputStage) {
       if (!piecesQuantity) {
         toast({ title: "Erro", description: "Informe a quantidade de peças.", variant: "destructive" });
         return;
       }
-      // Log pH value first
       logCanonical({ id, data: { key: 'ph_value', value: parseFloat(inputVal), unit: 'pH' } }, {
         onSuccess: () => {
-          // Then log pieces quantity
           logCanonical({ id, data: { key: 'pieces_quantity', value: parseInt(piecesQuantity) } }, {
             onSuccess: () => {
               toast({ title: "Registrado", description: "pH e quantidade de peças salvos." });
@@ -150,20 +147,20 @@ export default function BatchDetail() {
       return;
     }
 
-    // Stage 15: pH loop (no auto-advance, backend controls loop)
-    if (batch.currentStageId === 15) {
+    // Loop pH stage: log pH without auto-advance (backend controls loop)
+    if (isLoopPhStage) {
       logCanonical({ id, data: { key: 'ph_value', value: parseFloat(inputVal), unit: 'pH' } }, {
         onSuccess: () => {
           toast({ title: "Registrado", description: "Medição de pH registrada." });
           setInputVal("");
-          // Don't auto-advance - user clicks button when pH < 5.3
         },
         onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
       });
       return;
     }
 
-    if (batch.currentStageId === 19) {
+    // Date input stage: chamber entry date (final stage of any recipe)
+    if (isDateInputStage) {
       logCanonical({ id, data: { key: 'chamber_2_entry_date', value: inputVal } }, {
         onSuccess: () => {
           toast({ title: "Lote Concluído", description: "Data registrada e lote concluído. Até o próximo queijo!" });
@@ -175,17 +172,14 @@ export default function BatchDetail() {
       return;
     }
 
-    // Validate HH:MM format for time inputs
+    // Time input stages: validate HH:MM format
     const timeRegex = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
-    const isTimeInput = [6, 7, 14].includes(batch.currentStageId);
-    
-    if (isTimeInput && !timeRegex.test(inputVal)) {
+    if ((isFlocculationStage || isCutPointStage || isPressStartStage) && !timeRegex.test(inputVal)) {
       toast({ title: "Erro", description: "Formato inválido. Use HH:MM (ex: 14:30)", variant: "destructive" });
       return;
     }
 
-    // Stage 6: Flocculation time
-    if (batch.currentStageId === 6) {
+    if (isFlocculationStage) {
       logCanonical({ id, data: { key: 'flocculation_time', value: inputVal } }, {
         onSuccess: () => {
           toast({ title: "Registrado", description: "Horário de floculação registrado." });
@@ -197,8 +191,7 @@ export default function BatchDetail() {
       return;
     }
 
-    // Stage 7: Cut point time
-    if (batch.currentStageId === 7) {
+    if (isCutPointStage) {
       logCanonical({ id, data: { key: 'cut_point_time', value: inputVal } }, {
         onSuccess: () => {
           toast({ title: "Registrado", description: "Horário do ponto de corte registrado." });
@@ -210,8 +203,7 @@ export default function BatchDetail() {
       return;
     }
 
-    // Stage 14: Press start time
-    if (batch.currentStageId === 14) {
+    if (isPressStartStage) {
       logCanonical({ id, data: { key: 'press_start_time', value: inputVal } }, {
         onSuccess: () => {
           toast({ title: "Registrado", description: "Horário da prensa registrado." });
@@ -223,7 +215,6 @@ export default function BatchDetail() {
       return;
     }
 
-    // Default fallback (should not be reached for current stages)
     toast({ title: "Erro", description: "Etapa não reconhecida.", variant: "destructive" });
   };
 
@@ -269,7 +260,7 @@ export default function BatchDetail() {
                 Iniciado em {new Date(batch.startedAt).toLocaleDateString('pt-BR')}
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-display font-bold">Produção {(batch as any).recipeName || getCheeseTypeName(batch.recipeId)}</h1>
+            <h1 className="text-2xl sm:text-3xl font-display font-bold">Produção {recipeName}</h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap w-full md:w-auto">
             <div className="bg-card px-3 py-2 sm:px-6 sm:py-3 rounded-xl border border-border shadow-lg flex items-center gap-2 sm:gap-4">
@@ -280,7 +271,7 @@ export default function BatchDetail() {
                <div className="h-8 w-px bg-border" />
                <div className="text-right">
                  <div className="text-xs text-muted-foreground uppercase tracking-wider">Etapa</div>
-                 <div className="text-lg sm:text-xl font-bold text-primary">{batch.currentStageId} <span className="text-muted-foreground text-sm font-normal">/ 19</span></div>
+                 <div className="text-lg sm:text-xl font-bold text-primary">{batch.currentStageId} <span className="text-muted-foreground text-sm font-normal">/ {totalStages}</span></div>
                </div>
             </div>
             
@@ -344,7 +335,7 @@ export default function BatchDetail() {
               <div className="relative z-10">
                 <h2 className="text-xs sm:text-sm font-medium text-primary uppercase tracking-widest mb-2">Etapa Atual</h2>
                 <h3 className="text-xl sm:text-2xl md:text-3xl font-bold mb-4 sm:mb-6 leading-tight">
-                  {STAGE_NAMES[batch.currentStageId] || `Etapa ${batch.currentStageId}`}
+                  {stageInfo?.name || `Etapa ${batch.currentStageId}`}
                 </h3>
 
                 <div className="bg-background/50 backdrop-blur rounded-xl p-3 sm:p-4 md:p-6 border border-white/5 mb-4 sm:mb-8">
@@ -441,12 +432,12 @@ export default function BatchDetail() {
                                data-testid="input-measurement"
                              />
                              <Button type="submit" size="lg" disabled={isLogging || isLoggingCanonical} className="w-full sm:w-auto" data-testid="button-log-next">
-                               {batch.currentStageId === 15 ? "Registrar pH" : "Registrar e Avançar"}
+                               {isLoopPhStage ? "Registrar pH" : "Registrar e Avançar"}
                              </Button>
                            </div>
-                           {batch.currentStageId === 15 && (
+                           {isLoopPhStage && (
                              <div className="text-sm text-muted-foreground mt-2">
-                               Registre o pH a cada 1 hora e 30 minutos. Quando o pH ficar abaixo de 5.3, clique em "Concluir Etapa" abaixo.
+                               Registre o pH {loopIntervalText}. Quando o pH ficar abaixo de 5.3, clique em "Concluir Etapa" abaixo.
                              </div>
                            )}
                            {isTimerStage && currentStageTimer && !isBlockingTimer && (
@@ -469,74 +460,91 @@ export default function BatchDetail() {
                   ) : (
                     <div className="space-y-4 text-lg">
                       <p>Siga o procedimento padrão para esta etapa.</p>
-                      {[4, 5].includes(batch.currentStageId) && batch.calculatedInputs && (
+                      {stageInfo?.type === 'add' && batch.calculatedInputs && (
                         <IngredientList inputs={batch.calculatedInputs as Record<string, number>} />
                       )}
 
-                      {[4, 5].includes(batch.currentStageId) && (() => {
+                      {stageInfo?.type === 'add' && (() => {
                         const m = batch.measurements as Record<string, any> || {};
-                        const fermentKey = batch.currentStageId === 4 ? 'ferment_lr_dx_add_time_iso' : 'ferment_kl_coalho_add_time_iso';
-                        const fermentLabel = batch.currentStageId === 4 ? 'Horário de adição dos fermentos LR/DX' : 'Horário de adição do fermento KL + coalho';
-                        const fermentValue = m[fermentKey];
+                        const history: Array<{key: string; value: any; stageId: number}> = m._history || [];
+                        const TIMESTAMP_LABELS: Record<string, string> = {
+                          'ferment_lr_dx_add_time_iso': 'Horário de adição dos fermentos LR/DX',
+                          'ferment_kl_coalho_add_time_iso': 'Horário de adição do fermento KL + coalho',
+                          'ferment_add_time': 'Horário de adição dos fermentos',
+                          'rennet_add_time': 'Horário de adição do coalho',
+                        };
                         const fmtTime = (iso: string) => {
                           try {
                             return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
                           } catch { return iso; }
                         };
-                        const editKey = `stage-${fermentKey}`;
-                        const isEditingThis = editingKey === editKey;
+                        const knownTimestampKeys = Object.keys(TIMESTAMP_LABELS);
+                        const stageTimestampKeys = history
+                          .filter(e => e.stageId === batch.currentStageId && knownTimestampKeys.includes(e.key))
+                          .map(e => e.key);
+                        const flatTimestampKeys = knownTimestampKeys.filter(k => m[k] !== undefined && !stageTimestampKeys.includes(k));
+                        const allTimestampKeys = [...new Set([...stageTimestampKeys, ...flatTimestampKeys])];
 
-                        return (
-                          <div className="bg-muted/30 border border-border/50 rounded-lg p-3 sm:p-4 mt-2">
-                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-2">
-                              <span className="text-xs sm:text-sm text-muted-foreground">{fermentLabel}</span>
-                              {isEditingThis ? (
-                                <div className="flex items-center gap-1">
-                                  <Input
-                                    data-testid={`input-edit-stage-${fermentKey}`}
-                                    type="time"
-                                    className="h-8 w-[120px] font-mono text-sm"
-                                    value={editValue}
-                                    onChange={(e) => setEditValue(e.target.value)}
-                                  />
-                                  <Button size="icon" variant="ghost" className="h-8 w-8" disabled={isEditing}
-                                    data-testid={`button-save-stage-${fermentKey}`}
-                                    onClick={() => {
-                                      if (!editValue.trim()) return;
-                                      const batchDateStr = (batch.startedAt ? new Date(batch.startedAt) : new Date()).toISOString().split('T')[0];
-                                      const isoVal = new Date(`${batchDateStr}T${editValue}:00.000-03:00`).toISOString();
-                                      editMeasurement({ id, data: { key: fermentKey, value: isoVal, stageId: batch.currentStageId } }, {
-                                        onSuccess: () => { setEditingKey(null); toast({ title: "Horário atualizado" }); },
-                                        onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
-                                      });
-                                    }}>
-                                    <Check className="w-4 h-4" />
-                                  </Button>
-                                  <Button size="icon" variant="ghost" className="h-8 w-8"
-                                    data-testid={`button-cancel-stage-${fermentKey}`}
-                                    onClick={() => setEditingKey(null)}>
-                                    <X className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1">
-                                  <span className={`font-mono text-sm ${fermentValue ? 'font-bold' : 'italic text-muted-foreground'}`}
-                                    data-testid={`text-stage-${fermentKey}`}>
-                                    {fermentValue ? fmtTime(fermentValue) : "Não registrado"}
-                                  </span>
-                                  <Button size="icon" variant="ghost" className="h-7 w-7"
-                                    data-testid={`button-edit-stage-${fermentKey}`}
-                                    onClick={() => {
-                                      setEditingKey(editKey);
-                                      setEditValue(fermentValue ? fmtTime(fermentValue) : '');
-                                    }}>
-                                    <Pencil className="w-3 h-3 text-muted-foreground" />
-                                  </Button>
-                                </div>
-                              )}
+                        if (allTimestampKeys.length === 0) return null;
+
+                        return allTimestampKeys.map((fermentKey) => {
+                          const fermentLabel = TIMESTAMP_LABELS[fermentKey] || fermentKey.replace(/_/g, ' ');
+                          const fermentValue = m[fermentKey];
+                          const editKey = `stage-${fermentKey}`;
+                          const isEditingThis = editingKey === editKey;
+
+                          return (
+                            <div key={fermentKey} className="bg-muted/30 border border-border/50 rounded-lg p-3 sm:p-4 mt-2">
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-2">
+                                <span className="text-xs sm:text-sm text-muted-foreground">{fermentLabel}</span>
+                                {isEditingThis ? (
+                                  <div className="flex items-center gap-1">
+                                    <Input
+                                      data-testid={`input-edit-stage-${fermentKey}`}
+                                      type="time"
+                                      className="h-8 w-[120px] font-mono text-sm"
+                                      value={editValue}
+                                      onChange={(e) => setEditValue(e.target.value)}
+                                    />
+                                    <Button size="icon" variant="ghost" className="h-8 w-8" disabled={isEditing}
+                                      data-testid={`button-save-stage-${fermentKey}`}
+                                      onClick={() => {
+                                        if (!editValue.trim()) return;
+                                        const batchDateStr = (batch.startedAt ? new Date(batch.startedAt) : new Date()).toISOString().split('T')[0];
+                                        const isoVal = new Date(`${batchDateStr}T${editValue}:00.000-03:00`).toISOString();
+                                        editMeasurement({ id, data: { key: fermentKey, value: isoVal, stageId: batch.currentStageId } }, {
+                                          onSuccess: () => { setEditingKey(null); toast({ title: "Horário atualizado" }); },
+                                          onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+                                        });
+                                      }}>
+                                      <Check className="w-4 h-4" />
+                                    </Button>
+                                    <Button size="icon" variant="ghost" className="h-8 w-8"
+                                      data-testid={`button-cancel-stage-${fermentKey}`}
+                                      onClick={() => setEditingKey(null)}>
+                                      <X className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1">
+                                    <span className={`font-mono text-sm ${fermentValue ? 'font-bold' : 'italic text-muted-foreground'}`}
+                                      data-testid={`text-stage-${fermentKey}`}>
+                                      {fermentValue ? fmtTime(fermentValue) : "Não registrado"}
+                                    </span>
+                                    <Button size="icon" variant="ghost" className="h-7 w-7"
+                                      data-testid={`button-edit-stage-${fermentKey}`}
+                                      onClick={() => {
+                                        setEditingKey(editKey);
+                                        setEditValue(fermentValue ? fmtTime(fermentValue) : '');
+                                      }}>
+                                      <Pencil className="w-3 h-3 text-muted-foreground" />
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        );
+                          );
+                        });
                       })()}
                       
                       <div className="flex items-center gap-3 text-amber-400 bg-amber-400/10 p-4 rounded-lg mt-4 text-base border border-amber-400/20">
@@ -547,7 +555,7 @@ export default function BatchDetail() {
                   )}
                 </div>
 
-                {(!isInputStage || batch.currentStageId === 15) && (
+                {(!isInputStage || isLoopPhStage) && (
                   <Button 
                     size="lg" 
                     className="w-full h-16 text-lg font-bold premium-gradient shadow-lg text-amber-400"
@@ -555,7 +563,7 @@ export default function BatchDetail() {
                     disabled={isAdvancing || (isTimerStage && isBlockingTimer && !isTimerComplete)}
                     data-testid="button-complete-step"
                   >
-                    {isAdvancing ? "Processando..." : isTimerStage && isBlockingTimer && !isTimerComplete ? "Aguarde o Timer..." : batch.currentStageId === 15 ? "Concluir Viragem (pH atingido)" : "Marcar Etapa como Concluída"} 
+                    {isAdvancing ? "Processando..." : isTimerStage && isBlockingTimer && !isTimerComplete ? "Aguarde o Timer..." : isLoopPhStage ? "Concluir Viragem (pH atingido)" : "Marcar Etapa como Concluída"} 
                     <ArrowRight className="ml-2 w-5 h-5" />
                   </Button>
                 )}

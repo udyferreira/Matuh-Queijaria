@@ -1,1 +1,1 @@
-- [Stage-15 timer and recipe isolation](stage15-recipe-isolation.md) — key architectural patterns for the stage-15 pH loop, timer management, and per-batch recipe isolation
+- [Multi-recipe UI/Alexa](multi-recipe.md) — Nina (23 stages) + Nete (19 stages); stageInfo from API drives all UI logic dynamically.

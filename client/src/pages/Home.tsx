@@ -74,19 +74,19 @@ export default function Home() {
                       Vol: <span className="text-foreground font-medium">{batch.milkVolumeL}L</span> • Iniciado em {new Date(batch.startedAt).toLocaleDateString('pt-BR')}
                     </div>
                     <div className="text-sm text-muted-foreground mb-6">
-                      Etapa <span className="text-foreground font-medium">{batch.currentStageId}</span> de 19
+                      Etapa <span className="text-foreground font-medium">{batch.currentStageId}</span> de {(batch as any).totalStages || 19}
                     </div>
 
                     <div className="space-y-4">
                       <div>
                         <div className="flex justify-between text-sm mb-2">
                           <span className="text-muted-foreground">Progresso</span>
-                          <span className="font-medium">{Math.round((batch.currentStageId / 19) * 100)}%</span>
+                          <span className="font-medium">{Math.round((batch.currentStageId / ((batch as any).totalStages || 19)) * 100)}%</span>
                         </div>
                         <div className="h-2 bg-secondary rounded-full overflow-hidden">
                           <div 
                             className="h-full bg-primary transition-all duration-500" 
-                            style={{ width: `${(batch.currentStageId / 19) * 100}%` }} 
+                            style={{ width: `${(batch.currentStageId / ((batch as any).totalStages || 19)) * 100}%` }} 
                           />
                         </div>
                       </div>

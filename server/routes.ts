@@ -133,7 +133,11 @@ export async function registerRoutes(
 
   app.get(api.batches.list.path, async (req, res) => {
     const batches = await storage.getActiveBatches();
-    res.json(batches);
+    const enriched = batches.map(b => {
+      const rm = getRecipeForBatch(b);
+      return { ...b, totalStages: rm.getRecipeSummary().stageCount, recipeName: rm.getRecipeName() };
+    });
+    res.json(enriched);
   });
 
   app.get("/api/batches/completed", async (req, res) => {
@@ -151,6 +155,9 @@ export async function registerRoutes(
     const batch = await storage.getBatch(Number(req.params.id));
     if (!batch) return res.status(404).json({ message: "Batch not found" });
     
+    const rm = getRecipeForBatch(batch);
+    const currentStage = rm.getStage(batch.currentStageId);
+    
     // Enrich timer data with isComplete flag for consistency with /status
     const now = new Date();
     const activeTimers = ((batch.activeTimers as any[]) || []).map(t => ({
@@ -160,7 +167,10 @@ export async function registerRoutes(
     
     res.json({
       ...batch,
-      activeTimers
+      activeTimers,
+      stageInfo: currentStage ? rm.formatStageDetail(currentStage) : undefined,
+      totalStages: rm.getRecipeSummary().stageCount,
+      recipeName: rm.getRecipeName()
     });
   });
 
@@ -949,7 +959,7 @@ export async function registerRoutes(
         
         if (alexaUserId && result.batch?.id) {
           await storage.setLastActiveBatch(alexaUserId, result.batch.id);
-          console.log(`[start_batch] Persisted activeBatch=${result.batch.id} for user`);
+          console.log(`[start_batch] Persisted activeBatch=${result.batch.id} for user (Nete, single-utterance flow)`);
         }
         const currentStage = getRecipeForBatch(result.batch).getStage(result.batch.currentStageId || 3);
         const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage);
@@ -1788,6 +1798,15 @@ export async function registerRoutes(
               sessionAttributes
             ));
           }
+          if (sessionAttributes?.pending === "START_BATCH_RECIPE") {
+            console.log(`[FallbackIntent] In START_BATCH_RECIPE state, re-prompting for recipe`);
+            return res.status(200).json(buildAlexaResponse(
+              "Não entendi. Para qual receita? Diga 'Nete' para Queijo Nete ou 'Nina' para Queijo Nina.",
+              false,
+              "Diga 'Nete' ou 'Nina'.",
+              sessionAttributes
+            ));
+          }
           if (sessionAttributes?.pending === "STAGE13_PH") {
             console.log(`[FallbackIntent] In STAGE13_PH state, re-prompting for pH`);
             return res.status(200).json(buildAlexaResponse(
@@ -1834,8 +1853,14 @@ export async function registerRoutes(
         // === GUIDED PENDING STATE GUARD ===
         // During multi-turn flows, block all intents except the expected one
         const pendingState = sessionAttributes?.pending;
-        if (pendingState === "START_BATCH_TEMP" || pendingState === "START_BATCH_PH" || pendingState === "STAGE13_PH" || pendingState === "STAGE13_PIECES") {
+        if (pendingState === "START_BATCH_TEMP" || pendingState === "START_BATCH_PH" || pendingState === "START_BATCH_RECIPE" || pendingState === "STAGE13_PH" || pendingState === "STAGE13_PIECES") {
           const pendingConfig: Record<string, { expected: string; alternates: string[]; prompt: string; reprompt: string }> = {
+            "START_BATCH_RECIPE": {
+              expected: "ProcessCommandIntent",
+              alternates: [],
+              prompt: "Para qual receita? Diga 'Nete' para Queijo Nete ou 'Nina' para Queijo Nina.",
+              reprompt: "Diga 'Nete' ou 'Nina'."
+            },
             "START_BATCH_TEMP": {
               expected: "RegisterMilkTemperatureIntent",
               alternates: [],
@@ -2211,13 +2236,13 @@ export async function registerRoutes(
             
             draft.milk_ph = normalizedPh;
             
-            console.log(`[RegisterPHAndPiecesIntent→START_BATCH_PH] pH=${normalizedPh}. Creating batch: volume=${draft.milk_volume_l}, temp=${draft.milk_temperature_c}, pH=${draft.milk_ph}`);
+            console.log(`[RegisterPHAndPiecesIntent→START_BATCH_PH] pH=${normalizedPh}. Creating batch: volume=${draft.milk_volume_l}, temp=${draft.milk_temperature_c}, pH=${draft.milk_ph}, recipe=${draft.recipe_id || 'QUEIJO_NETE'}`);
             
             const result = await batchService.startBatch({
               milkVolumeL: draft.milk_volume_l,
               milkTemperatureC: draft.milk_temperature_c,
               milkPh: draft.milk_ph,
-              recipeId: "QUEIJO_NETE"
+              recipeId: draft.recipe_id || "QUEIJO_NETE"
             });
             
             if (!result.success) {
@@ -2965,6 +2990,36 @@ export async function registerRoutes(
           
           // Note: Time registration now uses LogTimeIntent exclusively
           
+          // Handle START_BATCH_RECIPE pending state: extract "nete" or "nina" from utterance
+          if (sessionAttributes?.pending === "START_BATCH_RECIPE") {
+            const lower = utterance.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            let chosenRecipeId: string | undefined;
+            if (lower.includes("nete") || lower.includes("net")) chosenRecipeId = "QUEIJO_NETE";
+            else if (lower.includes("nina") || lower.includes("nina")) chosenRecipeId = "QUEIJO_NINA";
+
+            if (!chosenRecipeId) {
+              console.log(`[ProcessCommandIntent] START_BATCH_RECIPE: unrecognized recipe in "${utterance}"`);
+              return res.status(200).json(buildAlexaResponse(
+                "Não entendi. Diga 'Nete' para Queijo Nete ou 'Nina' para Queijo Nina.",
+                false,
+                "Diga 'Nete' ou 'Nina'.",
+                sessionAttributes
+              ));
+            }
+
+            const draft = sessionAttributes.startBatchDraft || {};
+            draft.recipe_id = chosenRecipeId;
+            const recipeName = chosenRecipeId === "QUEIJO_NINA" ? "Nina" : "Nete";
+            const newAttrs = { ...sessionAttributes, startBatchDraft: draft, pending: "START_BATCH_TEMP" };
+            console.log(`[ProcessCommandIntent] START_BATCH_RECIPE: selected recipeId=${chosenRecipeId}`);
+            return res.status(200).json(buildAlexaResponse(
+              `Perfeito, Queijo ${recipeName}. Qual a temperatura do leite?`,
+              false,
+              "Diga a temperatura, por exemplo: '32 graus'.",
+              newAttrs
+            ));
+          }
+
           // GUARDA-CORPO: Se slot vazio, pedir clarificação amigável
           // Samples sem slot (ex: "status" sozinho) invocam o intent mas slot fica vazio
           // A Alexa não informa qual sample foi usado, então precisamos pedir mais contexto
@@ -3027,11 +3082,21 @@ export async function registerRoutes(
             const draft = result.guidedDraft;
             const newAttrs = { ...sessionAttributes, startBatchDraft: draft };
             
+            if (draft.recipe_id === undefined) {
+              newAttrs.pending = "START_BATCH_RECIPE";
+              console.log(`[GUIDED_START] Volume=${draft.milk_volume_l}L captured. Asking for recipe.`);
+              return res.status(200).json(buildAlexaResponse(
+                `Perfeito, ${draft.milk_volume_l} litros. Para qual receita? Diga 'Nete' ou 'Nina'.`,
+                false,
+                "Diga 'Nete' para Queijo Nete ou 'Nina' para Queijo Nina.",
+                newAttrs
+              ));
+            }
             if (draft.milk_temperature_c === undefined) {
               newAttrs.pending = "START_BATCH_TEMP";
-              console.log(`[GUIDED_START] Volume=${draft.milk_volume_l}L captured. Asking for temperature.`);
+              console.log(`[GUIDED_START] Volume=${draft.milk_volume_l}L, Recipe=${draft.recipe_id}. Asking for temperature.`);
               return res.status(200).json(buildAlexaResponse(
-                `Perfeito, ${draft.milk_volume_l} litros. Qual a temperatura do leite?`,
+                `Perfeito. Qual a temperatura do leite?`,
                 false,
                 "Diga a temperatura, por exemplo: '32 graus'.",
                 newAttrs
