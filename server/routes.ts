@@ -639,8 +639,12 @@ export async function registerRoutes(
       // milk_volume_l intentionally excluded: use topLevel.milkVolumeL to sync both top-level and measurements atomically
       milk_temperature_c: z.number().min(-10).max(100).optional(),
       milk_ph: z.number().min(0).max(14).optional(),
+      // Nete stages 4/5
       ferment_lr_dx_add_time_iso: z.string().datetime().optional(),
       ferment_kl_coalho_add_time_iso: z.string().datetime().optional(),
+      // Nina stages 7/8
+      ferment_add_time: z.string().datetime().optional(),
+      rennet_add_time: z.string().datetime().optional(),
       flocculation_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
       cut_point_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
       initial_ph: z.number().min(0).max(14).optional(),

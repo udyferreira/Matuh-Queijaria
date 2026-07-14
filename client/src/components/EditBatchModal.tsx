@@ -61,8 +61,6 @@ function datetimeBRTToISO(localVal: string): string {
 function timestampToDateInput(ts: string | Date | undefined | null): string {
   if (!ts) return "";
   try {
-    // Extract YYYY-MM-DD from ISO string directly (no TZ conversion)
-    // Matches parseDateOnly in utils.ts — avoids off-by-one near UTC midnight
     const str = typeof ts === "string" ? ts : (ts as Date).toISOString();
     return str.split("T")[0] ?? "";
   } catch {
@@ -76,12 +74,20 @@ interface FormState {
   milkVolumeL: string;
   milk_temperature_c: string;
   milk_ph: string;
+  // Nete fermentos
   FERMENT_LR: string;
   FERMENT_DX: string;
   FERMENT_KL: string;
   RENNET: string;
+  // Nina fermentos (FERMENT_HT instead of LR/KL)
+  FERMENT_HT: string;
+  // Nete horários adição (stages 4/5)
   ferment_lr_dx_add_time: string;
   ferment_kl_coalho_add_time: string;
+  // Nina horários adição (stages 7/8)
+  ferment_add_time: string;
+  rennet_add_time: string;
+  // Common
   flocculation_time: string;
   cut_point_time: string;
   initial_ph: string;
@@ -99,29 +105,32 @@ function buildInitialState(batch: ProductionBatch): FormState {
   const m = (batch.measurements as Record<string, any>) || {};
   const calc = (batch.calculatedInputs as Record<string, any>) || {};
   const history: any[] = m._history || [];
+  const isNina = (batch as any).recipeId === 'QUEIJO_NINA';
+  const loopStageId = isNina ? 20 : 15;
+  const initialPhStageId = isNina ? 18 : 13;
 
-  // Prefer measurements field, fall back to last matching history entry (for legacy batches)
   function mOrHistory(key: string): any {
     if (m[key] != null) return m[key];
     const entries = history.filter((h: any) => h.key === key);
     return entries.length > 0 ? entries[entries.length - 1].value : undefined;
   }
 
-  // Stage 15 pH measurements: prefer ph_measurements array (current format),
-  // fall back to history entries with ph_measurement/ph_value keys for legacy batches
+  // pH loop measurements — filter by recipe-specific stageId
   const phArr: any[] = m.ph_measurements || [];
-  const stage15PhArr = phArr.filter((p: any) => p.stageId === 15 || p.stageId == null);
-  const phMeasurements = stage15PhArr.length > 0
-    ? stage15PhArr.map((p: any) => (p.value != null ? String(p.value) : ""))
+  const loopPhArr = phArr.filter((p: any) => p.stageId === loopStageId || p.stageId == null);
+  const phMeasurements = loopPhArr.length > 0
+    ? loopPhArr.map((p: any) => (p.value != null ? String(p.value) : ""))
     : history
-        .filter((h: any) => (h.key === 'ph_value' || h.key === 'ph_measurement') && h.stageId === 15)
+        .filter((h: any) => (h.key === 'ph_value' || h.key === 'ph_measurement') && h.stageId === loopStageId)
         .map((h: any) => String(h.value));
 
-  // initial_ph: prefer measurements.initial_ph, fall back to stageId=13 ph_value in history
+  // initial_ph: prefer measurements.initial_ph, fall back to recipe-specific stageId in history
   const initialPhVal = m.initial_ph != null
     ? m.initial_ph
     : (() => {
-        const entry = history.find((h: any) => (h.key === 'initial_ph' || (h.key === 'ph_value' && h.stageId === 13)));
+        const entry = history.find((h: any) =>
+          h.key === 'initial_ph' || (h.key === 'ph_value' && h.stageId === initialPhStageId)
+        );
         return entry?.value;
       })();
 
@@ -129,12 +138,20 @@ function buildInitialState(batch: ProductionBatch): FormState {
     milkVolumeL: batch.milkVolumeL != null ? String(batch.milkVolumeL) : "",
     milk_temperature_c: mOrHistory('milk_temperature_c') != null ? String(mOrHistory('milk_temperature_c')) : "",
     milk_ph: mOrHistory('milk_ph') != null ? String(mOrHistory('milk_ph')) : "",
+    // Nete fermentos
     FERMENT_LR: calc.FERMENT_LR != null ? String(calc.FERMENT_LR) : "",
     FERMENT_DX: calc.FERMENT_DX != null ? String(calc.FERMENT_DX) : "",
     FERMENT_KL: calc.FERMENT_KL != null ? String(calc.FERMENT_KL) : "",
     RENNET: calc.RENNET != null ? String(calc.RENNET) : "",
+    // Nina fermentos
+    FERMENT_HT: calc.FERMENT_HT != null ? String(calc.FERMENT_HT) : "",
+    // Nete horários adição
     ferment_lr_dx_add_time: isoToTimeBRT(mOrHistory('ferment_lr_dx_add_time_iso')),
     ferment_kl_coalho_add_time: isoToTimeBRT(mOrHistory('ferment_kl_coalho_add_time_iso')),
+    // Nina horários adição
+    ferment_add_time: isoToTimeBRT(mOrHistory('ferment_add_time')),
+    rennet_add_time: isoToTimeBRT(mOrHistory('rennet_add_time')),
+    // Common
     flocculation_time: mOrHistory('flocculation_time') ?? "",
     cut_point_time: mOrHistory('cut_point_time') ?? "",
     initial_ph: initialPhVal != null ? String(initialPhVal) : "",
@@ -163,6 +180,7 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
   const { toast } = useToast();
   const initialRef = useRef<FormState>(buildInitialState(batch));
   const [form, setForm] = useState<FormState>(() => buildInitialState(batch));
+  const isNina = (batch as any).recipeId === 'QUEIJO_NINA';
 
   const m = (batch.measurements as Record<string, any>) || {};
 
@@ -195,85 +213,123 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
     const initial = initialRef.current;
     const payload: any = { measurements: {}, calculatedInputs: {}, topLevel: {} };
 
-    // Helper: only include numeric field if changed and non-empty
     function numIfChanged(formKey: keyof FormState, setter: (v: number) => void) {
       const cur = form[formKey] as string;
       const prev = initial[formKey] as string;
       if (cur !== "" && cur !== prev) setter(Number(cur));
     }
-    // Helper: only include string field if changed and non-empty
     function strIfChanged(formKey: keyof FormState, setter: (v: string) => void) {
       const cur = form[formKey] as string;
       const prev = initial[formKey] as string;
       if (cur !== "" && cur !== prev) setter(cur);
     }
 
-    // Stage 1 measurements
+    // Stage 1 — parâmetros iniciais (same for both recipes)
     numIfChanged("milk_temperature_c", (v) => { payload.measurements.milk_temperature_c = v; });
     numIfChanged("milk_ph", (v) => { payload.measurements.milk_ph = v; });
 
-    // Stage 2 calculatedInputs
-    numIfChanged("FERMENT_LR", (v) => { payload.calculatedInputs.FERMENT_LR = v; });
-    numIfChanged("FERMENT_DX", (v) => { payload.calculatedInputs.FERMENT_DX = v; });
-    numIfChanged("FERMENT_KL", (v) => { payload.calculatedInputs.FERMENT_KL = v; });
-    numIfChanged("RENNET", (v) => { payload.calculatedInputs.RENNET = v; });
+    if (isNina) {
+      // Stage 2 — Nina: DX + HT + Coalho
+      numIfChanged("FERMENT_DX", (v) => { payload.calculatedInputs.FERMENT_DX = v; });
+      numIfChanged("FERMENT_HT", (v) => { payload.calculatedInputs.FERMENT_HT = v; });
+      numIfChanged("RENNET", (v) => { payload.calculatedInputs.RENNET = v; });
 
-    // Stage 4 (time input, compare HH:MM strings)
-    if (form.ferment_lr_dx_add_time !== initial.ferment_lr_dx_add_time && form.ferment_lr_dx_add_time !== "") {
-      payload.measurements.ferment_lr_dx_add_time_iso = timeBRTToISO(m.ferment_lr_dx_add_time_iso, form.ferment_lr_dx_add_time);
+      // Stage 7 — Hora adição DX+HT
+      if (form.ferment_add_time !== initial.ferment_add_time && form.ferment_add_time !== "") {
+        payload.measurements.ferment_add_time = timeBRTToISO(m.ferment_add_time, form.ferment_add_time);
+      }
+
+      // Stage 8 — Hora adição Coalho
+      if (form.rennet_add_time !== initial.rennet_add_time && form.rennet_add_time !== "") {
+        payload.measurements.rennet_add_time = timeBRTToISO(m.rennet_add_time, form.rennet_add_time);
+      }
+    } else {
+      // Stage 2 — Nete: LR + DX + KL + Coalho
+      numIfChanged("FERMENT_LR", (v) => { payload.calculatedInputs.FERMENT_LR = v; });
+      numIfChanged("FERMENT_DX", (v) => { payload.calculatedInputs.FERMENT_DX = v; });
+      numIfChanged("FERMENT_KL", (v) => { payload.calculatedInputs.FERMENT_KL = v; });
+      numIfChanged("RENNET", (v) => { payload.calculatedInputs.RENNET = v; });
+
+      // Stage 4 — Hora adição LR/DX
+      if (form.ferment_lr_dx_add_time !== initial.ferment_lr_dx_add_time && form.ferment_lr_dx_add_time !== "") {
+        payload.measurements.ferment_lr_dx_add_time_iso = timeBRTToISO(m.ferment_lr_dx_add_time_iso, form.ferment_lr_dx_add_time);
+      }
+
+      // Stage 5 — Hora adição KL+Coalho
+      if (form.ferment_kl_coalho_add_time !== initial.ferment_kl_coalho_add_time && form.ferment_kl_coalho_add_time !== "") {
+        payload.measurements.ferment_kl_coalho_add_time_iso = timeBRTToISO(m.ferment_kl_coalho_add_time_iso, form.ferment_kl_coalho_add_time);
+      }
     }
 
-    // Stage 5
-    if (form.ferment_kl_coalho_add_time !== initial.ferment_kl_coalho_add_time && form.ferment_kl_coalho_add_time !== "") {
-      payload.measurements.ferment_kl_coalho_add_time_iso = timeBRTToISO(m.ferment_kl_coalho_add_time_iso, form.ferment_kl_coalho_add_time);
-    }
-
-    // Stage 6
+    // Floculação e corte (same keys, different stageIds — handled by backend)
     strIfChanged("flocculation_time", (v) => { payload.measurements.flocculation_time = v; });
-
-    // Stage 7
     strIfChanged("cut_point_time", (v) => { payload.measurements.cut_point_time = v; });
 
-    // Stage 13
+    // pH inicial + peças (Nete: stage 13 / Nina: stage 18 — handled by backend)
     numIfChanged("initial_ph", (v) => { payload.measurements.initial_ph = v; });
     numIfChanged("pieces_quantity", (v) => { payload.measurements.pieces_quantity = v; });
 
-    // Stage 14
+    // Prensa (Nete: stage 14 / Nina: stage 19 — handled by backend)
     strIfChanged("press_start_time", (v) => { payload.measurements.press_start_time = v; });
 
-    // Stage 15 - pH measurements (only changed entries)
+    // Viradas + pH loop (Nete: stage 15 / Nina: stage 20 — handled by backend)
     const phEdits = form.ph_measurements
       .map((v, i) => ({ index: i, value: Number(v), changed: v !== (initial.ph_measurements[i] ?? "") && v !== "" }))
       .filter((e) => e.changed)
       .map(({ index, value }) => ({ index, value }));
     if (phEdits.length > 0) payload.measurements.ph_measurements = phEdits;
-
-    // Stage 15 - viradas
     numIfChanged("turningCyclesCount", (v) => { payload.topLevel.turningCyclesCount = v; });
 
-    // Stage 17 — Entrada na Salga
+    // Salga e secagem (Nete: stages 17/18 / Nina: stages 21/22 — handled by backend)
     if (form.brine_entry_time_iso !== initial.brine_entry_time_iso) {
       payload.measurements.brine_entry_time_iso = form.brine_entry_time_iso
         ? datetimeBRTToISO(form.brine_entry_time_iso)
         : "";
     }
-
-    // Stage 18 — Início da Secagem em Prateleiras
     if (form.shelf_start_time_iso !== initial.shelf_start_time_iso) {
       payload.measurements.shelf_start_time_iso = form.shelf_start_time_iso
         ? datetimeBRTToISO(form.shelf_start_time_iso)
         : "";
     }
 
-    // Stage 19 - dates (only if changed)
+    // Câmara 2 e maturação (Nete: stage 19 / Nina: stage 23 — handled by backend)
     strIfChanged("chamber2EntryDate", (v) => { payload.topLevel.chamber2EntryDate = v; });
     strIfChanged("maturationEndDate", (v) => { payload.topLevel.maturationEndDate = v; });
 
-    // Top-level milk volume
+    // Volume de leite
     numIfChanged("milkVolumeL", (v) => { payload.topLevel.milkVolumeL = v; });
 
     mutation.mutate(payload);
   }
+
+  // ─── Labels de etapa por receita ─────────────────────────────────────────
+  const labels = isNina ? {
+    fermentStages: "Etapas 7 e 8",
+    fermentAddLabel1: "Hora Adição DX+HT",
+    fermentAddLabel2: "Hora Adição Coalho",
+    flocCutStages: "Etapas 10 e 11",
+    phPiecesStages: "Etapas 18 e 19",
+    phPiecesLabel: "Etapa 18 — pH Inicial, Peças e Prensagem",
+    loopStage: "Etapa 20",
+    loopLabel: "Etapa 20 — Viradas e Medições de pH",
+    brineShelveStages: "Etapas 21 e 22",
+    brineShelveLabel: "Etapas 21 e 22 — Salga e Secagem",
+    camStage: "Etapa 23",
+    camLabel: "Etapa 23 — Câmara 2 e Maturação",
+  } : {
+    fermentStages: "Etapas 4 e 5",
+    fermentAddLabel1: "Hora Adição LR/DX",
+    fermentAddLabel2: "Hora Adição KL + Coalho",
+    flocCutStages: "Etapas 6 e 7",
+    phPiecesStages: "Etapas 13 e 14",
+    phPiecesLabel: "Etapas 13 e 14 — pH Inicial, Peças e Prensagem",
+    loopStage: "Etapa 15",
+    loopLabel: "Etapa 15 — Viradas e Medições de pH",
+    brineShelveStages: "Etapas 17 e 18",
+    brineShelveLabel: "Etapas 17 e 18 — Salga e Secagem",
+    camStage: "Etapa 19",
+    camLabel: "Etapa 19 — Câmara 2 e Maturação",
+  };
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -332,60 +388,111 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
               Etapa 2 — Fermentos e Coalho
             </h3>
             <div className="grid grid-cols-2 gap-4">
-              {[
-                { key: "FERMENT_LR", label: "Fermento LR (mL)", testid: "ferment-lr" },
-                { key: "FERMENT_DX", label: "Fermento DX (mL)", testid: "ferment-dx" },
-                { key: "FERMENT_KL", label: "Fermento KL (mL)", testid: "ferment-kl" },
-                { key: "RENNET", label: "Coalho (mL)", testid: "rennet" },
-              ].map(({ key, label, testid }) => (
-                <div key={key}>
-                  <Label htmlFor={`edit-${testid}`}>{label}</Label>
-                  <Input
-                    id={`edit-${testid}`}
-                    type="number"
-                    step="0.01"
-                    value={form[key as keyof FormState] as string}
-                    onChange={(e) => set(key as keyof FormState, e.target.value)}
-                    data-testid={`input-edit-${testid}`}
-                  />
-                </div>
-              ))}
+              {isNina ? (
+                <>
+                  {[
+                    { key: "FERMENT_DX", label: "Fermento DX (mL)", testid: "ferment-dx" },
+                    { key: "FERMENT_HT", label: "Fermento HT (mL)", testid: "ferment-ht" },
+                    { key: "RENNET", label: "Coalho (mL)", testid: "rennet" },
+                  ].map(({ key, label, testid }) => (
+                    <div key={key}>
+                      <Label htmlFor={`edit-${testid}`}>{label}</Label>
+                      <Input
+                        id={`edit-${testid}`}
+                        type="number"
+                        step="0.01"
+                        value={form[key as keyof FormState] as string}
+                        onChange={(e) => set(key as keyof FormState, e.target.value)}
+                        data-testid={`input-edit-${testid}`}
+                      />
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <>
+                  {[
+                    { key: "FERMENT_LR", label: "Fermento LR (mL)", testid: "ferment-lr" },
+                    { key: "FERMENT_DX", label: "Fermento DX (mL)", testid: "ferment-dx" },
+                    { key: "FERMENT_KL", label: "Fermento KL (mL)", testid: "ferment-kl" },
+                    { key: "RENNET", label: "Coalho (mL)", testid: "rennet" },
+                  ].map(({ key, label, testid }) => (
+                    <div key={key}>
+                      <Label htmlFor={`edit-${testid}`}>{label}</Label>
+                      <Input
+                        id={`edit-${testid}`}
+                        type="number"
+                        step="0.01"
+                        value={form[key as keyof FormState] as string}
+                        onChange={(e) => set(key as keyof FormState, e.target.value)}
+                        data-testid={`input-edit-${testid}`}
+                      />
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </section>
 
-          {/* Etapas 4 e 5 — Horários de Adição */}
+          {/* Horários de Adição de Fermentos */}
           <section>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              Etapas 4 e 5 — Horários de Adição
+              {labels.fermentStages} — Horários de Adição
             </h3>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-lr-time">Hora Adição LR/DX</Label>
-                <Input
-                  id="edit-lr-time"
-                  type="time"
-                  value={form.ferment_lr_dx_add_time}
-                  onChange={(e) => set("ferment_lr_dx_add_time", e.target.value)}
-                  data-testid="input-edit-lr-dx-time"
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit-kl-time">Hora Adição KL + Coalho</Label>
-                <Input
-                  id="edit-kl-time"
-                  type="time"
-                  value={form.ferment_kl_coalho_add_time}
-                  onChange={(e) => set("ferment_kl_coalho_add_time", e.target.value)}
-                  data-testid="input-edit-kl-coalho-time"
-                />
-              </div>
+              {isNina ? (
+                <>
+                  <div>
+                    <Label htmlFor="edit-ferment-add-time">{labels.fermentAddLabel1}</Label>
+                    <Input
+                      id="edit-ferment-add-time"
+                      type="time"
+                      value={form.ferment_add_time}
+                      onChange={(e) => set("ferment_add_time", e.target.value)}
+                      data-testid="input-edit-ferment-add-time"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-rennet-add-time">{labels.fermentAddLabel2}</Label>
+                    <Input
+                      id="edit-rennet-add-time"
+                      type="time"
+                      value={form.rennet_add_time}
+                      onChange={(e) => set("rennet_add_time", e.target.value)}
+                      data-testid="input-edit-rennet-add-time"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <Label htmlFor="edit-lr-time">{labels.fermentAddLabel1}</Label>
+                    <Input
+                      id="edit-lr-time"
+                      type="time"
+                      value={form.ferment_lr_dx_add_time}
+                      onChange={(e) => set("ferment_lr_dx_add_time", e.target.value)}
+                      data-testid="input-edit-lr-dx-time"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-kl-time">{labels.fermentAddLabel2}</Label>
+                    <Input
+                      id="edit-kl-time"
+                      type="time"
+                      value={form.ferment_kl_coalho_add_time}
+                      onChange={(e) => set("ferment_kl_coalho_add_time", e.target.value)}
+                      data-testid="input-edit-kl-coalho-time"
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </section>
 
-          {/* Etapas 6 e 7 — Floculação e Corte */}
+          {/* Floculação e Corte */}
           <section>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              Etapas 6 e 7 — Floculação e Corte
+              {labels.flocCutStages} — Floculação e Corte
             </h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -411,10 +518,10 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
             </div>
           </section>
 
-          {/* Etapas 13 e 14 — pH Inicial, Peças e Prensagem */}
+          {/* pH Inicial, Peças e Prensagem */}
           <section>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              Etapas 13 e 14 — pH Inicial, Peças e Prensagem
+              {labels.phPiecesLabel}
             </h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -452,10 +559,10 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
             </div>
           </section>
 
-          {/* Etapa 15 — Viradas e pH */}
+          {/* Viradas e pH Loop */}
           <section>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              Etapa 15 — Viradas e Medições de pH
+              {labels.loopLabel}
             </h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -489,10 +596,10 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
             )}
           </section>
 
-          {/* Etapas 17 e 18 — Salga e Secagem */}
+          {/* Salga e Secagem */}
           <section>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              Etapas 17 e 18 — Salga e Secagem
+              {labels.brineShelveLabel}
             </h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -518,10 +625,10 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
             </div>
           </section>
 
-          {/* Etapa 19 — Câmara 2 e Maturação */}
+          {/* Câmara 2 e Maturação */}
           <section>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              Etapa 19 — Câmara 2 e Maturação
+              {labels.camLabel}
             </h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -535,7 +642,7 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
                 />
               </div>
               <div>
-                <Label htmlFor="edit-maturation">Fim da Maturação (90 dias)</Label>
+                <Label htmlFor="edit-maturation">Fim da Maturação</Label>
                 <Input
                   id="edit-maturation"
                   type="date"

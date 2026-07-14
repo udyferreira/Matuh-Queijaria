@@ -1239,6 +1239,9 @@ export async function editCompletedBatch(
   const measurements = { ...((batch.measurements as any) || {}) };
   const history: any[] = [...(measurements._history || [])];
   const fieldsEdited: string[] = [];
+  const isNina = ((batch as any).recipeId || 'QUEIJO_NETE') === 'QUEIJO_NINA';
+  const loopStageId = isNina ? 20 : 15;
+  const camStageId = isNina ? 23 : 19;
 
   function recordEdit(key: string, newValue: any, previousValue: any, stageId: number) {
     history.push({ key, value: newValue, previousValue, stageId, timestamp: now, action: 'post_completion_edit', editedVia: 'web' });
@@ -1254,15 +1257,27 @@ export async function editCompletedBatch(
     const simpleFields: Array<{ key: string; stageId: number }> = [
       { key: 'milk_temperature_c', stageId: 1 },
       { key: 'milk_ph', stageId: 1 },
-      { key: 'ferment_lr_dx_add_time_iso', stageId: 4 },
-      { key: 'ferment_kl_coalho_add_time_iso', stageId: 5 },
-      { key: 'flocculation_time', stageId: 6 },
-      { key: 'cut_point_time', stageId: 7 },
-      { key: 'initial_ph', stageId: 13 },
-      { key: 'pieces_quantity', stageId: 13 },
-      { key: 'press_start_time', stageId: 14 },
-      { key: 'brine_entry_time_iso', stageId: 17 },
-      { key: 'shelf_start_time_iso', stageId: 18 },
+      ...(isNina ? [
+        { key: 'ferment_add_time', stageId: 7 },
+        { key: 'rennet_add_time', stageId: 8 },
+        { key: 'flocculation_time', stageId: 10 },
+        { key: 'cut_point_time', stageId: 11 },
+        { key: 'initial_ph', stageId: 18 },
+        { key: 'pieces_quantity', stageId: 18 },
+        { key: 'press_start_time', stageId: 19 },
+        { key: 'brine_entry_time_iso', stageId: 21 },
+        { key: 'shelf_start_time_iso', stageId: 22 },
+      ] : [
+        { key: 'ferment_lr_dx_add_time_iso', stageId: 4 },
+        { key: 'ferment_kl_coalho_add_time_iso', stageId: 5 },
+        { key: 'flocculation_time', stageId: 6 },
+        { key: 'cut_point_time', stageId: 7 },
+        { key: 'initial_ph', stageId: 13 },
+        { key: 'pieces_quantity', stageId: 13 },
+        { key: 'press_start_time', stageId: 14 },
+        { key: 'brine_entry_time_iso', stageId: 17 },
+        { key: 'shelf_start_time_iso', stageId: 18 },
+      ]),
     ];
 
     for (const { key, stageId } of simpleFields) {
@@ -1278,14 +1293,14 @@ export async function editCompletedBatch(
       let phArr: any[] = measurements.ph_measurements
         ? [...measurements.ph_measurements]
         : history
-            .filter((h: any) => (h.key === 'ph_value' || h.key === 'ph_measurement') && h.stageId === 15)
-            .map((h: any) => ({ value: h.value, stageId: 15, timestamp: h.timestamp }));
+            .filter((h: any) => (h.key === 'ph_value' || h.key === 'ph_measurement') && h.stageId === loopStageId)
+            .map((h: any) => ({ value: h.value, stageId: loopStageId, timestamp: h.timestamp }));
 
       for (const edit of m.ph_measurements) {
         if (edit.index >= 0 && edit.index < phArr.length) {
           const prev = phArr[edit.index].value;
           if (edit.value !== prev) {
-            recordEdit(`ph_measurement_${edit.index}`, edit.value, prev, 15);
+            recordEdit(`ph_measurement_${edit.index}`, edit.value, prev, loopStageId);
             phArr[edit.index] = { ...phArr[edit.index], value: edit.value };
           }
         }
@@ -1322,7 +1337,7 @@ export async function editCompletedBatch(
       measurements.milk_volume_l = t.milkVolumeL;
     }
     if (t.turningCyclesCount !== undefined && t.turningCyclesCount !== (batch as any).turningCyclesCount) {
-      recordEdit('turningCyclesCount', t.turningCyclesCount, (batch as any).turningCyclesCount, 15);
+      recordEdit('turningCyclesCount', t.turningCyclesCount, (batch as any).turningCyclesCount, loopStageId);
       updates.turningCyclesCount = t.turningCyclesCount;
     }
     if (t.chamber2EntryDate !== undefined) {
@@ -1331,7 +1346,7 @@ export async function editCompletedBatch(
         ? new Date(batch.chamber2EntryDate).toISOString().split("T")[0]
         : null;
       if (t.chamber2EntryDate !== currentStr) {
-        recordEdit('chamber2EntryDate', t.chamber2EntryDate, currentStr, 19);
+        recordEdit('chamber2EntryDate', t.chamber2EntryDate, currentStr, camStageId);
         updates.chamber2EntryDate = new Date(t.chamber2EntryDate);
       }
     }
@@ -1340,7 +1355,7 @@ export async function editCompletedBatch(
         ? new Date(batch.maturationEndDate).toISOString().split("T")[0]
         : null;
       if (t.maturationEndDate !== currentStr) {
-        recordEdit('maturationEndDate', t.maturationEndDate, currentStr, 19);
+        recordEdit('maturationEndDate', t.maturationEndDate, currentStr, camStageId);
         updates.maturationEndDate = new Date(t.maturationEndDate);
       }
     }
