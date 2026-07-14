@@ -55,10 +55,6 @@ export default function BatchDetail() {
     setHeatTimerDone(false);
     setHeatTempReached(false);
   }, []);
-  const handleHeatConfirm = useCallback(() => {
-    setHeatTempReached(true);
-    handleAdvance();
-  }, [handleAdvance]);
   
   // Redirect to home if invalid id (after all hooks are called)
   if (id === 0) {
@@ -127,6 +123,11 @@ export default function BatchDetail() {
       onSuccess: () => toast({ title: "Etapa Concluída", description: "Avançando para a próxima etapa." }),
       onError: (err) => toast({ title: "Erro", description: err.message, variant: "destructive" })
     });
+  };
+
+  const handleHeatConfirm = () => {
+    setHeatTempReached(true);
+    handleAdvance();
   };
 
   const handleRollback = () => {
