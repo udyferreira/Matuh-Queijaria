@@ -524,5 +524,15 @@ export function getWaitSpecForStageData(stage: RecipeStage | undefined | null): 
     return { seconds, kind: 'loop_timeout', stageName: stage.name };
   }
 
+  // Interval stages (e.g. Nina stage 15 semi-cozimento: interval_min:3)
+  // Schedule an Alexa reminder for the interval duration so operator is alerted periodically
+  if (stage.timer && (stage.timer.interval_min || stage.timer.interval_hours)) {
+    const minutes = getIntervalDurationMinutes(stage);
+    if (minutes > 0) {
+      const seconds = TEST_MODE ? 60 : minutes * 60;
+      return { seconds, kind: 'timer', stageName: stage.name };
+    }
+  }
+
   return null;
 }

@@ -432,10 +432,11 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
   }
 
   // Generic: auto_record_timestamp defined in YAML (e.g. Nina stages 7 and 8)
-  if (nextStage.auto_record_timestamp && !measurements[nextStage.auto_record_timestamp]) {
-    measurements[nextStage.auto_record_timestamp] = nowIso;
+  // Recorded on COMPLETION (when operator advances away from the stage)
+  if (currentStage.auto_record_timestamp && !measurements[currentStage.auto_record_timestamp]) {
+    measurements[currentStage.auto_record_timestamp] = nowIso;
     const mHistory = measurements._history || [];
-    mHistory.push({ key: nextStage.auto_record_timestamp, value: nowIso, stageId: nextStage.id, timestamp: nowIso });
+    mHistory.push({ key: currentStage.auto_record_timestamp, value: nowIso, stageId: currentStage.id, timestamp: nowIso });
     measurements._history = mHistory;
     touchedMeasurements = true;
   }

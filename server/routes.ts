@@ -1502,10 +1502,54 @@ export async function registerRoutes(
               }
               const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${stageCtx} Continuar ou trocar de lote?`;
               console.log(`[LaunchRequest] Resuming persisted batch=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
+
+              // For interval stages (e.g. Nina stage 15 semi-cozimento), reschedule the Alexa
+              // reminder if it has already fired (expired) since the last interaction
+              const intervalMinutes = stage ? getIntervalDurationMinutes(stage) : 0;
+              if (intervalMinutes > 0 && apiCtx) {
+                try {
+                  const scheduledAlerts = ((batch as any)?.scheduledAlerts || {}) as Record<string, ScheduledAlert>;
+                  const alertKey = `stage_${batch.currentStageId}`;
+                  const existing = scheduledAlerts[alertKey];
+                  const expired = !existing || (existing.dueAtISO && new Date(existing.dueAtISO).getTime() < Date.now());
+                  if (expired) {
+                    if (existing) {
+                      try { await cancelReminder(apiCtx, existing.reminderId); } catch {}
+                      delete scheduledAlerts[alertKey];
+                    }
+                    const intervalSeconds = TEST_MODE ? 60 : intervalMinutes * 60;
+                    const reminderResult = await scheduleReminderForWait(
+                      apiCtx,
+                      { id: batch.id, recipeId: (batch as any).recipeId },
+                      batch.currentStageId,
+                      intervalSeconds,
+                      undefined,
+                      stage?.name,
+                      rm.getRecipeName()
+                    );
+                    if (reminderResult.reminderId) {
+                      scheduledAlerts[alertKey] = {
+                        reminderId: reminderResult.reminderId,
+                        stageId: batch.currentStageId,
+                        dueAtISO: new Date(Date.now() + intervalSeconds * 1000).toISOString(),
+                        kind: 'timer'
+                      };
+                      await storage.updateBatch(batch.id, { scheduledAlerts });
+                      console.log(`[LaunchRequest] Interval reminder rescheduled for batch=${batch.id} stage=${batch.currentStageId} in ${intervalMinutes}min`);
+                    }
+                  }
+                } catch (err) {
+                  console.warn(`[LaunchRequest] Failed to reschedule interval reminder: ${err}`);
+                }
+              }
+
+              const repromptText = intervalMinutes > 0
+                ? "Diga 'continuar' quando terminar a etapa."
+                : (batch.currentStageId === 15 ? "Informe o pH ou diga 'continuar'." : "Diga 'continuar' ou 'trocar lote'.");
               return res.status(200).json(buildAlexaResponse(
                 speechText,
                 false,
-                batch.currentStageId === 15 ? "Informe o pH ou diga 'continuar'." : "Diga 'continuar' ou 'trocar lote'.",
+                repromptText,
                 { activeBatchId: batch.id, state: "CONFIRM_CONTINUE_OR_SWITCH" }
               ));
             } else {
