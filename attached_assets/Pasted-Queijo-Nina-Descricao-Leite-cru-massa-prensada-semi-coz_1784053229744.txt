@@ -1,0 +1,31 @@
+Queijo Nina
+
+Descricao: Leite cru, massa prensada semi-cozida. Maturado por 6 meses em prateleira de madeira, recebe tratamento na casca ao longo dos meses de cura. A textura é firme, mas macia e levemente elástica. É um queijo de sabor amigável que traz notas de frutas amarelas e um certo ardidinho na língua.
+
+1 - SEPARAR O LEITE E MEDIR PARÂMETROS INICIAIS - VOLUME, TEMPERATURA E PH DO LEITE
+2 - CALCULAR FERMENTOS E COALHO - PARA 40 LITROS: 40ml de DX 40ml de HT 2ml de Coalho.
+3 - RETIRAR 10% DO VOLUME TOTAL DE LEITE E AQUECER ATÉ 36 GRAUS (calcular quanto é 10% do volume total)
+4 - AQUECER O LEITE NO TANQUE DE QUEIJO ATÉ 32 GRAUS
+5 - DESNATAR O LEITE DO TANQUE PEQUENO E DEPOIS JUNTAR AO LEITE DO TANQUE DE QUEIJO
+6 - Lavar o tanque pequeno
+7 - ADICIONAR FERMENTOS, MEXER BEM E AGUARDAR 30 MINUTOS
+8 - ANOTAR HORA DA ADIÇÃO DOS FERMENTOS (nao precisa ser uma etapa, apenas registrar a hora da etapa anterior)
+9 - ADIONAR O COALHO E COLOCAR A LIRA 
+10 - ANOTAR HORA DA ADIÇÃO DO COALHO (nao precisa ser uma etapa, apenas registrar a hora da etapa anterior)
+11 - AQUECER ÁGUA A 60 GRAUS no tanque pequeno - (20% DO VOLUME DO LEITE de agua, calcular e ja dizer o valor real).
+12 - ANOTAR HORA DA FLOCULAÇÃO
+13 - ANOTAR HORA DO PONTO DO CORTE DA MASSA
+14- CORTAR A MASSA
+15 - MEXER POR 5 MINUTOS (controlar o tempo e avisar)
+16 - RETIRAR SORO (20% do volume do Leite, calcular o valor e ja dizer o valor real)
+17 - AQUECER MASSA COM AGUA QUENTE ATÉ 38 GRAUS. Avisar a cada 3 minutos até alcançar 38 Graus. Quando atingir, conluir etapa e passar etapa.
+18 - RETIRAR TODO O SORO DO TANQUE
+19 - CORTAR A MASSA E COLOCAR NAS FORMAS
+20 - MEDIR PH INICIAL E ANOTAR QUANTIDADE DE PEÇAS
+21 - COLOCAR NA PRENSA - ANOTAR HORA DA PRENSA
+22 - VIRAR QUEIJO A CADA 2 HORAS E MEDIR PH - PH ALVO: Menor que 5,3
+23 - ENTRADA NA SALMOURA - (duracao de 13 HORAS)
+24 - Secagem em prateleira - (duracao de 24 horas)
+25 - DATA ENTRADA NA CÂMARA 2 DE MATURAÇÃO - 
+26 - FIM DA MATURAÇÃO - 6 A 8 MESES (não precisa ser etapa, apenas calcular a data fim e registrar)
+27 - DATA DE CONCLUSÃO (não precisa ser etapa, basta registrar a data de conclusao de lote, que é quando entrar na camara 2 - etapa 25)
