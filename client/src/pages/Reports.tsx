@@ -266,6 +266,21 @@ function formatDateTimeIso(isoVal: string): string {
   } catch { return isoVal; }
 }
 
+function batchMonthInfo(batchCode: string): { key: string; label: string } | null {
+  const match = batchCode.replace(/\D/g, "");
+  if (match.length < 6) return null;
+  const mm = match.slice(2, 4);
+  const aa = match.slice(4, 6);
+  const year = 2000 + parseInt(aa, 10);
+  const month = parseInt(mm, 10);
+  if (month < 1 || month > 12) return null;
+  const key = `${mm}/${year}`;
+  const label = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(
+    new Date(year, month - 1, 1)
+  );
+  return { key, label: label.charAt(0).toUpperCase() + label.slice(1) };
+}
+
 function getStageData(batch: ProductionBatch, stageId: number, measurementsByStage: Record<number, MeasurementHistoryItem[]>, stageTimers: Record<number, number> = {}, recipeId?: string) {
   const isNina = (recipeId ?? (batch as any).recipeId) === "QUEIJO_NINA";
   const measurements = batch.measurements as Record<string, any> || {};
@@ -1023,6 +1038,44 @@ export default function Reports() {
     }
   }
 
+  const [selectedRecipe, setSelectedRecipe] = useState<"all" | "QUEIJO_NETE" | "QUEIJO_NINA">("all");
+  const [selectedMonths, setSelectedMonths] = useState<Set<string>>(new Set());
+
+  const availableMonths: Array<{ key: string; label: string }> = (() => {
+    if (!completedBatches) return [];
+    const seen = new Map<string, string>();
+    for (const b of completedBatches) {
+      const code = formatBatchCode(b.startedAt);
+      const info = batchMonthInfo(code);
+      if (info && !seen.has(info.key)) seen.set(info.key, info.label);
+    }
+    return Array.from(seen.entries())
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => {
+        const [amm, ayy] = a.key.split("/").map(Number);
+        const [bmm, byy] = b.key.split("/").map(Number);
+        return byy !== ayy ? byy - ayy : bmm - amm;
+      });
+  })();
+
+  const filteredBatches = (completedBatches ?? []).filter((b) => {
+    if (selectedRecipe !== "all" && (b as any).recipeId !== selectedRecipe) return false;
+    if (selectedMonths.size > 0) {
+      const code = formatBatchCode(b.startedAt);
+      const info = batchMonthInfo(code);
+      if (!info || !selectedMonths.has(info.key)) return false;
+    }
+    return true;
+  });
+
+  function toggleMonth(key: string) {
+    setSelectedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
   const handlePrint = () => {
     const printContent = printRef.current;
     if (!printContent) return;
@@ -1078,8 +1131,8 @@ export default function Reports() {
   const handleExportPDF = () => handlePrint();
 
   const handleExportExcel = () => {
-    if (completedBatches && completedBatches.length > 0) {
-      exportToExcel(completedBatches, stageTimers);
+    if (filteredBatches.length > 0) {
+      exportToExcel(filteredBatches, stageTimers);
     }
   };
 
@@ -1132,7 +1185,64 @@ export default function Reports() {
             </TabsContent>
 
             <TabsContent value="lotes">
-              <div className="flex flex-wrap gap-2 mb-6">
+              {/* ── Filtros ─────────────────────────────────────────────── */}
+              <div className="flex flex-wrap items-start gap-6 mb-6 p-4 rounded-xl bg-secondary/20 border border-border">
+                {/* Filtro de receita */}
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    Queijo
+                  </p>
+                  <div className="flex gap-1" data-testid="filter-recipe">
+                    {(["all", "QUEIJO_NETE", "QUEIJO_NINA"] as const).map((r) => (
+                      <button
+                        key={r}
+                        onClick={() => setSelectedRecipe(r)}
+                        data-testid={`filter-recipe-${r}`}
+                        className={[
+                          "px-3 py-1 rounded-md text-sm font-medium transition-colors",
+                          selectedRecipe === r
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-background border border-border text-muted-foreground hover:text-foreground",
+                        ].join(" ")}
+                      >
+                        {r === "all" ? "Todos" : r === "QUEIJO_NETE" ? "Nete" : "Nina"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Filtro de mês */}
+                {availableMonths.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                      Mês
+                    </p>
+                    <div className="flex flex-wrap gap-1" data-testid="filter-months">
+                      {availableMonths.map((m) => {
+                        const active = selectedMonths.has(m.key);
+                        return (
+                          <button
+                            key={m.key}
+                            onClick={() => toggleMonth(m.key)}
+                            data-testid={`filter-month-${m.key}`}
+                            className={[
+                              "px-3 py-1 rounded-md text-sm font-medium transition-colors",
+                              active
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-background border border-border text-muted-foreground hover:text-foreground",
+                            ].join(" ")}
+                          >
+                            {m.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Barra de ações + contagem ───────────────────────────── */}
+              <div className="flex flex-wrap items-center gap-2 mb-6">
                 <Button variant="outline" onClick={handlePrint} data-testid="button-print">
                   <Printer className="w-4 h-4 mr-2" />
                   Imprimir
@@ -1145,12 +1255,32 @@ export default function Reports() {
                   <FileSpreadsheet className="w-4 h-4 mr-2" />
                   Exportar Excel
                 </Button>
+                <span
+                  className="ml-auto text-sm text-muted-foreground"
+                  data-testid="text-batch-count"
+                >
+                  {filteredBatches.length === completedBatches.length
+                    ? `${completedBatches.length} lote${completedBatches.length !== 1 ? "s" : ""}`
+                    : `${filteredBatches.length} de ${completedBatches.length} lote${completedBatches.length !== 1 ? "s" : ""}`}
+                </span>
               </div>
-              <div>
-                {completedBatches.map((batch) => (
-                  <BatchReport key={batch.id} batch={batch} stageTimers={stageTimers} />
-                ))}
-              </div>
+
+              {/* ── Lista de lotes ──────────────────────────────────────── */}
+              {filteredBatches.length === 0 ? (
+                <Card data-testid="card-empty-filter">
+                  <CardContent className="py-10 text-center">
+                    <p className="text-muted-foreground text-sm">
+                      Nenhum lote encontrado com os filtros selecionados. Ajuste o queijo ou os meses.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div>
+                  {filteredBatches.map((batch) => (
+                    <BatchReport key={batch.id} batch={batch} stageTimers={stageTimers} />
+                  ))}
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         )}
@@ -1158,8 +1288,8 @@ export default function Reports() {
       
       <div className="hidden">
         <div ref={printRef}>
-          {completedBatches && completedBatches.length > 0 && (
-            <PrintableReport batches={completedBatches} stageTimers={stageTimers} />
+          {filteredBatches.length > 0 && (
+            <PrintableReport batches={filteredBatches} stageTimers={stageTimers} />
           )}
         </div>
       </div>
