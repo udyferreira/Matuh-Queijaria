@@ -126,7 +126,6 @@ stages:
       - remind_remove_from_freezer
     instructions:
       - "Cálculos realizados automaticamente pelo sistema"
-      - "Os volumes de leite para o tanque pequeno, água quente e soro a retirar foram calculados"
       - "Retire os fermentos DX e HT do freezer"
       - "Quando terminar, diga 'próxima etapa'"
     llm_guidance: >
@@ -188,6 +187,7 @@ stages:
     type: "add"
     auto_record_timestamp: "ferment_add_time"
     instructions:
+      - "Adicionar os fermentos DX e HT ao leite"
       - "Mexer bem o leite para distribuir os fermentos"
       - "Aguardar 30 minutos com o leite em repouso"
     timer:
@@ -204,6 +204,7 @@ stages:
     type: "add"
     auto_record_timestamp: "rennet_add_time"
     instructions:
+      - "Adicionar o coalho ao leite"
       - "Mexer bem por cerca de 1 minuto"
       - "Parar a agitação e colocar a Lira em posição"
       - "Aguardar a floculação sem mexer o leite"
@@ -221,7 +222,6 @@ stages:
       target_temp_c: 60
       volume_source: "HOT_WATER"
     instructions:
-      - "Esta água será usada para o semi-cozimento da massa na etapa 15"
       - "Quando terminar, diga 'próxima etapa'"
     llm_guidance: >
       A água aquecida a 60°C é fundamental para o semi-cozimento da massa do Nina.

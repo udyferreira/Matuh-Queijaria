@@ -125,8 +125,7 @@ stages:
     name: "Adicionar fermentos LR e DX"
     type: "add"
     instructions:
-      - "Adicionar fermento LR"
-      - "Adicionar fermento DX"
+      - "Adicionar os fermentos ao leite"
       - "Mexer bem"
     timer:
       duration_min: 30
@@ -137,7 +136,6 @@ stages:
     type: "add"
     instructions:
       - "Adicionar fermento KL"
-      - "Adicionar coalho"
       - "Mexer bem"
       - "Colocar a Lira"
     llm_guidance: >
