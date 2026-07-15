@@ -1566,7 +1566,8 @@ export async function registerRoutes(
                 ));
               }
 
-              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${stageCtx} Continuar ou trocar de lote?`;
+              const resumeHint = batchService.getCalculatedInputHint(batch, batch.currentStageId);
+              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${resumeHint}${stageCtx} Continuar ou trocar de lote?`;
               console.log(`[LaunchRequest] Resuming persisted batch=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
 
               // For interval stages (e.g. Nina stage 15 semi-cozimento), check if we need to
