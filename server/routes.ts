@@ -1760,6 +1760,65 @@ export async function registerRoutes(
           return res.status(200).json(buildAlexaResponse(speechText, false, repromptText, newSessionAttrs));
         }
 
+        // --- SelectRecipeIntent: Dedicated recipe selection via canonical slot ---
+        if (intentName === "SelectRecipeIntent") {
+          // Extract canonical id from slot resolution (NETE or NINA), fallback to raw value parse
+          const recipeResolution = slots.recipe?.resolutions?.resolutionsPerAuthority?.[0]?.values?.[0]?.value;
+          const recipeRawValue = (slots.recipe?.value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const recipeSlotId = recipeResolution?.id as string | undefined;
+
+          let chosenRecipeId: string | undefined;
+          if (recipeSlotId === "NETE") chosenRecipeId = "QUEIJO_NETE";
+          else if (recipeSlotId === "NINA") chosenRecipeId = "QUEIJO_NINA";
+          else if (recipeRawValue.includes("nete") || recipeRawValue.includes("net")) chosenRecipeId = "QUEIJO_NETE";
+          else if (recipeRawValue.includes("nina")) chosenRecipeId = "QUEIJO_NINA";
+
+          console.log(`[SelectRecipeIntent] slotId=${recipeSlotId} raw="${recipeRawValue}" → chosenRecipeId=${chosenRecipeId} pending=${sessionAttributes?.pending}`);
+
+          if (!chosenRecipeId) {
+            return res.status(200).json(buildAlexaResponse(
+              "Não entendi a receita. Diga 'Nete' para Queijo Nete ou 'Nina' para Queijo Nina.",
+              false,
+              "Diga 'Nete' ou 'Nina'.",
+              sessionAttributes
+            ));
+          }
+
+          const displayName = chosenRecipeId === "QUEIJO_NINA" ? "Nina" : "Nete";
+          const draft = sessionAttributes?.startBatchDraft || {};
+          draft.recipe_id = chosenRecipeId;
+
+          // Scenario A: already in recipe-selection step of guided batch creation
+          if (sessionAttributes?.pending === "START_BATCH_RECIPE") {
+            if (draft.milk_volume_l === undefined || draft.milk_volume_l === null) {
+              const newAttrs = { ...sessionAttributes, startBatchDraft: draft, pending: "START_BATCH_VOLUME" };
+              return res.status(200).json(buildAlexaResponse(
+                `Perfeito, Queijo ${displayName}. Qual o volume de leite em litros?`,
+                false,
+                "Diga o volume em litros, por exemplo: 'cento e trinta litros'.",
+                newAttrs
+              ));
+            }
+            const newAttrs = { ...sessionAttributes, startBatchDraft: draft, pending: "START_BATCH_TEMP" };
+            return res.status(200).json(buildAlexaResponse(
+              `Perfeito, Queijo ${displayName}. Qual a temperatura do leite?`,
+              false,
+              "Diga a temperatura, por exemplo: '32 graus'.",
+              newAttrs
+            ));
+          }
+
+          // Scenario B: no active guided flow — start a new batch creation with recipe pre-selected
+          const freshDraft = { recipe_id: chosenRecipeId };
+          const newAttrs = { ...sessionAttributes, startBatchDraft: freshDraft, pending: "START_BATCH_VOLUME" };
+          return res.status(200).json(buildAlexaResponse(
+            `Ótimo, vamos fazer Queijo ${displayName}. Qual o volume de leite em litros?`,
+            false,
+            "Diga o volume em litros, por exemplo: 'cento e trinta litros'.",
+            newAttrs
+          ));
+        }
+
         // --- SelectBatchIntent: Batch selection from multi-batch list ---
         if (intentName === "SelectBatchIntent") {
           const optionSlot = slots.option_number?.value || slots.optionNumber?.value;
@@ -1939,8 +1998,8 @@ export async function registerRoutes(
         if (pendingState === "START_BATCH_VOLUME" || pendingState === "START_BATCH_TEMP" || pendingState === "START_BATCH_PH" || pendingState === "START_BATCH_RECIPE" || pendingState === "STAGE13_PH" || pendingState === "STAGE13_PIECES") {
           const pendingConfig: Record<string, { expected: string; alternates: string[]; prompt: string; reprompt: string }> = {
             "START_BATCH_RECIPE": {
-              expected: "ProcessCommandIntent",
-              alternates: [],
+              expected: "SelectRecipeIntent",
+              alternates: ["ProcessCommandIntent"],
               prompt: "Para qual receita? Diga 'Nete' para Queijo Nete ou 'Nina' para Queijo Nina.",
               reprompt: "Diga 'Nete' ou 'Nina'."
             },
