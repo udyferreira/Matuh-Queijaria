@@ -891,7 +891,11 @@ export function getRelevantDosesForStage(
   if (stageText.includes('coalho') && calculatedInputs.RENNET) {
     doses["RENNET"] = { value: calculatedInputs.RENNET, unit: "ml" };
   }
-  if ((stageText.includes('tanque pequeno') || stageText.includes('small_tank')) && calculatedInputs.SMALL_TANK_MILK) {
+  if (
+    (stageText.includes('tanque pequeno') || stageText.includes('small_tank')) &&
+    (stageText.includes('leite') || stageText.includes('volume') || stageText.includes('retirar')) &&
+    calculatedInputs.SMALL_TANK_MILK
+  ) {
     doses["SMALL_TANK_MILK"] = { value: calculatedInputs.SMALL_TANK_MILK, unit: "L" };
   }
   if ((stageText.includes('água quente') || stageText.includes('hot_water')) && calculatedInputs.HOT_WATER) {

@@ -180,8 +180,6 @@ stages:
     name: "Lavar o tanque pequeno"
     type: "instruction"
     instructions:
-      - "Lavar e higienizar o tanque pequeno"
-      - "Ele será usado novamente em breve para aquecer a água de semi-cozimento"
       - "Quando terminar, diga 'próxima etapa'"
 
   - id: 7
