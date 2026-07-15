@@ -180,6 +180,7 @@ stages:
     name: "Lavar o tanque pequeno"
     type: "instruction"
     instructions:
+      - "Lavar e higienizar o tanque pequeno"
       - "Quando terminar, diga 'próxima etapa'"
 
   - id: 7
