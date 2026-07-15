@@ -102,7 +102,7 @@ REGRAS OBRIGATÓRIAS:
 10. Para error, diga a mensagem de erro de forma clara.
 11. Para query_input, diga "A quantidade de [tipo] é [valor] [unidade]."
 12. Para auto_advance: combine confirmation + próxima etapa numa narrativa fluida e curta. NÃO diga "confirmação".
-13. Para start_batch: anuncie "Fermentos e coalho calculados:" e liste APENAS as doses presentes no payload (não invente nem mencione doses ausentes). Depois OBRIGATORIAMENTE diga "Agora, etapa [stage.id]: [stage.name]." seguido das instruções. Se as instruções já contiverem um volume calculado (ex: "Retire X litros"), use esse valor exato — não diga "X%". NÃO omita o número da etapa. Termine com nextAction.phrase se presente. NÃO leia o campo notes literalmente.
+13. Para start_batch: Se houver doses no payload, anuncie-as brevemente: use o prefixo "Fermentos e coalho calculados:" apenas se houver FERMENT_* ou RENNET; para SMALL_TANK_MILK diga "Volume para o tanque pequeno: X litros"; para outros volumes use rótulo natural. Se não houver doses, pule essa parte. Depois OBRIGATORIAMENTE diga "Agora, etapa [stage.id]: [stage.name]." seguido das instruções. Se as instruções contiverem um volume calculado (ex: "Retire X litros"), use esse valor exato — nunca diga "X%" ou "a quantidade calculada". NÃO omita o número da etapa. Termine com nextAction.phrase se presente. NÃO leia o campo notes literalmente.
 14. Para repeat_doses: liste TODAS as doses presentes dizendo "As doses deste lote são:" seguido de cada dose. Use os rótulos obrigatórios da regra 5.
 15. Para log_time/log_ph/log_date: confirme o registro feito de forma curta.
 16. Máximo: 5 frases para start_batch (doses + instrução), 4 para auto_advance, 3 para outros contextos.
@@ -583,9 +583,11 @@ export function buildErrorPayload(
 
 /**
  * Build a SpeechRenderPayload for start_batch context.
- * Only announces ferments/coalho (needed now for freezer) — derived volumes
- * (SMALL_TANK_MILK, HOT_WATER, WHEY_TO_REMOVE) are announced at their own stages.
- * calcHint: pre-computed hint string from getCalculatedInputHint for the current stage.
+ * Doses are filtered to only what is relevant at the current stage via getRelevantDosesForStage.
+ * For Nina: DX/HT/coalho are NOT in the stage 3 dose payload — a freezer reminder instruction
+ * is injected instead, so quantities are announced only when actually needed at stages 7/8/9/14.
+ * calcHint: pre-computed hint string from getCalculatedInputHint — provides the real value
+ * (e.g. "Retirar 10 litros") instead of the recipe's generic "10% do total".
  */
 export function buildStartBatchPayload(
   batch: any,
@@ -593,25 +595,32 @@ export function buildStartBatchPayload(
   calcHint?: string
 ): SpeechRenderPayload {
   const calculatedInputs = batch.calculatedInputs || {};
-  
-  // Only include ferments and coalho — do NOT include derived volumes here.
-  // Derived volumes (tank milk, hot water, whey) are announced at the stage where they're needed.
-  const doses: Record<string, DoseInfo> = {};
-  const fermentKeys = ["FERMENT_LR", "FERMENT_DX", "FERMENT_KL", "FERMENT_HT", "RENNET"];
-  for (const key of fermentKeys) {
-    if (calculatedInputs[key]) doses[key] = { value: calculatedInputs[key], unit: "ml" };
-  }
-  
+  const recipeId: string = batch.recipeId || 'QUEIJO_NETE';
+
+  // Stage-relevant doses only — keyword-matched to current stage instructions/name.
+  // Nina stage 3 has "tanque pequeno" → SMALL_TANK_MILK. No DX/HT/coalho leak here.
+  // Nete stage 3 has "KL" → FERMENT_KL, stage 4 has "LR"/"DX" → those ferments, etc.
+  const doses = getRelevantDosesForStage(currentStage, calculatedInputs);
+
   let instructions: string[] = [];
+
+  // For Nina: inject a freezer reminder now so DX/HT reach room temperature before stage 7.
+  // This is a text instruction, NOT a dose, so ml values are NOT announced at start.
+  if (recipeId === 'QUEIJO_NINA' &&
+      (calculatedInputs.FERMENT_DX || calculatedInputs.FERMENT_HT)) {
+    instructions.push('Retire os fermentos DX e HT do freezer agora para atingirem temperatura ambiente antes de serem usados.');
+  }
+
   // Inject the stage-specific calculated hint first so the LLM uses the real value
   if (calcHint) instructions.push(calcHint.trim());
-  const stageInstructions = currentStage.instructions || [];
+
+  const stageInstructions: string[] = currentStage.instructions || [];
   if (stageInstructions.length === 0 && currentStage.type === 'heat' && currentStage.parameters?.target_temp_c) {
     instructions.push(`Aqueça o leite até ${currentStage.parameters.target_temp_c}°C.`);
   } else {
     instructions = [...instructions, ...stageInstructions];
   }
-  
+
   return {
     context: "start_batch",
     batchInfo: {
