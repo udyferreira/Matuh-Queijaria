@@ -46,6 +46,9 @@ integrations = ["javascript_openai_ai_integrations:2.0.0"]
 [userenv.development]
 TEST_MODE = "true"
 
+[userenv.production]
+TEST_MODE = "false"
+
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
