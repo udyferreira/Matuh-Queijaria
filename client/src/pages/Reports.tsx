@@ -1,11 +1,13 @@
 import { Link } from "wouter";
-import { FileText, ArrowLeft, ChevronDown, ChevronUp, Printer, FileDown, FileSpreadsheet, Pencil, Layers, Milk, Package, FlaskConical } from "lucide-react";
+import { FileText, ArrowLeft, ChevronDown, ChevronUp, Printer, FileDown, FileSpreadsheet, Pencil, Layers, Milk, Package, FlaskConical, X, Calendar } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery } from "@tanstack/react-query";
 import { useCompletedBatches } from "@/hooks/use-batches";
 import { getCheeseTypeName, formatBatchCode, ProductionBatch } from "@shared/schema";
@@ -1040,6 +1042,7 @@ export default function Reports() {
 
   const [selectedRecipe, setSelectedRecipe] = useState<"all" | "QUEIJO_NETE" | "QUEIJO_NINA">("all");
   const [selectedMonths, setSelectedMonths] = useState<Set<string>>(new Set());
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
 
   const availableMonths: Array<{ key: string; label: string }> = (() => {
     if (!completedBatches) return [];
@@ -1211,31 +1214,83 @@ export default function Reports() {
                   </div>
                 </div>
 
-                {/* Filtro de mês */}
+                {/* Filtro de mês — picklist */}
                 {availableMonths.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                       Mês
                     </p>
-                    <div className="flex flex-wrap gap-1" data-testid="filter-months">
-                      {availableMonths.map((m) => {
-                        const active = selectedMonths.has(m.key);
-                        return (
+                    <div className="flex flex-col gap-2">
+                      <Popover open={monthPickerOpen} onOpenChange={setMonthPickerOpen}>
+                        <PopoverTrigger asChild>
                           <button
-                            key={m.key}
-                            onClick={() => toggleMonth(m.key)}
-                            data-testid={`filter-month-${m.key}`}
-                            className={[
-                              "px-3 py-1 rounded-md text-sm font-medium transition-colors",
-                              active
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-background border border-border text-muted-foreground hover:text-foreground",
-                            ].join(" ")}
+                            data-testid="button-month-picker"
+                            className="flex items-center gap-2 px-3 py-1 rounded-md text-sm font-medium border border-border bg-background text-muted-foreground hover:text-foreground transition-colors w-fit"
                           >
-                            {m.label}
+                            <Calendar className="w-3.5 h-3.5" />
+                            {selectedMonths.size > 0
+                              ? `Mês (${selectedMonths.size})`
+                              : "Mês"}
+                            <ChevronDown className="w-3.5 h-3.5" />
                           </button>
-                        );
-                      })}
+                        </PopoverTrigger>
+                        <PopoverContent
+                          align="start"
+                          className="p-2 w-52"
+                          data-testid="popover-month-picker"
+                        >
+                          <div className="space-y-1 max-h-64 overflow-y-auto">
+                            {availableMonths.map((m) => {
+                              const checked = selectedMonths.has(m.key);
+                              return (
+                                <label
+                                  key={m.key}
+                                  className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-secondary/50 transition-colors"
+                                  data-testid={`filter-month-${m.key}`}
+                                >
+                                  <Checkbox
+                                    checked={checked}
+                                    onCheckedChange={() => toggleMonth(m.key)}
+                                    id={`month-${m.key}`}
+                                  />
+                                  <span className="text-sm">{m.label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                          {selectedMonths.size > 0 && (
+                            <div className="border-t border-border mt-2 pt-2">
+                              <button
+                                className="text-xs text-muted-foreground hover:text-foreground w-full text-left px-2 transition-colors"
+                                onClick={() => setSelectedMonths(new Set())}
+                                data-testid="button-clear-months"
+                              >
+                                Limpar seleção
+                              </button>
+                            </div>
+                          )}
+                        </PopoverContent>
+                      </Popover>
+
+                      {/* Chips dos meses selecionados */}
+                      {selectedMonths.size > 0 && (
+                        <div className="flex flex-wrap gap-1" data-testid="selected-month-chips">
+                          {availableMonths
+                            .filter((m) => selectedMonths.has(m.key))
+                            .map((m) => (
+                              <button
+                                key={m.key}
+                                onClick={() => toggleMonth(m.key)}
+                                aria-label={`Remover ${m.label}`}
+                                data-testid={`chip-month-${m.key}`}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/15 text-primary text-xs font-medium hover:bg-primary/25 transition-colors"
+                              >
+                                {m.label}
+                                <X className="w-3 h-3 shrink-0" />
+                              </button>
+                            ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
