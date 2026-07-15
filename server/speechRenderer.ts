@@ -102,7 +102,7 @@ REGRAS OBRIGATÓRIAS:
 10. Para error, diga a mensagem de erro de forma clara.
 11. Para query_input, diga "A quantidade de [tipo] é [valor] [unidade]."
 12. Para auto_advance: combine confirmation + próxima etapa numa narrativa fluida e curta. NÃO diga "confirmação".
-13. Para start_batch: primeiro anuncie "Fermentos e coalho calculados:" e liste TODAS as doses. Depois OBRIGATORIAMENTE diga "Agora, etapa [stage.id]: [stage.name]." seguido da instrução. NÃO omita o número da etapa. Termine com nextAction.phrase se presente. NÃO leia o campo notes literalmente.
+13. Para start_batch: anuncie "Fermentos e coalho calculados:" e liste APENAS as doses presentes no payload (não invente nem mencione doses ausentes). Depois OBRIGATORIAMENTE diga "Agora, etapa [stage.id]: [stage.name]." seguido das instruções. Se as instruções já contiverem um volume calculado (ex: "Retire X litros"), use esse valor exato — não diga "X%". NÃO omita o número da etapa. Termine com nextAction.phrase se presente. NÃO leia o campo notes literalmente.
 14. Para repeat_doses: liste TODAS as doses presentes dizendo "As doses deste lote são:" seguido de cada dose. Use os rótulos obrigatórios da regra 5.
 15. Para log_time/log_ph/log_date: confirme o registro feito de forma curta.
 16. Máximo: 5 frases para start_batch (doses + instrução), 4 para auto_advance, 3 para outros contextos.
@@ -582,28 +582,34 @@ export function buildErrorPayload(
 }
 
 /**
- * Build a SpeechRenderPayload for start_batch context
- * Announces etapa 2 (calculated doses) then etapa 3 instruction (no doses)
+ * Build a SpeechRenderPayload for start_batch context.
+ * Only announces ferments/coalho (needed now for freezer) — derived volumes
+ * (SMALL_TANK_MILK, HOT_WATER, WHEY_TO_REMOVE) are announced at their own stages.
+ * calcHint: pre-computed hint string from getCalculatedInputHint for the current stage.
  */
 export function buildStartBatchPayload(
   batch: any,
-  currentStage: any
+  currentStage: any,
+  calcHint?: string
 ): SpeechRenderPayload {
   const calculatedInputs = batch.calculatedInputs || {};
   
+  // Only include ferments and coalho — do NOT include derived volumes here.
+  // Derived volumes (tank milk, hot water, whey) are announced at the stage where they're needed.
   const doses: Record<string, DoseInfo> = {};
   const fermentKeys = ["FERMENT_LR", "FERMENT_DX", "FERMENT_KL", "FERMENT_HT", "RENNET"];
   for (const key of fermentKeys) {
     if (calculatedInputs[key]) doses[key] = { value: calculatedInputs[key], unit: "ml" };
   }
-  const derivedKeys = ["SMALL_TANK_MILK", "HOT_WATER", "WHEY_TO_REMOVE"];
-  for (const key of derivedKeys) {
-    if (calculatedInputs[key]) doses[key] = { value: calculatedInputs[key], unit: "L" };
-  }
   
-  let instructions = currentStage.instructions || [];
-  if (instructions.length === 0 && currentStage.type === 'heat' && currentStage.parameters?.target_temp_c) {
-    instructions = [`Aqueça o leite até ${currentStage.parameters.target_temp_c}°C.`];
+  let instructions: string[] = [];
+  // Inject the stage-specific calculated hint first so the LLM uses the real value
+  if (calcHint) instructions.push(calcHint.trim());
+  const stageInstructions = currentStage.instructions || [];
+  if (stageInstructions.length === 0 && currentStage.type === 'heat' && currentStage.parameters?.target_temp_c) {
+    instructions.push(`Aqueça o leite até ${currentStage.parameters.target_temp_c}°C.`);
+  } else {
+    instructions = [...instructions, ...stageInstructions];
   }
   
   return {
@@ -846,8 +852,7 @@ export function getPendingInputs(batch: any, stageId: number, stage: any): strin
 
 /**
  * Get relevant doses for a stage based on stage name and instructions keywords
- * Instead of hardcoding by stage.id, uses keyword matching
- * Stages 3 and 4 never show doses (doses are announced in etapa 2 at start_batch)
+ * Uses keyword matching to include only doses needed at this stage.
  */
 export function getRelevantDosesForStage(
   stage: any, 
@@ -856,8 +861,6 @@ export function getRelevantDosesForStage(
   const doses: Record<string, DoseInfo> = {};
   
   if (!stage || !calculatedInputs) return doses;
-  
-  if (stage.id === 3 || stage.id === 4) return doses;
   
   const stageText = [
     stage.name || '',

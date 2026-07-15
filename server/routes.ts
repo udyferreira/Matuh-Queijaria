@@ -984,7 +984,8 @@ export async function registerRoutes(
           console.log(`[start_batch] Persisted activeBatch=${result.batch.id} for user (Nete, single-utterance flow)`);
         }
         const currentStage = getRecipeForBatch(result.batch).getStage(result.batch.currentStageId || 3);
-        const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage);
+        const calcHint = batchService.getCalculatedInputHint(result.batch, currentStage?.id ?? 3);
+        const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage, calcHint || undefined);
         const speech = await speechRenderer.renderSpeech(payload);
         return { speech, shouldEndSession: false };
       }
@@ -2416,7 +2417,8 @@ export async function registerRoutes(
             
             const newAttrs = { ...sessionAttributes, startBatchDraft: undefined, pending: undefined, activeBatchId: result.batch?.id };
             const currentStage = getRecipeForBatch(result.batch).getStage(result.batch.currentStageId || 3);
-            const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage);
+            const calcHint = batchService.getCalculatedInputHint(result.batch, currentStage?.id ?? 3);
+            const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage, calcHint || undefined);
             const speech = await speechRenderer.renderSpeech(payload);
             return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", newAttrs));
           }
@@ -3110,7 +3112,8 @@ export async function registerRoutes(
           const newAttrs = { ...sessionAttributes, startBatchDraft: undefined, pending: undefined, activeBatchId: result.batch?.id };
           
           const currentStage = getRecipeForBatch(result.batch).getStage(result.batch.currentStageId || 3);
-          const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage);
+          const calcHint = batchService.getCalculatedInputHint(result.batch, currentStage?.id ?? 3);
+          const payload = speechRenderer.buildStartBatchPayload(result.batch, currentStage, calcHint || undefined);
           const speech = await speechRenderer.renderSpeech(payload);
           return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?", newAttrs));
         }
