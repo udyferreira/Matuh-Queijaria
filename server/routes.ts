@@ -1566,8 +1566,7 @@ export async function registerRoutes(
                 ));
               }
 
-              const resumeHint = batchService.getCalculatedInputHint(batch, batch.currentStageId);
-              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}: ${stage?.name || 'em andamento'}.${resumeHint}${stageCtx} Continuar ou trocar de lote?`;
+              const speechText = `Etapa ${batch.currentStageId} do ${recipeName}. Continuar ou trocar de lote?`;
               console.log(`[LaunchRequest] Resuming persisted batch=${batch.id} stage=${batch.currentStageId} for user=${userId.substring(0, 20)}...`);
 
               // For interval stages (e.g. Nina stage 15 semi-cozimento), check if we need to
@@ -1706,7 +1705,7 @@ export async function registerRoutes(
             if (isLoopPhStage(activeBatch)) {
               const stageCtx = buildStage15Context(activeBatch);
               const stageNum = activeBatch.currentStageId;
-              const speech = `Continuando o lote. Etapa ${stageNum}: ${stage?.name || 'Virar queijos e medir pH'}.${stageCtx}`;
+              const speech = `Etapa ${stageNum}: ${stageCtx}`;
               console.log(`[${intentName}] Loop-pH stage ${stageNum} guidance with timer context`);
               return res.status(200).json(buildAlexaResponse(
                 speech, false, "Informe o pH ou diga 'qual é o status'.", baseAttrs
@@ -1719,7 +1718,7 @@ export async function registerRoutes(
                 const repromptText = stage?.operator_input_required?.length > 0
                   ? "Diga o valor solicitado ou 'qual é o status'."
                   : "Diga 'próxima etapa' ou 'qual é o status'.";
-                const speech = `Continuando o lote. Etapa ${activeBatch.currentStageId}: ${stage?.name || 'em andamento'}.${ctx}`;
+                const speech = `Etapa ${activeBatch.currentStageId}: ${ctx}`;
                 console.log(`[${intentName}] Stage guidance for stage ${activeBatch.currentStageId}`);
                 return res.status(200).json(buildAlexaResponse(
                   speech, false, repromptText, baseAttrs

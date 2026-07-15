@@ -135,13 +135,12 @@ stages:
       para atingir temperatura ambiente antes do uso.
 
   - id: 3
-    name: "Retirar 10% do leite e aquecer no tanque pequeno"
+    name: "Aquecer leite no tanque pequeno até 36 graus"
     type: "heat"
     parameters:
       target_temp_c: 36
       volume_source: "SMALL_TANK_MILK"
     instructions:
-      - "Retirar o volume calculado de leite (10% do total) para o tanque pequeno"
       - "Aquecer o leite no tanque pequeno até 36 graus"
       - "Quando terminar, diga 'próxima etapa'"
     llm_guidance: >
@@ -192,8 +191,6 @@ stages:
     type: "add"
     auto_record_timestamp: "ferment_add_time"
     instructions:
-      - "Adicionar fermento DX na quantidade calculada"
-      - "Adicionar fermento HT na quantidade calculada"
       - "Mexer bem o leite para distribuir os fermentos"
       - "Aguardar 30 minutos com o leite em repouso"
     timer:
@@ -210,7 +207,6 @@ stages:
     type: "add"
     auto_record_timestamp: "rennet_add_time"
     instructions:
-      - "Adicionar o coalho na quantidade calculada"
       - "Mexer bem por cerca de 1 minuto"
       - "Parar a agitação e colocar a Lira em posição"
       - "Aguardar a floculação sem mexer o leite"
@@ -228,7 +224,6 @@ stages:
       target_temp_c: 60
       volume_source: "HOT_WATER"
     instructions:
-      - "No tanque pequeno (já lavado), aquecer o volume calculado de água a 60 graus"
       - "Esta água será usada para o semi-cozimento da massa na etapa 15"
       - "Quando terminar, diga 'próxima etapa'"
     llm_guidance: >
@@ -301,14 +296,13 @@ stages:
       do soro.
 
   - id: 14
-    name: "Retirar 20% do soro"
+    name: "Retirar soro do tanque"
     type: "drain"
     parameters:
       volume_source: "WHEY_TO_REMOVE"
       volume_pct: 0.20
     instructions:
-      - "Retirar o volume calculado de soro do tanque (20% do volume de leite)"
-      - "Use um recipiente para medir ou estime visualmente com base no volume calculado"
+      - "Use um recipiente para medir o soro a retirar"
       - "Quando terminar, diga 'próxima etapa'"
     llm_guidance: >
       A retirada parcial do soro antes do semi-cozimento concentra a massa e
