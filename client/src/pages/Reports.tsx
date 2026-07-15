@@ -1155,7 +1155,6 @@ export default function Reports() {
               <span className="text-primary text-glow">Relatórios</span>
             </h1>
           </div>
-          <p className="text-muted-foreground">Acompanhe a produção mensal e os lotes concluídos.</p>
         </header>
 
         {isLoading ? (

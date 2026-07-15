@@ -47,7 +47,7 @@ export default function Home() {
             <h3 className="text-xl font-bold mb-2">Nenhum Lote Ativo</h3>
             <p className="text-muted-foreground mb-8">Inicie uma nova produção para começar o acompanhamento.</p>
             <Link href="/new">
-              <Button>Iniciar Primeiro Lote</Button>
+              <Button>Novo Lote</Button>
             </Link>
           </div>
         ) : (
