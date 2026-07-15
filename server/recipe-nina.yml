@@ -168,9 +168,7 @@ stages:
     name: "Desnatar tanque pequeno e juntar ao tanque de queijo"
     type: "instruction"
     instructions:
-      - "Retirar a camada de gordura (nata) que se formou no topo do leite do tanque pequeno"
-      - "Descartar a nata ou reservar para outro uso"
-      - "Juntar o leite desnatado do tanque pequeno ao leite do tanque de queijo"
+      - "Desnatar o leite do Tanque Pequeno e juntar ao leite do tanque de queijo"
       - "Quando terminar, diga 'próxima etapa'"
     llm_guidance: >
       A desnatação parcial do leite separado é uma característica do processo do Nina.
