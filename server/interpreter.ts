@@ -100,7 +100,8 @@ REGRAS DE INTERPRETAÇÃO:
      - "dx", "fermento dx", "fermento de x", "de x", "dex", "fermento d x" → "FERMENT_DX"
      - ATENÇÃO: Alexa ASR transcreve "DX" como "de X" - SEMPRE mapear "de x" e "fermento de x" para FERMENT_DX
      - "ht", "fermento ht", "fermento h t", "fermento de ht" → "FERMENT_HT"
-     - ATENÇÃO: Alexa ASR pode transcrever "HT" como "ache tê", "h te" ou "h t" - SEMPRE mapear para FERMENT_HT
+     - ATENÇÃO: Alexa ASR pode transcrever "HT" como "HP", "ache tê", "h te" ou "h t" - SEMPRE mapear para FERMENT_HT
+     - "hp", "fermento hp", "fermento h p" → "FERMENT_HT" (Alexa ASR frequentemente transcreve "HT" como "HP" em português)
      - "coalho", "rennet" → "RENNET"
    - NUNCA retornar unknown se um input_type válido puder ser inferido
 
@@ -145,6 +146,9 @@ QUERY_INPUT (consulta insumos) - PRIORIDADE ALTA:
 "me diga o ht" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_HT"}}
 "ache tê" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_HT"}}
 "h te" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_HT"}}
+"quanto de hp" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_HT"}}
+"fermento hp" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_HT"}}
+"quanto de fermento hp" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_HT"}}
 
 REPEAT_DOSES (repetir todas as doses calculadas):
 "repetir fermentos" → {"intent":"repeat_doses","confidence":0.95,"entities":{}}
@@ -287,6 +291,9 @@ const INPUT_TYPE_MAP: Record<string, InterpretedCommand["entities"]["input_type"
   "fermento de h t": "FERMENT_HT",
   "ache tê": "FERMENT_HT",
   "h te": "FERMENT_HT",
+  "hp": "FERMENT_HT",
+  "fermento hp": "FERMENT_HT",
+  "fermento h p": "FERMENT_HT",
   "coalho": "RENNET",
   "rennet": "RENNET",
 };

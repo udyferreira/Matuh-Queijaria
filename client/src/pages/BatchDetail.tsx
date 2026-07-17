@@ -775,7 +775,7 @@ export default function BatchDetail() {
                   const measurements = batch.measurements as Record<string, any> || {};
                   const history = measurements._history as Array<{key: string; value: any; stageId: number; timestamp: string}> || [];
                   
-                  const labelMap: Record<string, string> = {
+                  const LABEL_MAP_COMMON: Record<string, string> = {
                     'ph_value': 'Medição de pH',
                     'ph_measurement': 'Medição de pH',
                     'cut_point_time': 'Horário do Ponto de Corte',
@@ -791,13 +791,20 @@ export default function BatchDetail() {
                     'chamber_2_entry_date': 'Data de Entrada na Câmara 2',
                     'initial_ph': 'pH Inicial',
                     'turning_cycles_count': 'Quantidade de Viradas',
-                    'ferment_lr_dx_add_time_iso': 'Adição Fermentos LR/DX',
-                    'ferment_kl_coalho_add_time_iso': 'Adição Fermento KL + Coalho',
-                    'ferment_add_time': 'Adição dos Fermentos DX e HT',
-                    'rennet_add_time': 'Adição do Coalho',
                     'brine_entry_time_iso': 'Entrada na Salga',
                     'shelf_start_time_iso': 'Início da Secagem em Prateleiras',
                   };
+                  const LABEL_MAP_NETE: Record<string, string> = {
+                    ...LABEL_MAP_COMMON,
+                    'ferment_lr_dx_add_time_iso': 'Adição Fermentos LR/DX',
+                    'ferment_kl_coalho_add_time_iso': 'Adição Fermento KL + Coalho',
+                  };
+                  const LABEL_MAP_NINA: Record<string, string> = {
+                    ...LABEL_MAP_COMMON,
+                    'ferment_add_time': 'Adição dos Fermentos DX e HT',
+                    'rennet_add_time': 'Adição do Coalho',
+                  };
+                  const labelMap = batch.recipeId === 'QUEIJO_NINA' ? LABEL_MAP_NINA : LABEL_MAP_NETE;
 
                   
                   type MeasurementItem = { label: string; value: string; editKey: string; historyIndex?: number; stageId?: number; editable: boolean };
@@ -807,19 +814,21 @@ export default function BatchDetail() {
                     const phByStage: Record<number, number> = {};
                     
                     history.forEach((entry, idx) => {
+                      if (entry.key === 'loop_exit_reason' || entry.key === 'rollback') return;
+                      const isPh = entry.key === 'ph_value' || entry.key === 'ph_measurement';
+                      if (!isPh && !(entry.key in labelMap)) return;
+
                       let label: string;
                       
-                      if (entry.key === 'ph_value' || entry.key === 'ph_measurement') {
+                      if (isPh) {
                         phByStage[entry.stageId] = (phByStage[entry.stageId] || 0) + 1;
                         const count = phByStage[entry.stageId];
                         label = count === 1 
                           ? `Etapa ${entry.stageId} - Medição de pH`
                           : `Etapa ${entry.stageId} - ${count}ª Medição de pH`;
                       } else {
-                        label = `Etapa ${entry.stageId} - ${labelMap[entry.key] || entry.key.replace(/_/g, ' ')}`;
+                        label = `Etapa ${entry.stageId} - ${labelMap[entry.key]}`;
                       }
-                      
-                      if (entry.key === 'loop_exit_reason' || entry.key === 'rollback') return;
                       let displayValue = String(entry.value);
                       const isTimeKey = entry.key.endsWith('_time_iso') || entry.key === 'ferment_add_time' || entry.key === 'rennet_add_time';
                       if (isTimeKey) {

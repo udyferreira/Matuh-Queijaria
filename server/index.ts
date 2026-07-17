@@ -8,6 +8,8 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import rateLimit from "express-rate-limit";
 import { seedDefaultAdmin } from "./auth";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 
 const app = express();
 const httpServer = createServer(app);
@@ -201,8 +203,38 @@ app.use((req, res, next) => {
   next();
 });
 
+async function cleanupNinaBatchHistory(): Promise<void> {
+  try {
+    const result = await db.execute(sql`
+      UPDATE production_batches
+      SET measurements = jsonb_set(
+        measurements,
+        '{_history}',
+        COALESCE(
+          (SELECT jsonb_agg(elem)
+           FROM jsonb_array_elements(measurements->'_history') elem
+           WHERE elem->>'key' NOT IN ('ferment_lr_dx_add_time_iso', 'ferment_kl_coalho_add_time_iso')),
+          '[]'::jsonb
+        )
+      )
+      WHERE "recipeId" = 'QUEIJO_NINA'
+        AND (
+          measurements->'_history' @> '[{"key":"ferment_lr_dx_add_time_iso"}]'::jsonb
+          OR measurements->'_history' @> '[{"key":"ferment_kl_coalho_add_time_iso"}]'::jsonb
+        )
+    `);
+    const rowCount = (result as any).rowCount ?? 0;
+    if (rowCount > 0) {
+      console.log(`[startup] Cleaned spurious Nete history keys from ${rowCount} Nina batch(es).`);
+    }
+  } catch (err) {
+    console.error('[startup] cleanupNinaBatchHistory failed:', err);
+  }
+}
+
 (async () => {
   await seedDefaultAdmin();
+  await cleanupNinaBatchHistory();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
