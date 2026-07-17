@@ -405,8 +405,8 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
     if (turningCount != null) rows.push({ label: "Viradas Realizadas", value: String(turningCount) });
   }
 
-  // ── Salga: Nete etapa 17, Nina etapa 21 ──────────────────────────────────
-  if ((!isNina && stageId === 17) || (isNina && stageId === 21)) {
+  // ── Salga: Nete etapa 17, Nina etapa 23 ──────────────────────────────────
+  if ((!isNina && stageId === 17) || (isNina && stageId === 23)) {
     const isoVal = measurements.brine_entry_time_iso || stageHistory.find(i => i.key === 'brine_entry_time_iso')?.value;
     if (isoVal) rows.push({ label: "Entrada na Salga", value: formatDateTimeIso(String(isoVal)) });
   }
