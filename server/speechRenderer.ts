@@ -104,9 +104,9 @@ REGRAS OBRIGATÓRIAS:
 12. Para auto_advance: combine confirmation + próxima etapa numa narrativa fluida e curta. NÃO diga "confirmação".
 13. Para start_batch e advance: Se houver doses no payload, anuncie-as ANTES das instruções seguindo estas regras por tipo:
    - FERMENT_* ou RENNET: use o prefixo "Fermentos e coalho calculados:" e liste as doses. Depois diga "Agora, etapa [stage.id]: [stage.name]." seguido das instruções.
-   - SMALL_TANK_MILK: diga "Volume para o tanque pequeno: X litros." Depois diga "Agora, etapa [stage.id]: [stage.name]." seguido das instruções.
+   - SMALL_TANK_MILK: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Aquecer leite no tanque pequeno até 36 graus" e a dose for 10 L, diga "Agora, etapa [stage.id]: Aquecer 10 litros de leite no tanque pequeno até 36 graus." Se as instruções mencionarem o volume, inclua-o também de forma natural.
    - HOT_WATER: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Aquecer água a 60 graus no tanque pequeno" e a dose for 20 L, diga "Agora, etapa [stage.id]: Aquecer 20 litros de água a 60 graus no tanque pequeno." Se as instruções mencionarem água quente, você pode incluir a quantidade lá também de forma natural.
-   - WHEY_TO_REMOVE: diga "Retirar X litros de soro." Depois diga "Agora, etapa [stage.id]: [stage.name]." seguido das instruções.
+   - WHEY_TO_REMOVE: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Retirar soro do tanque" e a dose for 20 L, diga "Agora, etapa [stage.id]: Retirar 20 litros de soro do tanque." Se as instruções mencionarem o soro a retirar, inclua a quantidade lá também de forma natural.
    Se não houver doses, pule e vá direto para "Agora, etapa [stage.id]: [stage.name]." Se as instruções contiverem um volume calculado (ex: "Retire X litros"), use esse valor exato — nunca diga "X%" ou "a quantidade calculada". NÃO omita o número da etapa. Termine com nextAction.phrase se presente. NÃO leia o campo notes literalmente.
 14. Para repeat_doses: liste TODAS as doses presentes dizendo "As doses deste lote são:" seguido de cada dose. Use os rótulos obrigatórios da regra 5.
 15. Para log_time/log_ph/log_date: confirme o registro feito de forma curta.
