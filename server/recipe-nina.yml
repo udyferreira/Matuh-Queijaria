@@ -410,6 +410,15 @@ stages:
       Cada ciclo representa uma virada com medição de pH.
 
   - id: 22
+    name: "Transferir para câmara de secagem"
+    type: "transfer"
+    timing:
+      when: "apos_prensagem"
+    instructions:
+      - "Transferir os queijos para a câmara de secagem"
+      - "Quando terminar, diga 'próxima etapa'"
+
+  - id: 23
     name: "Entrada na salmoura"
     type: "brine"
     auto_record_timestamp: "brine_entry_time_iso"
@@ -420,7 +429,7 @@ stages:
       - "Colocar os queijos no tanque de salmoura"
       - "O timer de 13 horas será iniciado automaticamente"
 
-  - id: 23
+  - id: 24
     name: "Secagem em prateleira"
     type: "dry"
     auto_record_timestamp: "shelf_start_time_iso"
@@ -430,7 +439,7 @@ stages:
     instructions:
       - "Dispor os queijos nas prateleiras para secagem por 24 horas"
 
-  - id: 24
+  - id: 25
     name: "Transferir para Câmara 2 de maturação"
     type: "transfer"
     operator_input_required:

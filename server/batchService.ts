@@ -473,7 +473,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
 
   // Generic: auto_record_timestamp defined in YAML — records on ENTRY to the next stage
   // Used for: Nina stage 7 (ferment_add_time), stage 9 (rennet_add_time),
-  //           stage 22 (brine_entry_time_iso), stage 23 (shelf_start_time_iso)
+  //           stage 23 (brine_entry_time_iso), stage 24 (shelf_start_time_iso)
   if (nextStage.auto_record_timestamp && !measurements[nextStage.auto_record_timestamp]) {
     measurements[nextStage.auto_record_timestamp] = nowIso;
     const mHistory = measurements._history || [];
@@ -1311,7 +1311,7 @@ export async function editCompletedBatch(
   const fieldsEdited: string[] = [];
   const isNina = ((batch as any).recipeId || 'QUEIJO_NETE') === 'QUEIJO_NINA';
   const loopStageId = isNina ? 21 : 15;
-  const camStageId = isNina ? 24 : 19;
+  const camStageId = isNina ? 25 : 19;
 
   function recordEdit(key: string, newValue: any, previousValue: any, stageId: number) {
     history.push({ key, value: newValue, previousValue, stageId, timestamp: now, action: 'post_completion_edit', editedVia: 'web' });
@@ -1335,8 +1335,8 @@ export async function editCompletedBatch(
         { key: 'initial_ph', stageId: 19 },
         { key: 'pieces_quantity', stageId: 19 },
         { key: 'press_start_time', stageId: 20 },
-        { key: 'brine_entry_time_iso', stageId: 22 },
-        { key: 'shelf_start_time_iso', stageId: 23 },
+        { key: 'brine_entry_time_iso', stageId: 23 },
+        { key: 'shelf_start_time_iso', stageId: 24 },
       ] : [
         { key: 'ferment_lr_dx_add_time_iso', stageId: 4 },
         { key: 'ferment_kl_coalho_add_time_iso', stageId: 5 },

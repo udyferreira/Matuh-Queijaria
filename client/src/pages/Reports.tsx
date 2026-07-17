@@ -411,14 +411,14 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
     if (isoVal) rows.push({ label: "Entrada na Salga", value: formatDateTimeIso(String(isoVal)) });
   }
 
-  // ── Secagem prateleiras: Nete etapa 18, Nina etapa 22 ────────────────────
-  if ((!isNina && stageId === 18) || (isNina && stageId === 22)) {
+  // ── Secagem prateleiras: Nete etapa 18, Nina etapa 24 ────────────────────
+  if ((!isNina && stageId === 18) || (isNina && stageId === 24)) {
     const isoVal = measurements.shelf_start_time_iso || stageHistory.find(i => i.key === 'shelf_start_time_iso')?.value;
     if (isoVal) rows.push({ label: "Início da Secagem em Prateleiras", value: formatDateTimeIso(String(isoVal)) });
   }
 
-  // ── Câmara 2: Nete etapa 19, Nina etapa 23 ───────────────────────────────
-  if ((!isNina && stageId === 19) || (isNina && stageId === 23)) {
+  // ── Câmara 2: Nete etapa 19, Nina etapa 25 ───────────────────────────────
+  if ((!isNina && stageId === 19) || (isNina && stageId === 25)) {
     if (batch.chamber2EntryDate) {
       rows.push({ label: "Data de Entrada na Câmara 2", value: parseDateOnly(batch.chamber2EntryDate) });
     }

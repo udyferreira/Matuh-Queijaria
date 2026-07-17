@@ -2862,7 +2862,7 @@ export async function registerRoutes(
           ));
         }
         
-        // --- RegisterChamberEntryDateIntent: Structured date registration (Nete stage 19 / Nina stage 24) ---
+        // --- RegisterChamberEntryDateIntent: Structured date registration (Nete stage 19 / Nina stage 25) ---
         if (intentName === "RegisterChamberEntryDateIntent") {
           console.log("RegisterChamberEntryDateIntent received:", JSON.stringify(slots, null, 2));
           
