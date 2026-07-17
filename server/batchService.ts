@@ -794,9 +794,9 @@ export async function logTime(batchId: number, timeValue: string, timeType?: str
     6: { key: 'flocculation_time', expectedStage: 6 },
     7: { key: 'cut_point_time', expectedStage: 7 },
     14: { key: 'press_start_time', expectedStage: 14 },
-    10: { key: 'flocculation_time', expectedStage: 10 },
-    11: { key: 'cut_point_time', expectedStage: 11 },
-    19: { key: 'press_start_time', expectedStage: 19 },
+    11: { key: 'flocculation_time', expectedStage: 11 },
+    12: { key: 'cut_point_time', expectedStage: 12 },
+    20: { key: 'press_start_time', expectedStage: 20 },
   };
   
   const normalized = normalizeTimeType(timeType);
@@ -1262,14 +1262,14 @@ export async function editCompletedBatch(
       { key: 'milk_ph', stageId: 1 },
       ...(isNina ? [
         { key: 'ferment_add_time', stageId: 7 },
-        { key: 'rennet_add_time', stageId: 8 },
-        { key: 'flocculation_time', stageId: 10 },
-        { key: 'cut_point_time', stageId: 11 },
-        { key: 'initial_ph', stageId: 18 },
-        { key: 'pieces_quantity', stageId: 18 },
-        { key: 'press_start_time', stageId: 19 },
-        { key: 'brine_entry_time_iso', stageId: 21 },
-        { key: 'shelf_start_time_iso', stageId: 22 },
+        { key: 'rennet_add_time', stageId: 9 },
+        { key: 'flocculation_time', stageId: 11 },
+        { key: 'cut_point_time', stageId: 12 },
+        { key: 'initial_ph', stageId: 19 },
+        { key: 'pieces_quantity', stageId: 19 },
+        { key: 'press_start_time', stageId: 20 },
+        { key: 'brine_entry_time_iso', stageId: 22 },
+        { key: 'shelf_start_time_iso', stageId: 23 },
       ] : [
         { key: 'ferment_lr_dx_add_time_iso', stageId: 4 },
         { key: 'ferment_kl_coalho_add_time_iso', stageId: 5 },

@@ -642,7 +642,7 @@ export async function registerRoutes(
       // Nete stages 4/5
       ferment_lr_dx_add_time_iso: z.string().datetime().optional(),
       ferment_kl_coalho_add_time_iso: z.string().datetime().optional(),
-      // Nina stages 7/8
+      // Nina stages 7/9
       ferment_add_time: z.string().datetime().optional(),
       rennet_add_time: z.string().datetime().optional(),
       flocculation_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
@@ -2509,7 +2509,7 @@ export async function registerRoutes(
           }
           
           // ============================================
-          // INITIAL-PH STAGE: pH inicial + quantidade de peças (Nete:13, Nina:18)
+          // INITIAL-PH STAGE: pH inicial + quantidade de peças (Nete:13, Nina:19)
           // Multi-turn guided flow using pending states
           // ============================================
           const isInitialPhStageFlag = !!(getRecipeForBatch(activeBatch).getStage(stageId)?.stored_values?.includes('initial_ph'));
@@ -2696,7 +2696,7 @@ export async function registerRoutes(
           }
           
           // ============================================
-          // LOOP-PH STAGE: Viradas — só pH (Nete:15, Nina:20)
+          // LOOP-PH STAGE: Viradas — só pH (Nete:15, Nina:21)
           // Uses centralized batchService.logPh()
           // ============================================
           const isLoopPhStageFlag = getRecipeForBatch(activeBatch).isLoopStage(stageId) && !!(getRecipeForBatch(activeBatch).getStage(stageId)?.loop_actions?.includes('medir_ph'));
@@ -2867,7 +2867,7 @@ export async function registerRoutes(
           ));
         }
         
-        // --- RegisterChamberEntryDateIntent: Structured date registration (Nete stage 19 / Nina stage 23) ---
+        // --- RegisterChamberEntryDateIntent: Structured date registration (Nete stage 19 / Nina stage 24) ---
         if (intentName === "RegisterChamberEntryDateIntent") {
           console.log("RegisterChamberEntryDateIntent received:", JSON.stringify(slots, null, 2));
           
