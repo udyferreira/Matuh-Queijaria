@@ -794,6 +794,9 @@ export async function logTime(batchId: number, timeValue: string, timeType?: str
     6: { key: 'flocculation_time', expectedStage: 6 },
     7: { key: 'cut_point_time', expectedStage: 7 },
     14: { key: 'press_start_time', expectedStage: 14 },
+    10: { key: 'flocculation_time', expectedStage: 10 },
+    11: { key: 'cut_point_time', expectedStage: 11 },
+    19: { key: 'press_start_time', expectedStage: 19 },
   };
   
   const normalized = normalizeTimeType(timeType);
@@ -819,7 +822,7 @@ export async function logTime(batchId: number, timeValue: string, timeType?: str
   if (!mapping) {
     return { 
       success: false, 
-      error: "Tipo de horário inválido. Use: floculação, corte, ou prensa. Se estiver na etapa correta, diga apenas 'hora às HH:MM'.",
+      error: "Não reconheci o tipo de horário. Diga, por exemplo, 'hora da floculação às dezoito horas'.",
       code: "INVALID_TIME_TYPE"
     };
   }
