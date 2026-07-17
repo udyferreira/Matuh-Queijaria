@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { FileText, ArrowLeft, ChevronDown, ChevronUp, Printer, FileDown, FileSpreadsheet, Pencil, Layers, Milk, Package, FlaskConical, X, Calendar } from "lucide-react";
+import { FileText, ArrowLeft, ChevronDown, ChevronUp, Printer, FileDown, FileSpreadsheet, Pencil, Layers, Milk, Package, FlaskConical, X, Calendar, PackageCheck, AlertTriangle, ChevronRight } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCompletedBatches } from "@/hooks/use-batches";
 import { getCheeseTypeName, formatBatchCode, ProductionBatch } from "@shared/schema";
 import { parseDateOnly } from "@/lib/utils";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { zipSync, strToU8 } from "fflate";
 import { EditBatchModal } from "@/components/EditBatchModal";
 
@@ -890,6 +890,247 @@ function KpiCard({ title, icon, curNete, curNina, unit, curLabel, months, getNet
 
 // ─── KPI Dashboard ───────────────────────────────────────────────────────────
 
+// ─── Estoque Dashboard ───────────────────────────────────────────────────────
+
+function EstoqueDashboard({ batches }: { batches: ProductionBatch[] }) {
+  const today = useMemo(() => new Date(), []);
+  const [openCard, setOpenCard] = useState<"maturados" | "risco" | null>(null);
+
+  const lotesEmRisco = useMemo(() =>
+    batches.filter((b) => {
+      const maxDate = (b as any).maturationMaxEndDate;
+      const exitDate = (b as any).chamber2ExitDate;
+      return maxDate && new Date(maxDate) <= today && !exitDate;
+    }),
+    [batches, today]
+  );
+
+  const lotesMaturados = useMemo(() =>
+    batches.filter((b) => {
+      const minDate = b.maturationEndDate;
+      const maxDate = (b as any).maturationMaxEndDate;
+      const exitDate = (b as any).chamber2ExitDate;
+      return (
+        minDate && new Date(minDate) <= today &&
+        maxDate && new Date(maxDate) > today &&
+        !exitDate
+      );
+    }),
+    [batches, today]
+  );
+
+  function daysDiff(date: string | Date): number {
+    return Math.floor((today.getTime() - new Date(date).getTime()) / 86_400_000);
+  }
+
+  const toggle = (card: "maturados" | "risco") =>
+    setOpenCard((prev) => (prev === card ? null : card));
+
+  return (
+    <div className="space-y-8" data-testid="section-estoque-dashboard">
+      {/* ── Metric cards ──────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+
+        {/* Lotes Maturados */}
+        <div
+          onClick={() => lotesMaturados.length > 0 && toggle("maturados")}
+          data-testid="card-estoque-maturados"
+          className={[
+            "rounded-2xl border border-border bg-card overflow-hidden transition-all duration-200",
+            "border-t-4 border-t-emerald-500",
+            lotesMaturados.length > 0
+              ? "cursor-pointer hover:shadow-lg hover:shadow-emerald-500/5 hover:-translate-y-0.5"
+              : "opacity-70",
+          ].join(" ")}
+        >
+          <div className="p-6">
+            <div className="flex items-start justify-between mb-6">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
+                  <PackageCheck className="w-5 h-5 text-emerald-500" />
+                </span>
+                <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                  Lotes Maturados
+                </span>
+              </div>
+              {lotesMaturados.length > 0 && (
+                <ChevronRight
+                  className={[
+                    "w-4 h-4 text-muted-foreground transition-transform duration-200 mt-1",
+                    openCard === "maturados" ? "rotate-90" : "",
+                  ].join(" ")}
+                />
+              )}
+            </div>
+            <div className="flex items-end justify-between">
+              <div>
+                <p className="text-6xl font-bold tracking-tight text-emerald-500 leading-none">
+                  {lotesMaturados.length}
+                </p>
+                <p className="text-sm text-muted-foreground mt-3 leading-relaxed">
+                  {lotesMaturados.length === 0
+                    ? "Nenhum lote no ponto agora"
+                    : lotesMaturados.length === 1
+                    ? "lote pronto para sair da câmara"
+                    : "lotes prontos para sair da câmara"}
+                </p>
+              </div>
+              {lotesMaturados.length > 0 && (
+                <span className="text-xs text-emerald-500/70 font-medium mb-1 self-end">
+                  Ver lotes ↓
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Expanded batch list — Maturados */}
+          {openCard === "maturados" && (
+            <div className="border-t border-border bg-muted/20">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border/60">
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Lote</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receita</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Entrada Câm. 2</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fim Mín.</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fim Máx.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lotesMaturados.map((b, idx) => (
+                      <tr
+                        key={b.id}
+                        className={idx % 2 === 0 ? "bg-muted/10" : ""}
+                        data-testid={`row-estoque-maturado-${b.id}`}
+                      >
+                        <td className="px-4 py-3 font-mono font-semibold text-foreground">{formatBatchCode(b.startedAt)}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{(b as any).recipeName || getCheeseTypeName(b.recipeId)}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{b.chamber2EntryDate ? parseDateOnly(b.chamber2EntryDate) : "—"}</td>
+                        <td className="px-4 py-3 text-emerald-400 font-medium">{b.maturationEndDate ? parseDateOnly(b.maturationEndDate) : "—"}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{(b as any).maturationMaxEndDate ? parseDateOnly((b as any).maturationMaxEndDate) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Lotes em Risco */}
+        <div
+          onClick={() => lotesEmRisco.length > 0 && toggle("risco")}
+          data-testid="card-estoque-risco"
+          className={[
+            "rounded-2xl border border-border bg-card overflow-hidden transition-all duration-200",
+            "border-t-4 border-t-amber-500",
+            lotesEmRisco.length > 0
+              ? "cursor-pointer hover:shadow-lg hover:shadow-amber-500/5 hover:-translate-y-0.5"
+              : "opacity-70",
+          ].join(" ")}
+        >
+          <div className="p-6">
+            <div className="flex items-start justify-between mb-6">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-amber-500" />
+                </span>
+                <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                  Lotes em Risco
+                </span>
+              </div>
+              {lotesEmRisco.length > 0 && (
+                <ChevronRight
+                  className={[
+                    "w-4 h-4 text-muted-foreground transition-transform duration-200 mt-1",
+                    openCard === "risco" ? "rotate-90" : "",
+                  ].join(" ")}
+                />
+              )}
+            </div>
+            <div className="flex items-end justify-between">
+              <div>
+                <p className={[
+                  "text-6xl font-bold tracking-tight leading-none",
+                  lotesEmRisco.length > 0 ? "text-amber-500" : "text-muted-foreground",
+                ].join(" ")}>
+                  {lotesEmRisco.length}
+                </p>
+                <p className="text-sm text-muted-foreground mt-3 leading-relaxed">
+                  {lotesEmRisco.length === 0
+                    ? "Nenhum lote em risco agora"
+                    : lotesEmRisco.length === 1
+                    ? "lote ultrapassou o prazo máximo"
+                    : "lotes ultrapassaram o prazo máximo"}
+                </p>
+              </div>
+              {lotesEmRisco.length > 0 && (
+                <span className="text-xs text-amber-500/70 font-medium mb-1 self-end">
+                  Ver lotes ↓
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Expanded batch list — Risco */}
+          {openCard === "risco" && (
+            <div className="border-t border-border bg-muted/20">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border/60">
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Lote</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receita</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Entrada Câm. 2</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fim Máx.</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Atraso</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lotesEmRisco
+                      .slice()
+                      .sort((a, b) => new Date((a as any).maturationMaxEndDate).getTime() - new Date((b as any).maturationMaxEndDate).getTime())
+                      .map((b, idx) => {
+                        const dias = daysDiff((b as any).maturationMaxEndDate);
+                        return (
+                          <tr
+                            key={b.id}
+                            className={idx % 2 === 0 ? "bg-muted/10" : ""}
+                            data-testid={`row-estoque-risco-${b.id}`}
+                          >
+                            <td className="px-4 py-3 font-mono font-semibold text-foreground">{formatBatchCode(b.startedAt)}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{(b as any).recipeName || getCheeseTypeName(b.recipeId)}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{b.chamber2EntryDate ? parseDateOnly(b.chamber2EntryDate) : "—"}</td>
+                            <td className="px-4 py-3 text-amber-400 font-medium">{parseDateOnly((b as any).maturationMaxEndDate)}</td>
+                            <td className="px-4 py-3 text-right">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-400">
+                                +{dias}d
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* ── Footer note ────────────────────────────────────────────────── */}
+      <p className="text-xs text-muted-foreground text-center">
+        Lotes com "Data de Saída da Câmara 2" preenchida não aparecem nos indicadores.
+        Referência: {today.toLocaleDateString("pt-BR")}.
+      </p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function KpiDashboard({ batches }: { batches: ProductionBatch[] }) {
   const [expandAll, setExpandAll] = useState(false);
   const months = computeKpiByMonth(batches);
@@ -1187,10 +1428,24 @@ export default function Reports() {
             <TabsList className="mb-6" data-testid="tabslist-reports">
               <TabsTrigger value="kpi" data-testid="tab-kpi">KPIs</TabsTrigger>
               <TabsTrigger value="lotes" data-testid="tab-lotes">Lotes</TabsTrigger>
+              <TabsTrigger value="estoque" data-testid="tab-estoque" className="flex items-center gap-1.5">
+                Estoque
+                {completedBatches.some((b) => {
+                  const maxDate = (b as any).maturationMaxEndDate;
+                  const exitDate = (b as any).chamber2ExitDate;
+                  return maxDate && new Date(maxDate) <= new Date() && !exitDate;
+                }) && (
+                  <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" data-testid="dot-estoque-risco" />
+                )}
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="kpi">
               <KpiDashboard batches={completedBatches} />
+            </TabsContent>
+
+            <TabsContent value="estoque">
+              <EstoqueDashboard batches={completedBatches} />
             </TabsContent>
 
             <TabsContent value="lotes">
