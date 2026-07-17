@@ -1,2 +1,3 @@
 - [Multi-recipe UI/Alexa](multi-recipe.md) — Nina (23 stages) + Nete (19 stages); stageInfo from API drives all UI logic dynamically.
 - [logPh timer reset](logph-timer-reset.md) — use getIntervalDurationMinutes() not direct timer.interval_hours access for Nina loop stage timer reset.
+- [Loop interval timer init](loop-interval-timer-init.md) — loop stages with interval_hours need explicit activeTimers entry in advanceBatch; the interval block only creates activeReminders otherwise.

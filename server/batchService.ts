@@ -370,6 +370,25 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
         description: `Alerta a cada ${intervalDesc}`
       });
       updates.activeReminders = activeReminders;
+
+      // Loop stages using interval_hours (e.g. Nina stage 21) also need a visible
+      // countdown in activeTimers so the UI and logPh can display/reset the cycle timer.
+      // Non-loop interval stages (e.g. Nina stage 15 semi-cozimento) already create
+      // their activeTimers entry via the max_loop_duration_hours block above.
+      if (nextStage.type === 'loop') {
+        const phTimerMinutes = TEST_MODE ? (10 / 60) : intervalMinutes;
+        activeTimers.push({
+          id: generateId(),
+          stageId: nextStage.id,
+          durationMinutes: phTimerMinutes,
+          startTime: new Date().toISOString(),
+          endTime: new Date(Date.now() + phTimerMinutes * 60000).toISOString(),
+          description: intervalDesc,
+          blocking: false
+        });
+        updates.activeTimers = activeTimers;
+        console.log(`[advanceBatch] Loop interval timer started for stage=${nextStage.id} duration=${phTimerMinutes} min`);
+      }
     }
     
     if (durationMinutes > 0) {
