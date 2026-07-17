@@ -2867,7 +2867,7 @@ export async function registerRoutes(
           ));
         }
         
-        // --- RegisterChamberEntryDateIntent: Structured date registration (Stage 19) ---
+        // --- RegisterChamberEntryDateIntent: Structured date registration (Nete stage 19 / Nina stage 23) ---
         if (intentName === "RegisterChamberEntryDateIntent") {
           console.log("RegisterChamberEntryDateIntent received:", JSON.stringify(slots, null, 2));
           
@@ -2889,8 +2889,9 @@ export async function registerRoutes(
             // Build contextual help based on current stage
             let helpMessage: string;
             if (activeBatch && currentStage) {
-              if (stageId === 19) {
-                helpMessage = `Estamos na etapa ${stageId}: Transferir para Câmara 2. Quando transferir, diga: "coloquei na câmara dois agora". Ou diga "qual é o status".`;
+              const stageLockForDate = getRecipeForBatch(activeBatch).getStageInputLock(stageId);
+              if (stageLockForDate.expectedIntent === 'RegisterChamberEntryDateIntent') {
+                helpMessage = `Estamos na etapa ${stageId}: ${currentStage.name}. Quando transferir, diga: "coloquei na câmara dois agora". Ou diga "qual é o status".`;
               } else {
                 // Stage doesn't require date - suggest what IS valid
                 const utterances = speechRenderer.getContextualUtterances(currentStage, activeBatch);
@@ -2919,9 +2920,10 @@ export async function registerRoutes(
             ));
           }
           
-          // Check if we're at the correct stage (19)
+          // Check if we're at a stage that expects chamber entry date (recipe-agnostic)
           const currentStage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
-          if (activeBatch.currentStageId !== 19) {
+          const stageLockForDateCheck = getRecipeForBatch(activeBatch).getStageInputLock(activeBatch.currentStageId);
+          if (stageLockForDateCheck.expectedIntent !== 'RegisterChamberEntryDateIntent') {
             const utterances = speechRenderer.getContextualUtterances(currentStage, activeBatch);
             const examples = utterances.slice(0, 2).map(u => `"${u}"`).join(' ou ');
             return res.status(200).json(buildAlexaResponse(
@@ -2958,11 +2960,11 @@ export async function registerRoutes(
             ));
           }
           
-          console.log(`[Stage 19] chamber2EntryDate BEFORE: ${(activeBatch as any).chamber2EntryDate || 'null'}`);
+          console.log(`[RegisterChamberEntry] stage=${activeBatch.currentStageId} chamber2EntryDate BEFORE: ${(activeBatch as any).chamber2EntryDate || 'null'}`);
           
           const result = await batchService.recordChamber2Entry(activeBatch.id, dateValue, undefined, apiCtx);
           
-          console.log(`[Stage 19] chamber2EntryDate AFTER: dateValue=${dateValue} success=${result.success}`);
+          console.log(`[RegisterChamberEntry] stage=${activeBatch.currentStageId} chamber2EntryDate AFTER: dateValue=${dateValue} success=${result.success}`);
           
           if (!result.success) {
             return res.status(200).json(buildAlexaResponse(
