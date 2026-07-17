@@ -265,8 +265,7 @@ stages:
     name: "Cortar a massa com a Lira"
     type: "cut"
     instructions:
-      - "Realizar o corte da massa com a Lira em movimentos horizontais e verticais"
-      - "Os grãos devem ficar uniformes"
+      - "Realizar o corte da massa com a Lira"
       - "Quando terminar, diga 'próxima etapa'"
     llm_guidance: >
       O corte com a Lira deve ser uniforme para garantir grãos de tamanho homogêneo.
