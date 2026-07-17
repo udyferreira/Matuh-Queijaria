@@ -424,12 +424,16 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
     if (batch.chamber2EntryDate) {
       rows.push({ label: "Data de Entrada na Câmara 2", value: parseDateOnly(batch.chamber2EntryDate) });
     }
+    const chamber2ExitDate = (batch as any).chamber2ExitDate;
+    rows.push({ label: "Data de Saída da Câmara 2", value: chamber2ExitDate ? parseDateOnly(chamber2ExitDate) : "—" });
     if (batch.maturationEndDate) {
-      const maturacaoLabel = isNina ? "Fim da Maturação (180 dias)" : "Fim da Maturação (90 dias)";
-      rows.push({ label: maturacaoLabel, value: parseDateOnly(batch.maturationEndDate) });
+      const maturacaoMinLabel = isNina ? "Fim da Maturação Mínima (180 dias)" : "Fim da Maturação Mínima (90 dias)";
+      rows.push({ label: maturacaoMinLabel, value: parseDateOnly(batch.maturationEndDate) });
     }
-    if (batch.completedAt) {
-      rows.push({ label: "Data de Conclusão", value: new Date(batch.completedAt).toLocaleDateString("pt-BR") });
+    const maturationMaxEndDate = (batch as any).maturationMaxEndDate;
+    if (maturationMaxEndDate) {
+      const maturacaoMaxLabel = isNina ? "Fim da Maturação Máxima (240 dias)" : "Fim da Maturação Máxima (135 dias)";
+      rows.push({ label: maturacaoMaxLabel, value: parseDateOnly(maturationMaxEndDate) });
     }
   }
 
@@ -487,7 +491,8 @@ function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionB
               <p className="text-sm text-muted-foreground">
                 {(batch as any).recipeName || getCheeseTypeName(batch.recipeId)} - {batch.milkVolumeL}L - Concluído em {batch.completedAt ? new Date(batch.completedAt).toLocaleDateString("pt-BR") : "N/A"}
                 {batch.chamber2EntryDate && ` | Entrada Câmara 2: ${parseDateOnly(batch.chamber2EntryDate)}`}
-                {batch.maturationEndDate && ` | Fim Maturação: ${parseDateOnly(batch.maturationEndDate)}`}
+                {batch.maturationEndDate && ` | Fim Maturação Mín.: ${parseDateOnly(batch.maturationEndDate)}`}
+                {(batch as any).maturationMaxEndDate && ` | Máx.: ${parseDateOnly((batch as any).maturationMaxEndDate)}`}
               </p>
             </div>
           </div>

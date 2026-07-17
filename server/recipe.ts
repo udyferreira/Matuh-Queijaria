@@ -75,6 +75,7 @@ interface RecipeProcess {
   temperature_tolerance_c?: number;
   target_final_ph?: number;
   maturation_target_days?: number;
+  maturation_max_extra_days?: number;
   semi_cook_target_temp_c?: number;
   semi_cook_rate_c_per_min?: number;
 }
@@ -111,6 +112,12 @@ export class RecipeManager {
 
   getMaturationDays(): number {
     return this.recipe.process?.maturation_target_days ?? 90;
+  }
+
+  getMaturationMaxDays(): number {
+    const base = this.recipe.process?.maturation_target_days ?? 90;
+    const extra = this.recipe.process?.maturation_max_extra_days ?? 45;
+    return base + extra;
   }
 
   getDerivedVolumes(): DerivedVolume[] {

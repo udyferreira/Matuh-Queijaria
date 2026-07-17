@@ -97,6 +97,7 @@ process:
   semi_cook_target_temp_c: 38
   semi_cook_rate_c_per_min: 0.33
   maturation_target_days: 180
+  maturation_max_extra_days: 60
 
 stages:
 

@@ -99,6 +99,8 @@ interface FormState {
   shelf_start_time_iso: string;
   chamber2EntryDate: string;
   maturationEndDate: string;
+  maturationMaxEndDate: string;
+  chamber2ExitDate: string;
 }
 
 function buildInitialState(batch: ProductionBatch): FormState {
@@ -165,6 +167,8 @@ function buildInitialState(batch: ProductionBatch): FormState {
     shelf_start_time_iso: isoToDatetimeBRT(mOrHistory('shelf_start_time_iso')),
     chamber2EntryDate: timestampToDateInput(batch.chamber2EntryDate as any),
     maturationEndDate: timestampToDateInput(batch.maturationEndDate as any),
+    maturationMaxEndDate: timestampToDateInput((batch as any).maturationMaxEndDate as any),
+    chamber2ExitDate: timestampToDateInput((batch as any).chamber2ExitDate as any),
   };
 }
 
@@ -292,9 +296,16 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
         : "";
     }
 
-    // Câmara 2 e maturação (Nete: stage 19 / Nina: stage 23 — handled by backend)
+    // Câmara 2 e maturação (Nete: stage 19 / Nina: stage 25 — handled by backend)
     strIfChanged("chamber2EntryDate", (v) => { payload.topLevel.chamber2EntryDate = v; });
     strIfChanged("maturationEndDate", (v) => { payload.topLevel.maturationEndDate = v; });
+    strIfChanged("maturationMaxEndDate", (v) => { payload.topLevel.maturationMaxEndDate = v; });
+    // chamber2ExitDate: always send if changed (including clearing to "")
+    {
+      const cur = form.chamber2ExitDate;
+      const prev = initial.chamber2ExitDate;
+      if (cur !== prev) payload.topLevel.chamber2ExitDate = cur || null;
+    }
 
     // Volume de leite
     numIfChanged("milkVolumeL", (v) => { payload.topLevel.milkVolumeL = v; });
@@ -339,6 +350,55 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
         </DialogHeader>
 
         <div className="space-y-6 py-2">
+
+          {/* Câmara 2 e Maturação */}
+          <section>
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+              {labels.camLabel}
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit-chamber2-exit">Data de Saída da Câmara 2</Label>
+                <Input
+                  id="edit-chamber2-exit"
+                  type="date"
+                  value={form.chamber2ExitDate}
+                  onChange={(e) => set("chamber2ExitDate", e.target.value)}
+                  data-testid="input-edit-chamber2-exit-date"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-maturation-min">Fim da Maturação Mínima</Label>
+                <Input
+                  id="edit-maturation-min"
+                  type="date"
+                  value={form.maturationEndDate}
+                  onChange={(e) => set("maturationEndDate", e.target.value)}
+                  data-testid="input-edit-maturation-min-date"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-maturation-max">Fim da Maturação Máxima</Label>
+                <Input
+                  id="edit-maturation-max"
+                  type="date"
+                  value={form.maturationMaxEndDate}
+                  onChange={(e) => set("maturationMaxEndDate", e.target.value)}
+                  data-testid="input-edit-maturation-max-date"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-chamber2">Data Entrada Câmara 2</Label>
+                <Input
+                  id="edit-chamber2"
+                  type="date"
+                  value={form.chamber2EntryDate}
+                  onChange={(e) => set("chamber2EntryDate", e.target.value)}
+                  data-testid="input-edit-chamber2-date"
+                />
+              </div>
+            </div>
+          </section>
 
           {/* Etapa 1 — Parâmetros Iniciais */}
           <section>
@@ -625,34 +685,6 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
             </div>
           </section>
 
-          {/* Câmara 2 e Maturação */}
-          <section>
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              {labels.camLabel}
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-chamber2">Data Entrada Câmara 2</Label>
-                <Input
-                  id="edit-chamber2"
-                  type="date"
-                  value={form.chamber2EntryDate}
-                  onChange={(e) => set("chamber2EntryDate", e.target.value)}
-                  data-testid="input-edit-chamber2-date"
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit-maturation">Fim da Maturação</Label>
-                <Input
-                  id="edit-maturation"
-                  type="date"
-                  value={form.maturationEndDate}
-                  onChange={(e) => set("maturationEndDate", e.target.value)}
-                  data-testid="input-edit-maturation-date"
-                />
-              </div>
-            </div>
-          </section>
 
         </div>
 

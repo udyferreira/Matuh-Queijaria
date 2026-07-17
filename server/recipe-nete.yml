@@ -82,6 +82,7 @@ process:
   temperature_tolerance_c: 1
   target_final_ph: 5.3
   maturation_target_days: 90
+  maturation_max_extra_days: 45
 
 stages:
 

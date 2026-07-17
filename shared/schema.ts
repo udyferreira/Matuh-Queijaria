@@ -31,6 +31,8 @@ export const productionBatches = pgTable("production_batches", {
   // New: Maturation control (Stage 19/20)
   chamber2EntryDate: timestamp("chamber_2_entry_date"),
   maturationEndDate: timestamp("maturation_end_date"),
+  maturationMaxEndDate: timestamp("maturation_max_end_date"),
+  chamber2ExitDate: timestamp("chamber2_exit_date"),
   
   // Operational state
   pausedAt: timestamp("paused_at"),

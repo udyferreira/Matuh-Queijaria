@@ -765,8 +765,20 @@ export default function BatchDetail() {
                 
                 {batch.maturationEndDate && (
                   <div className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
-                    <span className="text-muted-foreground">Fim da Maturação</span>
+                    <span className="text-muted-foreground">Fim da Maturação Mínima</span>
                     <span className="font-mono font-bold">{parseDateOnly(batch.maturationEndDate)}</span>
+                  </div>
+                )}
+                {(batch as any).maturationMaxEndDate && (
+                  <div className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
+                    <span className="text-muted-foreground">Fim da Maturação Máxima</span>
+                    <span className="font-mono font-bold">{parseDateOnly((batch as any).maturationMaxEndDate)}</span>
+                  </div>
+                )}
+                {(batch as any).chamber2ExitDate && (
+                  <div className="flex justify-between items-center py-2 border-b border-border/50 text-sm">
+                    <span className="text-muted-foreground">Saída da Câmara 2</span>
+                    <span className="font-mono font-bold">{parseDateOnly((batch as any).chamber2ExitDate)}</span>
                   </div>
                 )}
 

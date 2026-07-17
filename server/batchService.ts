@@ -955,6 +955,7 @@ export async function recordChamber2Entry(
   
   const batchRm = getRecipeForBatch(batch);
   const maturationDays = batchRm.getMaturationDays();
+  const maturationMaxDays = batchRm.getMaturationMaxDays();
   
   // Warn if not on the expected final transfer stage (non-blocking)
   const currentStageDef = batchRm.getStage(batch.currentStageId);
@@ -965,6 +966,7 @@ export async function recordChamber2Entry(
   const entryDate = new Date(entryDateValue);
   const maturationEndDate = getMaturationEndDate(new Date(batch.startedAt), maturationDays);
   const maturationEndDateISO = maturationEndDate.toISOString();
+  const maturationMaxEndDate = getMaturationEndDate(new Date(batch.startedAt), maturationMaxDays);
   
   const measurements = (batch.measurements as any) || {};
   measurements["chamber_2_entry_date"] = entryDateValue;
@@ -994,6 +996,7 @@ export async function recordChamber2Entry(
     measurements,
     chamber2EntryDate: entryDate,
     maturationEndDate: maturationEndDate,
+    maturationMaxEndDate: maturationMaxEndDate,
     status: "completed",
     completedAt: new Date(),
     scheduledAlerts: {},
@@ -1292,6 +1295,8 @@ export interface EditCompletedBatchPayload {
     turningCyclesCount?: number;
     chamber2EntryDate?: string;
     maturationEndDate?: string;
+    maturationMaxEndDate?: string;
+    chamber2ExitDate?: string | null;
   };
 }
 
@@ -1429,24 +1434,49 @@ export async function editCompletedBatch(
         updates.maturationEndDate = new Date(t.maturationEndDate);
       }
     }
+    if (t.maturationMaxEndDate !== undefined) {
+      const currentStr = (batch as any).maturationMaxEndDate
+        ? new Date((batch as any).maturationMaxEndDate).toISOString().split("T")[0]
+        : null;
+      if (t.maturationMaxEndDate !== currentStr) {
+        recordEdit('maturationMaxEndDate', t.maturationMaxEndDate, currentStr, camStageId);
+        updates.maturationMaxEndDate = new Date(t.maturationMaxEndDate);
+      }
+    }
+    // chamber2ExitDate: update WITHOUT recordEdit — must not trigger "Editado" badge
+    if (t.chamber2ExitDate !== undefined) {
+      const currentStr = (batch as any).chamber2ExitDate
+        ? new Date((batch as any).chamber2ExitDate).toISOString().split("T")[0]
+        : null;
+      if (t.chamber2ExitDate !== currentStr) {
+        updates.chamber2ExitDate = t.chamber2ExitDate ? new Date(t.chamber2ExitDate) : null;
+      }
+    }
   }
 
-  if (fieldsEdited.length === 0) {
+  // chamber2ExitDate updates bypass recordEdit, so check updates separately
+  const hasSilentUpdates = 'chamber2ExitDate' in updates;
+
+  if (fieldsEdited.length === 0 && !hasSilentUpdates) {
     return { success: true, batch };
   }
 
-  measurements._history = history;
-  updates.measurements = measurements;
+  if (fieldsEdited.length > 0) {
+    measurements._history = history;
+    updates.measurements = measurements;
+  }
 
   const updatedBatch = await storage.updateBatch(batchId, updates);
 
-  await storage.logBatchAction({
-    batchId,
-    stageId: batch.currentStageId,
-    action: 'post_completion_edit',
-    details: { fieldsEdited, editedVia: 'web' }
-  });
+  if (fieldsEdited.length > 0) {
+    await storage.logBatchAction({
+      batchId,
+      stageId: batch.currentStageId,
+      action: 'post_completion_edit',
+      details: { fieldsEdited, editedVia: 'web' }
+    });
+    console.log(`[editCompletedBatch] batch=${batchId} fieldsEdited=${fieldsEdited.join(',')}`);
+  }
 
-  console.log(`[editCompletedBatch] batch=${batchId} fieldsEdited=${fieldsEdited.join(',')}`);
   return { success: true, batch: updatedBatch };
 }
