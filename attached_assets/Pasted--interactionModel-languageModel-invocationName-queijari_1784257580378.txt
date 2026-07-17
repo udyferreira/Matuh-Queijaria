@@ -1,0 +1,315 @@
+{
+    "interactionModel": {
+        "languageModel": {
+            "invocationName": "queijaria desenvolvimento",
+            "intents": [
+                {
+                    "name": "AMAZON.CancelIntent",
+                    "samples": []
+                },
+                {
+                    "name": "AMAZON.HelpIntent",
+                    "samples": []
+                },
+                {
+                    "name": "AMAZON.StopIntent",
+                    "samples": []
+                },
+                {
+                    "name": "AMAZON.YesIntent",
+                    "samples": []
+                },
+                {
+                    "name": "AMAZON.NoIntent",
+                    "samples": []
+                },
+                {
+                    "name": "AMAZON.FallbackIntent",
+                    "samples": []
+                },
+                {
+                    "name": "ContinueIntent",
+                    "slots": [],
+                    "samples": [
+                        "continuar",
+                        "continuar lote",
+                        "continuar produção",
+                        "continuar este lote",
+                        "continuar a produção",
+                        "seguir",
+                        "seguir com o lote",
+                        "prosseguir",
+                        "retomar",
+                        "retomar produção",
+                        "vamos continuar",
+                        "pode continuar"
+                    ]
+                },
+                {
+                    "name": "AdvanceStageIntent",
+                    "slots": [],
+                    "samples": [
+                        "avançar etapa",
+                        "avançar",
+                        "próxima etapa",
+                        "próxima",
+                        "concluir etapa",
+                        "concluir",
+                        "finalizar etapa",
+                        "terminar etapa"
+                    ]
+                },
+                {
+                    "name": "ProcessCommandIntent",
+                    "slots": [
+                        {
+                            "name": "utterance",
+                            "type": "AMAZON.SearchQuery"
+                        }
+                    ],
+                    "samples": [
+                        "quanto de {utterance}",
+                        "qual o {utterance}",
+                        "qual é o {utterance}",
+                        "quero ver {utterance}",
+                        "me diz o {utterance}",
+                        "preciso de {utterance}",
+                        "me ajuda com {utterance}",
+                        "registrar {utterance}",
+                        "iniciar {utterance}",
+                        "começar {utterance}",
+                        "status {utterance}",
+                        "{utterance} etapa",
+                        "{utterance} a etapa",
+                        "quero {utterance}",
+                        "comecar {utterance}",
+                        "ajuda {utterance}",
+                        "terminei esta etapa {utterance}",
+                        "qual foi {utterance}",
+                        "me lembra {utterance}",
+                        "diga {utterance}"
+                    ]
+                },
+                {
+                    "name": "AMAZON.NavigateHomeIntent",
+                    "samples": []
+                },
+                {
+                    "name": "LogTimeIntent",
+                    "slots": [
+                        {
+                            "name": "time_type",
+                            "type": "TIME_TYPE"
+                        },
+                        {
+                            "name": "time",
+                            "type": "AMAZON.TIME"
+                        }
+                    ],
+                    "samples": [
+                        "{time_type} foi {time}",
+                        "registrar {time_type} {time}",
+                        "{time_type} {time}",
+                        "{time_type} às {time}",
+                        "do {time_type} {time}",
+                        "do {time_type} às {time}",
+                        "hora do {time_type} {time}",
+                        "hora do {time_type} às {time}",
+                        "hora da {time_type} {time}",
+                        "hora da {time_type} às {time}"
+                    ]
+                },
+                {
+                    "name": "RegisterPHAndPiecesIntent",
+                    "slots": [
+                        {
+                            "name": "ph_value",
+                            "type": "AMAZON.NUMBER"
+                        },
+                        {
+                            "name": "pieces_quantity",
+                            "type": "AMAZON.NUMBER"
+                        }
+                    ],
+                    "samples": [
+                        "registrar pH {ph_value} com {pieces_quantity} peças",
+                        "o pH é {ph_value} e são {pieces_quantity} peças",
+                        "pH {ph_value} e {pieces_quantity} peças",
+                        "pH {ph_value}",
+                        "o pH é {ph_value}",
+                        "{pieces_quantity} peças",
+                        "são {pieces_quantity} peças"
+                    ]
+                },
+                {
+                    "name": "RegisterMilkTemperatureIntent",
+                    "slots": [
+                        {
+                            "name": "temp_value",
+                            "type": "AMAZON.NUMBER"
+                        }
+                    ],
+                    "samples": [
+                        "temperatura {temp_value}",
+                        "temperatura do leite {temp_value}",
+                        "a temperatura é {temp_value}",
+                        "está {temp_value} graus",
+                        "{temp_value} graus",
+                        "{temp_value} grau"
+                    ]
+                },
+                {
+                    "name": "RegisterChamberEntryDateIntent",
+                    "slots": [
+                        {
+                            "name": "entry_date",
+                            "type": "AMAZON.DATE"
+                        }
+                    ],
+                    "samples": [
+                        "acabei de colocar na camara {entry_date}",
+                        "já coloquei na câmara {entry_date}",
+                        "ja coloquei na camara {entry_date}",
+                        "coloquei na câmara {entry_date}",
+                        "coloquei na camara {entry_date}",
+                        "entrada na camara {entry_date}",
+                        "entrada na câmara {entry_date}",
+                        "colocar na câmara {entry_date}",
+                        "colocar na camara {entry_date}",
+                        "transferir para a câmara {entry_date}",
+                        "transferir para a camara {entry_date}",
+                        "entrada na câmara dois {entry_date}",
+                        "entrada na camara dois {entry_date}",
+                        "colocar na câmara dois {entry_date}",
+                        "colocar na camara dois {entry_date}",
+                        "transferir para a câmara dois {entry_date}",
+                        "transferir para a camara dois {entry_date}",
+                        "data de entrada na câmara {entry_date}",
+                        "data de entrada na camara {entry_date}",
+                        "data de entrada na câmara dois {entry_date}",
+                        "data de entrada na camara dois {entry_date}"
+                    ]
+                },
+                {
+                    "name": "SelectBatchIntent",
+                    "slots": [
+                        {
+                            "name": "optionNumber",
+                            "type": "AMAZON.NUMBER"
+                        }
+                    ],
+                    "samples": [
+                        "opção {optionNumber}",
+                        "número {optionNumber}",
+                        "quero a opção {optionNumber}",
+                        "continuar opção {optionNumber}",
+                        "lote número {optionNumber}",
+                        "continuar número {optionNumber}"
+                    ]
+                },
+                {
+                    "name": "ChangeBatchIntent",
+                    "slots": [],
+                    "samples": [
+                        "trocar lote",
+                        "mudar de lote",
+                        "selecionar outro lote",
+                        "escolher outro lote",
+                        "listar lotes",
+                        "ver lotes em andamento",
+                        "voltar para a lista de lotes"
+                    ]
+                },
+                {
+                    "name": "GoBackStageIntent",
+                    "slots": [],
+                    "samples": [
+                        "desfazer etapa",
+                        "etapa anterior",
+                        "voltar etapa"
+                    ]
+                },
+                {
+                    "name": "SelectRecipeIntent",
+                    "slots": [
+                        {
+                            "name": "recipe",
+                            "type": "RECIPE_TYPE"
+                        }
+                    ],
+                    "samples": [
+                        "{recipe}",
+                        "queijo {recipe}",
+                        "receita {recipe}",
+                        "é {recipe}",
+                        "quero {recipe}",
+                        "vou fazer {recipe}",
+                        "quero fazer {recipe}",
+                        "a receita é {recipe}",
+                        "o queijo é {recipe}"
+                    ]
+                }
+            ],
+            "types": [
+                {
+                    "name": "TIME_TYPE",
+                    "values": [
+                        {
+                            "name": {
+                                "value": "prensa"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "floculacao"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "moldagem"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "corte",
+                                "synonyms": [
+                                    "ponto de corte"
+                                ]
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "floculação"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "RECIPE_TYPE",
+                    "values": [
+                        {
+                            "id": "NETE",
+                            "name": {
+                                "value": "Nete",
+                                "synonyms": [
+                                    "queijo Nete",
+                                    "receita Nete"
+                                ]
+                            }
+                        },
+                        {
+                            "id": "NINA",
+                            "name": {
+                                "value": "Nina",
+                                "synonyms": [
+                                    "queijo Nina",
+                                    "receita Nina"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}
