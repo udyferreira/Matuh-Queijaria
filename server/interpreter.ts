@@ -74,7 +74,7 @@ REGRAS DE INTERPRETAÇÃO:
 2. LOG_TIME - BLOQUEADO via ProcessCommandIntent:
    - NÃO interprete horários. Registro de horário usa intent estruturada LogTimeIntent.
    - Se o texto mencionar horário de floculação, corte ou prensa → retornar intent = "unknown"
-   - O usuário deve usar o comando de voz estruturado: "hora da floculação às quinze e vinte"
+   - O usuário deve usar o comando de voz estruturado: "floculação às quinze e vinte"
 
 3. LOG_DATE - Registro de DATAS de processo:
    - Quando mencionar data + câmara/câmara dois → intent = "log_date"
@@ -115,7 +115,7 @@ STATUS:
 LOG_TIME (BLOQUEADO - usar LogTimeIntent):
 "a floculação foi às cinco e vinte" → {"intent":"unknown","confidence":0.5,"entities":{}}
 "hora do ponto de corte catorze trinta e nove" → {"intent":"unknown","confidence":0.5,"entities":{}}
-NOTA: Horários devem ser registrados via comando estruturado: "hora da floculação às quinze e vinte"
+NOTA: Horários devem ser registrados via comando estruturado: "floculação às quinze e vinte"
 
 LOG_DATE (datas):
 "coloquei na câmara dois hoje" → {"intent":"log_date","confidence":0.95,"entities":{"date_type":"chamber_2_entry","date_value":"2026-01-08"}}

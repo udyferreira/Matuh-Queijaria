@@ -398,7 +398,7 @@ export function buildStatusPayload(
     return {
       context: "error",
       notes: `Lote na etapa ${batch.currentStageId}, que não existe na receita atual. Verifique o sistema.`,
-      allowedUtterances: ["qual é o status", "ajuda"]
+      allowedUtterances: ["qual é o status"]
     };
   }
   const calculatedInputs = batch.calculatedInputs || {};
@@ -484,7 +484,7 @@ export function buildAdvancePayload(
     return {
       context: "error",
       notes: "Não foi possível determinar a próxima etapa. Verifique o sistema.",
-      allowedUtterances: ["qual é o status", "ajuda"]
+      allowedUtterances: ["qual é o status"]
     };
   }
 
@@ -560,7 +560,7 @@ export function buildHelpPayload(
   let utterances: string[];
   if (stage && batch) {
     const contextual = getContextualUtterances(stage, batch);
-    utterances = [...contextual, "qual é o status", "ajuda"];
+    utterances = [...contextual, "qual é o status"];
     utterances = Array.from(new Set(utterances));
   } else {
     utterances = ["qual é o status", "novo lote com 130 litros"];
@@ -733,7 +733,7 @@ export function buildAutoAdvancePayload(
       context: "error",
       confirmation: confirmationMessage,
       notes: "Não foi possível determinar a próxima etapa. Verifique o sistema.",
-      allowedUtterances: ["qual é o status", "ajuda"]
+      allowedUtterances: ["qual é o status"]
     };
   }
   const calculatedInputs = batch.calculatedInputs || {};
@@ -805,7 +805,7 @@ export function getContextualUtterances(stage: any, batch: any): string[] {
     const measurementKey = inputToMeasurementKey[input] || input;
     if (measurements[measurementKey] === undefined) {
       if (input === 'flocculation_time') {
-        return ["hora da floculação às vinte e três e nove"];
+        return ["floculação às vinte e três e nove"];
       }
       if (input === 'cut_point_time') {
         return ["hora do corte às quinze e trinta"];
