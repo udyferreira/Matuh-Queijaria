@@ -2222,37 +2222,44 @@ export async function registerRoutes(
           // Extract time type from custom slot
           const timeTypeSlot = slots.timeType?.value || slots.time_type?.value;
           
-          // Map slot values to internal time types and expected stages
-          // timeType → stageId mapping ensures intent is only used at correct stage
-          const timeTypeMapping: Record<string, { timeType: string; expectedStage: number; label: string }> = {
-            'flocculation': { timeType: 'flocculation', expectedStage: 6, label: 'floculação' },
-            'cut_point': { timeType: 'cut_point', expectedStage: 7, label: 'ponto de corte' },
-            'press_start': { timeType: 'press_start', expectedStage: 14, label: 'início de prensa' }
-          };
-          
+          // Map spoken slot value to internal timeType key
           let timeType: string | undefined;
-          let expectedStage: number | undefined;
-          
           if (timeTypeSlot) {
             const normalizedType = timeTypeSlot.toLowerCase();
             if (normalizedType.includes("floc") || normalizedType === "floculação" || normalizedType === "floculacao") {
               timeType = "flocculation";
-              expectedStage = 6;
             } else if (normalizedType.includes("corte") || normalizedType === "ponto") {
               timeType = "cut_point";
-              expectedStage = 7;
             } else if (normalizedType.includes("prensa") || normalizedType.includes("moldagem")) {
               timeType = "press_start";
-              expectedStage = 14;
             }
           }
-          
-          // STAGE VALIDATION: Reject if not at the expected stage
-          if (expectedStage && activeBatch.currentStageId !== expectedStage) {
-            const currentStage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
-            const typeInfo = timeType ? timeTypeMapping[timeType] : null;
+
+          // STAGE VALIDATION: use the recipe's expected_time_type instead of hardcoded stage IDs
+          // so this works for any recipe (Nete, Nina, future recipes)
+          const currentStage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
+          const stageExpectedTimeType = ((currentStage as any)?.expected_time_type || '').toLowerCase();
+          const stageExpectedIntent = (currentStage as any)?.expected_intent || '';
+
+          const timeTypeLabels: Record<string, string> = {
+            'flocculation': 'floculação',
+            'cut_point': 'ponto de corte',
+            'press_start': 'início de prensa'
+          };
+          const timeTypeKeywords: Record<string, string[]> = {
+            'flocculation': ['floc'],
+            'cut_point': ['corte'],
+            'press_start': ['prensa']
+          };
+
+          const spokenTypeMatchesStage = timeType
+            ? (timeTypeKeywords[timeType] || []).some(kw => stageExpectedTimeType.includes(kw))
+            : false;
+
+          if (stageExpectedIntent !== 'LogTimeIntent' || !spokenTypeMatchesStage) {
+            const typeLabel = timeType ? (timeTypeLabels[timeType] || 'evento') : 'evento';
             return res.status(200).json(buildAlexaResponse(
-              `Não é possível registrar horário de ${typeInfo?.label || 'evento'} nesta etapa. Estamos na etapa ${activeBatch.currentStageId}: ${currentStage?.name || 'em andamento'}.`,
+              `Não é possível registrar horário de ${typeLabel} nesta etapa. Estamos na etapa ${activeBatch.currentStageId}: ${currentStage?.name || 'em andamento'}.`,
               false,
               "O que mais posso ajudar?",
               sessionAttributes
