@@ -2235,11 +2235,10 @@ export async function registerRoutes(
             }
           }
 
-          // STAGE VALIDATION: use the recipe's expected_time_type instead of hardcoded stage IDs
-          // so this works for any recipe (Nete, Nina, future recipes)
-          const currentStage = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
-          const stageExpectedTimeType = ((currentStage as any)?.expected_time_type || '').toLowerCase();
-          const stageExpectedIntent = (currentStage as any)?.expected_intent || '';
+          // STAGE VALIDATION: use getStageInputLock — same API as the gating system,
+          // recipe-agnostic (works for Nete, Nina, and any future recipe).
+          const stageLockForTime = getRecipeForBatch(activeBatch).getStageInputLock(activeBatch.currentStageId);
+          const currentStageForTime = getRecipeForBatch(activeBatch).getStage(activeBatch.currentStageId);
 
           const timeTypeLabels: Record<string, string> = {
             'flocculation': 'floculação',
@@ -2252,14 +2251,27 @@ export async function registerRoutes(
             'press_start': ['prensa']
           };
 
-          const spokenTypeMatchesStage = timeType
-            ? (timeTypeKeywords[timeType] || []).some(kw => stageExpectedTimeType.includes(kw))
-            : false;
-
-          if (stageExpectedIntent !== 'LogTimeIntent' || !spokenTypeMatchesStage) {
+          // Stage must expect LogTimeIntent
+          if (!stageLockForTime.locked || stageLockForTime.expectedIntent !== 'LogTimeIntent') {
             const typeLabel = timeType ? (timeTypeLabels[timeType] || 'evento') : 'evento';
             return res.status(200).json(buildAlexaResponse(
-              `Não é possível registrar horário de ${typeLabel} nesta etapa. Estamos na etapa ${activeBatch.currentStageId}: ${currentStage?.name || 'em andamento'}.`,
+              `Não é possível registrar horário de ${typeLabel} nesta etapa. Estamos na etapa ${activeBatch.currentStageId}: ${currentStageForTime?.name || 'em andamento'}.`,
+              false,
+              "O que mais posso ajudar?",
+              sessionAttributes
+            ));
+          }
+
+          // Spoken time type must match this stage's expected_time_type from YAML
+          const stageTimeType = (stageLockForTime.expectedTimeType || '').toLowerCase();
+          const spokenTypeMatchesStage = timeType
+            ? (timeTypeKeywords[timeType] || []).some(kw => stageTimeType.includes(kw))
+            : false;
+
+          if (!spokenTypeMatchesStage) {
+            const typeLabel = timeType ? (timeTypeLabels[timeType] || 'evento') : 'evento';
+            return res.status(200).json(buildAlexaResponse(
+              `Não é possível registrar horário de ${typeLabel} nesta etapa. Estamos na etapa ${activeBatch.currentStageId}: ${currentStageForTime?.name || 'em andamento'}.`,
               false,
               "O que mais posso ajudar?",
               sessionAttributes
