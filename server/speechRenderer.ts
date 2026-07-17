@@ -103,7 +103,8 @@ REGRAS OBRIGATÓRIAS:
 11. Para query_input, diga "A quantidade de [tipo] é [valor] [unidade]."
 12. Para auto_advance: combine confirmation + próxima etapa numa narrativa fluida e curta. NÃO diga "confirmação".
 13. Para start_batch e advance: Se houver doses no payload, anuncie-as ANTES das instruções seguindo estas regras por tipo:
-   - FERMENT_* ou RENNET: use o prefixo "Fermentos e coalho calculados:" e liste as doses. Depois diga "Agora, etapa [stage.id]: [stage.name]." seguido das instruções.
+   - FERMENT_* ou RENNET em contexto start_batch: use "Você vai precisar de [lista de doses]." (ex: "Você vai precisar de 130 ml de Fermento D X, 130 ml de Fermento H T e 6,5 ml de coalho."). Depois diga "Agora, etapa [stage.id]: [stage.name]." seguido das instruções.
+   - FERMENT_* ou RENNET em contexto advance: use o prefixo "Fermentos e coalho calculados:" e liste as doses. Depois diga "Agora, etapa [stage.id]: [stage.name]." seguido das instruções.
    - SMALL_TANK_MILK: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Aquecer leite no tanque pequeno até 36 graus" e a dose for 10 L, diga "Agora, etapa [stage.id]: Aquecer 10 litros de leite no tanque pequeno até 36 graus." Se as instruções mencionarem o volume, inclua-o também de forma natural.
    - HOT_WATER: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Aquecer água a 60 graus no tanque pequeno" e a dose for 20 L, diga "Agora, etapa [stage.id]: Aquecer 20 litros de água a 60 graus no tanque pequeno." Se as instruções mencionarem água quente, você pode incluir a quantidade lá também de forma natural.
    - WHEY_TO_REMOVE: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Retirar soro do tanque" e a dose for 20 L, diga "Agora, etapa [stage.id]: Retirar 20 litros de soro do tanque." Se as instruções mencionarem o soro a retirar, inclua a quantidade lá também de forma natural.
@@ -606,6 +607,14 @@ export function buildStartBatchPayload(
   // Nina stage 3 has "tanque pequeno" → SMALL_TANK_MILK. No DX/HT/coalho leak here.
   // Nete stage 3 has "KL" → FERMENT_KL, stage 4 has "LR"/"DX" → those ferments, etc.
   const doses = getRelevantDosesForStage(currentStage, calculatedInputs);
+
+  // For Nina: also announce DX, HT and Coalho at batch start so the operator can
+  // separate all ingredients upfront, even though they are only used in stages 7/9.
+  if (recipeId === 'QUEIJO_NINA') {
+    if (calculatedInputs.FERMENT_DX) doses["FERMENT_DX"] = { value: calculatedInputs.FERMENT_DX, unit: "ml" };
+    if (calculatedInputs.FERMENT_HT) doses["FERMENT_HT"] = { value: calculatedInputs.FERMENT_HT, unit: "ml" };
+    if (calculatedInputs.RENNET)     doses["RENNET"]     = { value: calculatedInputs.RENNET,     unit: "ml" };
+  }
 
   let instructions: string[] = [];
 
