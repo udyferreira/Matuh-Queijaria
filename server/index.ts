@@ -217,7 +217,7 @@ async function cleanupNinaBatchHistory(): Promise<void> {
           '[]'::jsonb
         )
       )
-      WHERE "recipeId" = 'QUEIJO_NINA'
+      WHERE recipe_id = 'QUEIJO_NINA'
         AND (
           measurements->'_history' @> '[{"key":"ferment_lr_dx_add_time_iso"}]'::jsonb
           OR measurements->'_history' @> '[{"key":"ferment_kl_coalho_add_time_iso"}]'::jsonb
