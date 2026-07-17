@@ -411,6 +411,7 @@ stages:
   - id: 22
     name: "Entrada na salmoura"
     type: "brine"
+    auto_record_timestamp: "brine_entry_time_iso"
     timer:
       duration_hours: 13
       blocking: true
@@ -421,6 +422,7 @@ stages:
   - id: 23
     name: "Secagem em prateleira"
     type: "dry"
+    auto_record_timestamp: "shelf_start_time_iso"
     timer:
       duration_hours: 24
       blocking: true

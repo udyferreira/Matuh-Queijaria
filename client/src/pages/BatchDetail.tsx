@@ -793,6 +793,8 @@ export default function BatchDetail() {
                     'turning_cycles_count': 'Quantidade de Viradas',
                     'ferment_lr_dx_add_time_iso': 'Adição Fermentos LR/DX',
                     'ferment_kl_coalho_add_time_iso': 'Adição Fermento KL + Coalho',
+                    'ferment_add_time': 'Adição dos Fermentos DX e HT',
+                    'rennet_add_time': 'Adição do Coalho',
                     'brine_entry_time_iso': 'Entrada na Salga',
                     'shelf_start_time_iso': 'Início da Secagem em Prateleiras',
                   };
@@ -819,7 +821,8 @@ export default function BatchDetail() {
                       
                       if (entry.key === 'loop_exit_reason' || entry.key === 'rollback') return;
                       let displayValue = String(entry.value);
-                      if (entry.key.endsWith('_time_iso')) {
+                      const isTimeKey = entry.key.endsWith('_time_iso') || entry.key === 'ferment_add_time' || entry.key === 'rennet_add_time';
+                      if (isTimeKey) {
                         try {
                           const needsDate = entry.key === 'brine_entry_time_iso' || entry.key === 'shelf_start_time_iso';
                           displayValue = new Intl.DateTimeFormat('pt-BR', {

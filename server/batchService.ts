@@ -400,8 +400,11 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
   const measurements = (batch.measurements as Record<string, any>) || {};
   const nowIso = new Date().toISOString();
   let touchedMeasurements = false;
+  const batchRecipeId = ((batch as any).recipeId || 'QUEIJO_NETE') as string;
+  const isNete = batchRecipeId === 'QUEIJO_NETE';
 
-  if (nextStage.id === 4 && !measurements.ferment_lr_dx_add_time_iso) {
+  // Nete-specific: auto-record ferment/brine/shelf timestamps by hardcoded stage IDs
+  if (isNete && nextStage.id === 4 && !measurements.ferment_lr_dx_add_time_iso) {
     measurements.ferment_lr_dx_add_time_iso = nowIso;
     const mHistory = measurements._history || [];
     mHistory.push({ key: 'ferment_lr_dx_add_time_iso', value: nowIso, stageId: 4, timestamp: nowIso });
@@ -409,7 +412,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     touchedMeasurements = true;
   }
 
-  if (nextStage.id === 5 && !measurements.ferment_kl_coalho_add_time_iso) {
+  if (isNete && nextStage.id === 5 && !measurements.ferment_kl_coalho_add_time_iso) {
     measurements.ferment_kl_coalho_add_time_iso = nowIso;
     const mHistory = measurements._history || [];
     mHistory.push({ key: 'ferment_kl_coalho_add_time_iso', value: nowIso, stageId: 5, timestamp: nowIso });
@@ -417,7 +420,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     touchedMeasurements = true;
   }
 
-  if (nextStage.id === 17 && !measurements.brine_entry_time_iso) {
+  if (isNete && nextStage.id === 17 && !measurements.brine_entry_time_iso) {
     measurements.brine_entry_time_iso = nowIso;
     const mHistory = measurements._history || [];
     mHistory.push({ key: 'brine_entry_time_iso', value: nowIso, stageId: 17, timestamp: nowIso });
@@ -425,7 +428,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     touchedMeasurements = true;
   }
 
-  if (nextStage.id === 18 && !measurements.shelf_start_time_iso) {
+  if (isNete && nextStage.id === 18 && !measurements.shelf_start_time_iso) {
     measurements.shelf_start_time_iso = nowIso;
     const mHistory = measurements._history || [];
     mHistory.push({ key: 'shelf_start_time_iso', value: nowIso, stageId: 18, timestamp: nowIso });
@@ -433,12 +436,13 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     touchedMeasurements = true;
   }
 
-  // Generic: auto_record_timestamp defined in YAML (e.g. Nina stages 7 and 8)
-  // Recorded on COMPLETION (when operator advances away from the stage)
-  if (currentStage.auto_record_timestamp && !measurements[currentStage.auto_record_timestamp]) {
-    measurements[currentStage.auto_record_timestamp] = nowIso;
+  // Generic: auto_record_timestamp defined in YAML — records on ENTRY to the next stage
+  // Used for: Nina stage 7 (ferment_add_time), stage 9 (rennet_add_time),
+  //           stage 22 (brine_entry_time_iso), stage 23 (shelf_start_time_iso)
+  if (nextStage.auto_record_timestamp && !measurements[nextStage.auto_record_timestamp]) {
+    measurements[nextStage.auto_record_timestamp] = nowIso;
     const mHistory = measurements._history || [];
-    mHistory.push({ key: currentStage.auto_record_timestamp, value: nowIso, stageId: currentStage.id, timestamp: nowIso });
+    mHistory.push({ key: nextStage.auto_record_timestamp, value: nowIso, stageId: nextStage.id, timestamp: nowIso });
     measurements._history = mHistory;
     touchedMeasurements = true;
   }
