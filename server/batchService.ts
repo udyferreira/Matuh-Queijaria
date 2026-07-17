@@ -1029,13 +1029,13 @@ export function getCalculatedInputHint(batch: any, stageId: number): string {
       const ht = calculatedInputs.FERMENT_HT;
       if (dx && ht) hints.push(`Use ${dx} ml de DX e ${ht} ml de HT.`);
     }
-    if (stageId === 8 && calculatedInputs.RENNET) {
+    if (stageId === 9 && calculatedInputs.RENNET) {
       hints.push(`Use ${calculatedInputs.RENNET} ml de coalho.`);
     }
-    if (stageId === 9 && calculatedInputs.HOT_WATER) {
+    if (stageId === 10 && calculatedInputs.HOT_WATER) {
       hints.push(`Aquecer ${calculatedInputs.HOT_WATER} litros de água a 60°C.`);
     }
-    if (stageId === 14 && calculatedInputs.WHEY_TO_REMOVE) {
+    if (stageId === 15 && calculatedInputs.WHEY_TO_REMOVE) {
       hints.push(`Retirar ${calculatedInputs.WHEY_TO_REMOVE} litros de soro.`);
     }
   }
@@ -1243,8 +1243,8 @@ export async function editCompletedBatch(
   const history: any[] = [...(measurements._history || [])];
   const fieldsEdited: string[] = [];
   const isNina = ((batch as any).recipeId || 'QUEIJO_NETE') === 'QUEIJO_NINA';
-  const loopStageId = isNina ? 20 : 15;
-  const camStageId = isNina ? 23 : 19;
+  const loopStageId = isNina ? 21 : 15;
+  const camStageId = isNina ? 24 : 19;
 
   function recordEdit(key: string, newValue: any, previousValue: any, stageId: number) {
     history.push({ key, value: newValue, previousValue, stageId, timestamp: now, action: 'post_completion_edit', editedVia: 'web' });
