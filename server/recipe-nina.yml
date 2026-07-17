@@ -316,10 +316,8 @@ stages:
       blocking: false
     instructions:
       - "Adicionar a água quente (60°C) preparada no tanque pequeno à massa"
-      - "Mexer devagar enquanto aquece para distribuir o calor de forma uniforme"
       - "A temperatura deve subir aproximadamente 1°C a cada 3 minutos"
-      - "O sistema avisará a cada 3 minutos — monitore a temperatura"
-      - "Quando a massa atingir 38°C, diga 'próxima etapa'"
+      - "O sistema avisará a cada 3 minutos, monitore a temperatura"
     llm_guidance: >
       Este é o semi-cozimento, etapa que define a textura característica do Nina.
       A taxa de aquecimento controlada (1°C a cada 3 minutos) garante que os grãos
@@ -334,17 +332,14 @@ stages:
     parameters:
       volume_note: "todo o soro restante"
     instructions:
-      - "Retirar todo o soro restante do tanque"
-      - "A massa deve ficar consolidada no fundo do tanque"
+      - "Retirar todo o soro do tanque"
       - "Quando terminar, diga 'próxima etapa'"
 
   - id: 17
-    name: "Cortar a massa e colocar nas formas"
+    name: "Cortar a massa e colocar nas fôrmas"
     type: "mold"
     instructions:
-      - "Cortar a massa em porções adequadas ao tamanho das formas"
-      - "Colocar a massa nas formas com o paninho"
-      - "Pressionar levemente para conformar o queijo"
+      - "Cortar a massa e colocar nas fôrmas com paninho"
       - "Quando terminar, diga 'próxima etapa'"
 
   - id: 18
@@ -422,7 +417,6 @@ stages:
       blocking: true
     instructions:
       - "Dispor os queijos nas prateleiras para secagem por 24 horas"
-      - "Virar os queijos uma vez na metade do tempo se possível"
 
   - id: 23
     name: "Transferir para Câmara 2 de maturação"
@@ -434,12 +428,7 @@ stages:
     expected_intent: "RegisterChamberEntryDateIntent"
     input_prompt: "Quando transferir, diga: 'coloquei na câmara dois agora'."
     instructions:
-      - "Colocar os queijos na prateleira de madeira da Câmara 2"
-      - "Colocar plaquinha com data de produção na tábua"
-      - "O sistema calculará automaticamente a data mínima de maturação (6 meses)"
-      - "Virar os queijos diariamente nas primeiras semanas"
-      - "Aplicar tratamento na casca conforme protocolo da queijaria"
-      - "Após registrar a data, o lote será concluído automaticamente"
+      - "Transferir para Câmara 2 de maturação"
     llm_guidance: >
       A maturação do Nina é de no mínimo 6 meses em prateleira de madeira.
       Durante esse período o queijo desenvolve a casca característica e as
