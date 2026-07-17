@@ -1203,7 +1203,7 @@ export async function registerRoutes(
         
         const inputType = command.entities.input_type;
         if (!inputType) {
-          return { speech: "Qual insumo você quer consultar? LR, DX, KL ou coalho?", shouldEndSession: false };
+          return { speech: "Qual insumo você quer consultar? LR, DX, KL, HT ou coalho?", shouldEndSession: false };
         }
         
         const calculatedInputs = activeBatch.calculatedInputs as Record<string, number> | null;
@@ -1217,6 +1217,7 @@ export async function registerRoutes(
             "FERMENT_LR": "fermento LR",
             "FERMENT_DX": "fermento DX",
             "FERMENT_KL": "fermento KL",
+            "FERMENT_HT": "fermento HT",
             "RENNET": "coalho"
           };
           return { speech: `O insumo ${inputNames[inputType] || inputType} não foi encontrado.`, shouldEndSession: false };

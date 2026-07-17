@@ -13,7 +13,7 @@ export interface InterpretedCommand {
     date_value?: string | null;
     number_type?: "ph_value" | "pieces_quantity" | "milk_temperature" | null;
     number_value?: number | null;
-    input_type?: "FERMENT_LR" | "FERMENT_DX" | "FERMENT_KL" | "RENNET" | null;
+    input_type?: "FERMENT_LR" | "FERMENT_DX" | "FERMENT_KL" | "FERMENT_HT" | "RENNET" | null;
   };
 }
 
@@ -62,7 +62,7 @@ Retorne um JSON no seguinte formato:
     "date_value": string | null,
     "number_type": "ph_value" | "pieces_quantity" | "milk_temperature" | null,
     "number_value": number | null,
-    "input_type": "FERMENT_LR" | "FERMENT_DX" | "FERMENT_KL" | "RENNET" | null
+    "input_type": "FERMENT_LR" | "FERMENT_DX" | "FERMENT_KL" | "FERMENT_HT" | "RENNET" | null
   }
 }
 
@@ -99,6 +99,8 @@ REGRAS DE INTERPRETAÇÃO:
      - "lr", "fermento lr", "fermento de lr" → "FERMENT_LR"
      - "dx", "fermento dx", "fermento de x", "de x", "dex", "fermento d x" → "FERMENT_DX"
      - ATENÇÃO: Alexa ASR transcreve "DX" como "de X" - SEMPRE mapear "de x" e "fermento de x" para FERMENT_DX
+     - "ht", "fermento ht", "fermento h t", "fermento de ht" → "FERMENT_HT"
+     - ATENÇÃO: Alexa ASR pode transcrever "HT" como "ache tê", "h te" ou "h t" - SEMPRE mapear para FERMENT_HT
      - "coalho", "rennet" → "RENNET"
    - NUNCA retornar unknown se um input_type válido puder ser inferido
 
@@ -138,6 +140,11 @@ QUERY_INPUT (consulta insumos) - PRIORIDADE ALTA:
 "dose de coalho" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"RENNET"}}
 "kl deste lote" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_KL"}}
 "qual o coalho" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"RENNET"}}
+"quanto de ht" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_HT"}}
+"quanto de fermento ht" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_HT"}}
+"me diga o ht" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_HT"}}
+"ache tê" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_HT"}}
+"h te" → {"intent":"query_input","confidence":0.95,"entities":{"input_type":"FERMENT_HT"}}
 
 REPEAT_DOSES (repetir todas as doses calculadas):
 "repetir fermentos" → {"intent":"repeat_doses","confidence":0.95,"entities":{}}
@@ -273,6 +280,13 @@ const INPUT_TYPE_MAP: Record<string, InterpretedCommand["entities"]["input_type"
   "fermento dex": "FERMENT_DX",
   "dex": "FERMENT_DX",
   "fermento de xt": "FERMENT_DX",
+  "ht": "FERMENT_HT",
+  "fermento ht": "FERMENT_HT",
+  "fermento h t": "FERMENT_HT",
+  "fermento de ht": "FERMENT_HT",
+  "fermento de h t": "FERMENT_HT",
+  "ache tê": "FERMENT_HT",
+  "h te": "FERMENT_HT",
   "coalho": "RENNET",
   "rennet": "RENNET",
 };
@@ -469,7 +483,7 @@ export async function interpretCommand(text: string): Promise<InterpretedCommand
         cleanEntities.number_type = parsed.entities.number_type;
       }
       if (typeof parsed.entities.number_value === "number") cleanEntities.number_value = parsed.entities.number_value;
-      if (parsed.entities.input_type && ["FERMENT_LR", "FERMENT_DX", "FERMENT_KL", "RENNET"].includes(parsed.entities.input_type)) {
+      if (parsed.entities.input_type && ["FERMENT_LR", "FERMENT_DX", "FERMENT_KL", "FERMENT_HT", "RENNET"].includes(parsed.entities.input_type)) {
         cleanEntities.input_type = parsed.entities.input_type;
       }
     }
