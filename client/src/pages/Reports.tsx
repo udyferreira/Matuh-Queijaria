@@ -59,9 +59,11 @@ const STAGE_NAMES_NINA: Record<number, string> = {
   18: "Medir pH inicial e registrar quantidade de peças",
   19: "Colocar na prensa e registrar horário",
   20: "Virar queijos e medir pH",
-  21: "Entrada na salmoura",
-  22: "Secagem em prateleira",
-  23: "Transferir para Câmara 2 de maturação",
+  21: "Virar queijos e medir pH",
+  22: "Transferir para câmara de secagem",
+  23: "Entrada na salmoura",
+  24: "Secagem em prateleira",
+  25: "Transferir para Câmara 2 de maturação",
 };
 
 function getStageNames(recipeId: string | undefined): Record<number, string> {
@@ -69,7 +71,7 @@ function getStageNames(recipeId: string | undefined): Record<number, string> {
 }
 
 function getTotalStages(recipeId: string | undefined): number {
-  return recipeId === "QUEIJO_NINA" ? 23 : 19;
+  return recipeId === "QUEIJO_NINA" ? 25 : 19;
 }
 
 const MEASUREMENT_LABELS: Record<string, string> = {
