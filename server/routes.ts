@@ -663,6 +663,8 @@ export async function registerRoutes(
       turningCyclesCount: z.number().int().min(0).max(10000).optional(),
       chamber2EntryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       maturationEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      maturationMaxEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      chamber2ExitDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     }).optional(),
   });
 
