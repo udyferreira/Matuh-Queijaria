@@ -283,7 +283,8 @@ stages:
       duration_min: 5
       blocking: true
     instructions:
-      - "Mexer a massa por 5 minutos"
+      - "Mexer a massa delicadamente por 5 minutos"
+      - "O timer avisará quando terminar"
     llm_guidance: >
       A mexedura por 5 minutos após o corte ajuda a firmar os grãos e promove
       a saída do soro. Movimentos suaves evitam quebrar os grãos em pedaços
@@ -297,7 +298,6 @@ stages:
       volume_source: "WHEY_TO_REMOVE"
       volume_pct: 0.20
     instructions:
-      - "Use um recipiente para medir o soro a retirar"
       - "Quando terminar, diga 'próxima etapa'"
     llm_guidance: >
       A retirada parcial do soro antes do semi-cozimento concentra a massa e
