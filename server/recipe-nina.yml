@@ -321,12 +321,13 @@ stages:
       heat_source: "HOT_WATER"
       rate_c_per_3min: 1
     timer:
+      fixed_count: 10
       interval_min: 3
       blocking: false
     instructions:
       - "Adicionar a água quente (60°C) preparada no tanque pequeno à massa"
       - "A temperatura deve subir aproximadamente 1°C a cada 3 minutos"
-      - "O sistema avisará a cada 3 minutos, monitore a temperatura"
+      - "A Alexa avisará de 3 em 3 minutos — avance a etapa ao atingir 38°C"
     llm_guidance: >
       Este é o semi-cozimento, etapa que define a textura característica do Nina.
       A taxa de aquecimento controlada (1°C a cada 3 minutos) garante que os grãos

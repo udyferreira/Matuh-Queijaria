@@ -203,6 +203,85 @@ export async function cancelAllBatchReminders(
   );
 }
 
+export async function scheduleMultipleReminders(
+  apiCtx: ApiContext,
+  batch: { id: number; recipeId: string },
+  stageId: number,
+  count: number,
+  intervalMinutes: number,
+  tz?: string,
+  stageName?: string,
+  recipeName?: string
+): Promise<{ key: string; alert: ScheduledAlert }[]> {
+  const timezone = tz || 'America/Sao_Paulo';
+  const resolvedRecipeName = recipeName ?? 'lote';
+  const resolvedStageName = stageName ?? `Etapa ${stageId}`;
+  const results: { key: string; alert: ScheduledAlert }[] = [];
+  const now = new Date();
+  const requestTime = toLocalISOString(now, timezone);
+
+  for (let i = 1; i <= count; i++) {
+    const offsetMs = i * intervalMinutes * 60 * 1000;
+    const fireAt = new Date(now.getTime() + offsetMs);
+    const scheduledTime = toLocalISOString(fireAt, timezone);
+    const alertText = alexaProofText(
+      `Monitoramento ${resolvedRecipeName}. Etapa ${stageId}: ${resolvedStageName}. Verifique a temperatura.`
+    );
+
+    const body = {
+      requestTime,
+      trigger: {
+        type: 'SCHEDULED_ABSOLUTE',
+        scheduledTime,
+        timeZoneId: timezone,
+      },
+      alertInfo: {
+        spokenInfo: {
+          content: [{ locale: 'pt-BR', text: alertText }],
+        },
+      },
+      pushNotification: { status: 'ENABLED' },
+    };
+
+    try {
+      const url = `${apiCtx.apiEndpoint}/v1/alerts/reminders`;
+      console.log(`[REMINDER] scheduleMultiple batch=${batch.id} stage=${stageId} #${i}/${count} scheduledTime=${scheduledTime}`);
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiCtx.apiAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      const respText = await resp.text();
+      if (!resp.ok) {
+        console.error(`[REMINDER] scheduleMultiple #${i} error ${resp.status}: ${respText}`);
+        continue;
+      }
+      let data: { alertToken?: string } = {};
+      try { data = JSON.parse(respText); } catch {}
+      const reminderId = data.alertToken || null;
+      if (reminderId) {
+        const key = `stage_${stageId}_alert_${i}`;
+        results.push({
+          key,
+          alert: {
+            reminderId,
+            stageId,
+            dueAtISO: fireAt.toISOString(),
+            kind: 'fixed_interval',
+          },
+        });
+        console.log(`[REMINDER] scheduleMultiple #${i} created reminderId=${reminderId} dueAt=${fireAt.toISOString()}`);
+      }
+    } catch (err) {
+      console.error(`[REMINDER] scheduleMultiple #${i} failed:`, err);
+    }
+  }
+  return results;
+}
+
 export function buildPermissionCard(): { card: any; speechHint: string } {
   return {
     card: {

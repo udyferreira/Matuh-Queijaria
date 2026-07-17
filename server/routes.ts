@@ -8,7 +8,7 @@ import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import * as batchService from "./batchService";
 import * as speechRenderer from "./speechRenderer";
-import { getApiContext as extractApiContext, cancelAllBatchReminders, scheduleReminderForWait, cancelReminder, type ApiContext, type ScheduledAlert } from "./alexaReminders";
+import { getApiContext as extractApiContext, cancelAllBatchReminders, scheduleReminderForWait, cancelReminder, scheduleMultipleReminders, type ApiContext, type ScheduledAlert } from "./alexaReminders";
 import { z } from "zod";
 import { randomBytes } from "crypto";
 import { logAlexaWebhook, logWebRequest, queryAlexaLogs, queryWebLogs, scheduleDailyPurge, purgeOldLogs } from "./logService";
@@ -1555,15 +1555,43 @@ export async function registerRoutes(
                 stageCtx = buildStage15Context(batch);
               }
 
-              // heat_curd stage: ask temperature confirmation directly
+              // heat_curd stage: inform status and ensure 10 fixed reminders are scheduled
               if (isHeatCurdStage(batch)) {
-                const heatSpeech = `Etapa ${batch.currentStageId}: ${stage?.name || 'Aquecendo massa'}. A massa atingiu 38 graus? Diga 'sim' para avançar ou 'não' para continuar monitorando.`;
-                console.log(`[LaunchRequest] heat_curd stage ${batch.currentStageId} — prompting temp check for batch=${batch.id}`);
+                console.log(`[LaunchRequest] heat_curd stage ${batch.currentStageId} — status info for batch=${batch.id}`);
+                if (apiCtx) {
+                  const existingAlerts = ((batch as any)?.scheduledAlerts || {}) as Record<string, ScheduledAlert>;
+                  const firstAlertKey = `stage_${batch.currentStageId}_alert_1`;
+                  if (!existingAlerts[firstAlertKey]) {
+                    const intervalMin = TEST_MODE ? 0.2 : 3;
+                    const count = TEST_MODE ? 3 : 10;
+                    const multiResults = await scheduleMultipleReminders(
+                      apiCtx,
+                      { id: batch.id, recipeId: (batch as any).recipeId },
+                      batch.currentStageId,
+                      count,
+                      intervalMin,
+                      undefined,
+                      stage?.name,
+                      rm.getRecipeName()
+                    );
+                    if (multiResults.length > 0) {
+                      const newAlerts = { ...existingAlerts };
+                      for (const { key, alert } of multiResults) {
+                        newAlerts[key] = alert;
+                      }
+                      await storage.updateBatch(batch.id, { scheduledAlerts: newAlerts });
+                      console.log(`[LaunchRequest] Scheduled ${multiResults.length} heat_curd reminders for batch=${batch.id} stage=${batch.currentStageId}`);
+                    }
+                  } else {
+                    console.log(`[LaunchRequest] heat_curd reminders already scheduled for batch=${batch.id} stage=${batch.currentStageId}`);
+                  }
+                }
+                const heatSpeech = `Etapa ${batch.currentStageId}: ${stage?.name || 'Aquecendo massa'}. Avisarei de 3 em 3 minutos. Diga 'próxima etapa' quando a massa atingir 38 graus.`;
                 return res.status(200).json(buildAlexaResponse(
                   heatSpeech,
                   false,
-                  "Diga 'sim' se atingiu 38 graus, ou 'não' para continuar.",
-                  { ...sessionAttributes, activeBatchId: batch.id, state: "HEAT_CURD_TEMP_CHECK" }
+                  "Diga 'próxima etapa' ao atingir 38 graus.",
+                  { ...sessionAttributes, activeBatchId: batch.id }
                 ));
               }
 
@@ -1665,26 +1693,6 @@ export async function registerRoutes(
         
         // --- ContinueIntent / AMAZON.YesIntent: Continue with active batch ---
         if (intentName === "ContinueIntent" || intentName === "AMAZON.YesIntent") {
-          // heat_curd temp check: "sim" = 38°C reached, advance
-          if (sessionAttributes?.state === "HEAT_CURD_TEMP_CHECK") {
-            const hcBatch = activeBatchResolved || (userId ? await getActiveBatchForUser(userId) : null);
-            if (hcBatch && isHeatCurdStage(hcBatch)) {
-              console.log(`[${intentName}] HEAT_CURD_TEMP_CHECK confirmed — advancing batch=${hcBatch.id} from stage=${hcBatch.currentStageId}`);
-              const result = await batchService.advanceBatch(hcBatch.id, apiCtx);
-              if (result.success) {
-                const updatedBatch = result.batch || hcBatch;
-                const nextStage = getRecipeForBatch(updatedBatch).getStage(result.nextStage?.id || 0);
-                const payload = speechRenderer.buildAdvancePayload(updatedBatch, nextStage, !!result.completed);
-                const speech = await speechRenderer.renderSpeech(payload);
-                return res.status(200).json(buildAlexaResponse(speech, false, "O que mais posso ajudar?",
-                  { ...sessionAttributes, activeBatchId: updatedBatch.id, state: undefined }));
-              }
-              return res.status(200).json(buildAlexaResponse(
-                "Não foi possível avançar agora. Tente novamente.", false,
-                "Diga 'próxima etapa'.", sessionAttributes));
-            }
-          }
-
           const activeBatch = userId ? await getActiveBatchForUser(userId) : activeBatchResolved;
           if (activeBatch) {
             console.log(`[${intentName}] Continuing with batch=${activeBatch.id} stage=${activeBatch.currentStageId}`);
@@ -1743,20 +1751,6 @@ export async function registerRoutes(
 
         // --- ChangeBatchIntent / AMAZON.NoIntent: Switch to different batch ---
         if (intentName === "ChangeBatchIntent" || intentName === "AMAZON.NoIntent") {
-          // heat_curd temp check: "não" = still below 38°C, keep monitoring
-          if (sessionAttributes?.state === "HEAT_CURD_TEMP_CHECK") {
-            const hcBatch = activeBatchResolved || (userId ? await getActiveBatchForUser(userId) : null);
-            if (hcBatch && isHeatCurdStage(hcBatch)) {
-              console.log(`[${intentName}] HEAT_CURD_TEMP_CHECK denied — continuing interval monitoring for batch=${hcBatch.id}`);
-              return res.status(200).json(buildAlexaResponse(
-                "Ok, temperatura ainda abaixo de 38 graus. Vou te avisar novamente em breve.",
-                true,
-                "Monitorando temperatura.",
-                { ...sessionAttributes, activeBatchId: hcBatch.id, state: undefined }
-              ));
-            }
-          }
-
           console.log(`[${intentName}] Showing batch selection menu`);
           const { speechText, repromptText, newSessionAttrs } = await buildBatchSelectionMenu(sessionAttributes);
           return res.status(200).json(buildAlexaResponse(speechText, false, repromptText, newSessionAttrs));

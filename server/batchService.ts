@@ -2,7 +2,7 @@ import { storage } from "./storage";
 import { recipeManager, recipeRegistry, RecipeManager, getRecipeForBatch, getTimerDurationMinutes, getIntervalDurationMinutes, getWaitSpecForStage, getWaitSpecForStageData, TEST_MODE } from "./recipe";
 import { CHEESE_TYPES } from "@shared/schema";
 import { randomBytes } from "crypto";
-import { ApiContext, ScheduledAlert, scheduleReminderForWait, cancelReminder, cancelAllBatchReminders } from "./alexaReminders";
+import { ApiContext, ScheduledAlert, scheduleReminderForWait, cancelReminder, cancelAllBatchReminders, scheduleMultipleReminders } from "./alexaReminders";
 
 const generateId = () => randomBytes(8).toString('hex');
 
@@ -312,6 +312,22 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     delete scheduledAlerts[prevKey];
   }
 
+  // Cancel any heat_curd multi-alerts for this stage (stage_N_alert_1 ... stage_N_alert_10)
+  const multiAlertPrefix = `stage_${currentStage.id}_alert_`;
+  const multiAlertKeys = Object.keys(scheduledAlerts).filter(k => k.startsWith(multiAlertPrefix));
+  if (multiAlertKeys.length > 0) {
+    console.log(`[advanceBatch] Cancelling ${multiAlertKeys.length} heat_curd alert(s) for stage ${currentStage.id}`);
+    for (const key of multiAlertKeys) {
+      const alert = scheduledAlerts[key];
+      const dueAt = alert.dueAtISO ? new Date(alert.dueAtISO).getTime() : 0;
+      const alreadyFired = dueAt > 0 && dueAt < Date.now();
+      if (!alreadyFired && apiCtx) {
+        await cancelReminder(apiCtx, alert.reminderId);
+      }
+      delete scheduledAlerts[key];
+    }
+  }
+
   const updates: any = {
     currentStageId: nextStage.id,
     activeTimers,
@@ -516,6 +532,34 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
     } else {
       needsPermission = true;
       console.log(`[REMINDER] No apiAccessToken available for batch=${batchId} stage=${nextStage.id}. Permission needed.`);
+    }
+  }
+
+  // Heat-curd stages (e.g. Nina stage 16): schedule 10 fixed-interval reminders
+  // instead of a single recurring one. These are non-blocking (waitSpec is null),
+  // so this block runs independently of the waitSpec section above.
+  if (nextStage.type === 'heat_curd' && apiCtx) {
+    const batchRecipeManager = getRecipeForBatch(batch);
+    const intervalMin = TEST_MODE ? 0.2 : 3;
+    const count = TEST_MODE ? 3 : 10;
+    console.log(`[REMINDER] heat_curd stage ${nextStage.id}: scheduling ${count} reminders every ${intervalMin} min for batch=${batchId}`);
+    const multiResults = await scheduleMultipleReminders(
+      apiCtx,
+      { id: batchId, recipeId: batch.recipeId },
+      nextStage.id,
+      count,
+      intervalMin,
+      undefined,
+      nextStage.name,
+      batchRecipeManager.getRecipeName()
+    );
+    for (const { key, alert } of multiResults) {
+      scheduledAlerts[key] = alert;
+    }
+    if (multiResults.length > 0) {
+      await storage.updateBatch(batchId, { scheduledAlerts });
+      reminderScheduled = true;
+      console.log(`[REMINDER] heat_curd: ${multiResults.length} reminder(s) scheduled for batch=${batchId} stage=${nextStage.id}`);
     }
   }
 
