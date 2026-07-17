@@ -344,12 +344,15 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Editar Dados — Lote {formatBatchCode(batch.startedAt)}</DialogTitle>
-        </DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0">
+        <div className="px-6 pt-6 pb-4 shrink-0">
+          <DialogHeader>
+            <DialogTitle>Editar Dados — Lote {formatBatchCode(batch.startedAt)}</DialogTitle>
+          </DialogHeader>
+        </div>
 
-        <div className="space-y-6 py-2">
+        <div className="overflow-y-auto flex-1 min-h-0 px-6">
+        <div className="space-y-6 pb-2">
 
           {/* Câmara 2 e Maturação */}
           <section>
@@ -687,16 +690,19 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
 
 
         </div>
+        </div>
 
-        <DialogFooter className="mt-4">
-          <Button variant="outline" onClick={onClose} disabled={mutation.isPending} data-testid="button-edit-cancel">
-            Cancelar
-          </Button>
-          <Button onClick={handleSave} disabled={mutation.isPending} data-testid="button-edit-save">
-            {mutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            Salvar Alterações
-          </Button>
-        </DialogFooter>
+        <div className="px-6 pb-6 pt-3 border-t border-border shrink-0">
+          <DialogFooter>
+            <Button variant="outline" onClick={onClose} disabled={mutation.isPending} data-testid="button-edit-cancel">
+              Cancelar
+            </Button>
+            <Button onClick={handleSave} disabled={mutation.isPending} data-testid="button-edit-save">
+              {mutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Salvar Alterações
+            </Button>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
