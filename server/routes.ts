@@ -1061,7 +1061,7 @@ export async function registerRoutes(
         const payload = speechRenderer.buildAdvancePayload(updatedBatch, nextStage, false);
         let speech = await speechRenderer.renderSpeech(payload);
 
-        if (nextStage && nextStage.id !== 15 && nextStage.operator_input_required?.length > 0) {
+        if (nextStage && nextStage.id !== 15 && nextStage.operator_input_required?.length > 0 && !payload.nextAction) {
           const ctx = buildStageGuidance(updatedBatch, nextStage);
           if (ctx) {
             speech += ctx;
