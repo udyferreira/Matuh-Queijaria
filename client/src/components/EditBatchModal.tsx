@@ -108,7 +108,7 @@ function buildInitialState(batch: ProductionBatch): FormState {
   const calc = (batch.calculatedInputs as Record<string, any>) || {};
   const history: any[] = m._history || [];
   const isNina = (batch as any).recipeId === 'QUEIJO_NINA';
-  const loopStageId = isNina ? 20 : 15;
+  const loopStageId = isNina ? 21 : 15;
   const initialPhStageId = isNina ? 18 : 13;
 
   function mOrHistory(key: string): any {
@@ -118,12 +118,17 @@ function buildInitialState(batch: ProductionBatch): FormState {
   }
 
   // pH loop measurements — filter by recipe-specific stageId
+  // Nina historical batches may have stored pH at stageId 20 (old recipe); current recipe uses 21.
+  const altLoopStageId: number | null = isNina ? 20 : null;
   const phArr: any[] = m.ph_measurements || [];
-  const loopPhArr = phArr.filter((p: any) => p.stageId === loopStageId || p.stageId == null);
+  const loopPhArr = phArr.filter((p: any) =>
+    p.stageId === loopStageId || (altLoopStageId !== null && p.stageId === altLoopStageId) || p.stageId == null
+  );
   const phMeasurements = loopPhArr.length > 0
     ? loopPhArr.map((p: any) => (p.value != null ? String(p.value) : ""))
     : history
-        .filter((h: any) => (h.key === 'ph_value' || h.key === 'ph_measurement') && h.stageId === loopStageId)
+        .filter((h: any) => (h.key === 'ph_value' || h.key === 'ph_measurement') &&
+          (h.stageId === loopStageId || (altLoopStageId !== null && h.stageId === altLoopStageId)))
         .map((h: any) => String(h.value));
 
   // initial_ph: prefer measurements.initial_ph, fall back to recipe-specific stageId in history
@@ -321,8 +326,8 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
     flocCutStages: "Etapas 10 e 11",
     phPiecesStages: "Etapas 18 e 19",
     phPiecesLabel: "Etapa 18 — pH Inicial, Peças e Prensagem",
-    loopStage: "Etapa 20",
-    loopLabel: "Etapa 20 — Viradas e Medições de pH",
+    loopStage: "Etapa 21",
+    loopLabel: "Etapa 21 — Viradas e Medições de pH",
     brineShelveStages: "Etapas 23 e 24",
     brineShelveLabel: "Etapas 23 e 24 — Salga e Secagem",
     camStage: "Etapa 25",

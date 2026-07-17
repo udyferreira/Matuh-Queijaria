@@ -387,17 +387,22 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
     if (val != null) rows.push({ label: "Início da Prensagem", value: String(val) });
   }
 
-  // ── Loop pH/viradas: Nete etapa 15, Nina etapa 20 ────────────────────────
-  if ((!isNina && stageId === 15) || (isNina && stageId === 20)) {
-    const loopStageId = isNina ? 20 : 15;
+  // ── Loop pH/viradas: Nete etapa 15, Nina etapa 21 ────────────────────────
+  // Nina historical batches may have stored pH at stageId 20 (old recipe); current recipe uses 21.
+  if ((!isNina && stageId === 15) || (isNina && stageId === 21)) {
+    const loopStageId = isNina ? 21 : 15;
+    const altLoopStageId: number | null = isNina ? 20 : null;
     const phArr: any[] = measurements.ph_measurements || [];
-    const loopPhArr = phArr.filter((p: any) => p.stageId === loopStageId || p.stageId == null);
+    const loopPhArr = phArr.filter((p: any) =>
+      p.stageId === loopStageId || (altLoopStageId !== null && p.stageId === altLoopStageId) || p.stageId == null
+    );
     if (loopPhArr.length > 0) {
       loopPhArr.forEach((item: any, idx: number) => {
         rows.push({ label: `${idx + 1}ª Medição de pH`, value: String(item.value) });
       });
     } else {
-      const phItems = stageHistory.filter(i => i.key === 'ph_value' || i.key === 'ph_measurement');
+      const altHistory = altLoopStageId !== null ? (measurementsByStage[altLoopStageId] || []) : [];
+      const phItems = [...stageHistory, ...altHistory].filter(i => i.key === 'ph_value' || i.key === 'ph_measurement');
       phItems.forEach((item, idx) => {
         rows.push({ label: `${idx + 1}ª Medição de pH`, value: String(item.value) });
       });
