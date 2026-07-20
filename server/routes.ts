@@ -653,7 +653,7 @@ export async function registerRoutes(
       brine_entry_time_iso: z.union([z.string().datetime(), z.literal("")]).optional(),
       shelf_start_time_iso: z.union([z.string().datetime(), z.literal("")]).optional(),
       ph_measurements: z.array(z.object({
-        index: z.number().int().min(0),
+        index: z.number().int().min(0).optional(), // undefined = new entry to append
         value: z.number().min(0).max(14),
       })).optional(),
     }).optional(),

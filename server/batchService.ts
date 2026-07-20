@@ -1268,7 +1268,7 @@ export async function rollbackBatch(batchId: number, apiCtx?: ApiContext | null)
 // ─── Post-Completion Edit ───────────────────────────────────────────────────
 
 export interface PhMeasurementEdit {
-  index: number;
+  index?: number; // undefined = new entry to append
   value: number;
 }
 
@@ -1364,20 +1364,30 @@ export async function editCompletedBatch(
     }
 
     if (m.ph_measurements && m.ph_measurements.length > 0) {
-      // Prefer existing ph_measurements array; for legacy batches without it, reconstruct from _history
+      // Prefer existing ph_measurements array; for legacy batches without it, reconstruct from _history.
+      // Nina historical batches may have stored pH at stageId 20 (old recipe); current recipe uses 21.
+      const altLoopStageId = isNina ? 20 : null;
       let phArr: any[] = measurements.ph_measurements
         ? [...measurements.ph_measurements]
         : history
-            .filter((h: any) => (h.key === 'ph_value' || h.key === 'ph_measurement') && h.stageId === loopStageId)
+            .filter((h: any) => (h.key === 'ph_value' || h.key === 'ph_measurement') &&
+              (h.stageId === loopStageId || (altLoopStageId && h.stageId === altLoopStageId)))
             .map((h: any) => ({ value: h.value, stageId: loopStageId, timestamp: h.timestamp }));
 
       for (const edit of m.ph_measurements) {
-        if (edit.index >= 0 && edit.index < phArr.length) {
-          const prev = phArr[edit.index].value;
-          if (edit.value !== prev) {
-            recordEdit(`ph_measurement_${edit.index}`, edit.value, prev, loopStageId);
-            phArr[edit.index] = { ...phArr[edit.index], value: edit.value };
+        if (edit.index !== undefined) {
+          // Edit existing entry by index
+          if (edit.index >= 0 && edit.index < phArr.length) {
+            const prev = phArr[edit.index].value;
+            if (edit.value !== prev) {
+              recordEdit(`ph_measurement_${edit.index}`, edit.value, prev, loopStageId);
+              phArr[edit.index] = { ...phArr[edit.index], value: edit.value };
+            }
           }
+        } else {
+          // New entry — append to array and record in history
+          phArr.push({ value: edit.value, stageId: loopStageId, timestamp: now });
+          recordEdit('ph_measurement', edit.value, null, loopStageId);
         }
       }
       measurements.ph_measurements = phArr;

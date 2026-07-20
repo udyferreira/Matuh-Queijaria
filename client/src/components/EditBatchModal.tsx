@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ProductionBatch, formatBatchCode } from "@shared/schema";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -218,6 +218,18 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
     });
   }
 
+  function addPh() {
+    setForm((prev) => ({ ...prev, ph_measurements: [...prev.ph_measurements, ""] }));
+  }
+
+  function removePh(index: number) {
+    setForm((prev) => {
+      const arr = [...prev.ph_measurements];
+      arr.splice(index, 1);
+      return { ...prev, ph_measurements: arr };
+    });
+  }
+
   function handleSave() {
     const initial = initialRef.current;
     const payload: any = { measurements: {}, calculatedInputs: {}, topLevel: {} };
@@ -281,12 +293,21 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
     // Prensa (Nete: stage 14 / Nina: stage 19 — handled by backend)
     strIfChanged("press_start_time", (v) => { payload.measurements.press_start_time = v; });
 
-    // Viradas + pH loop (Nete: stage 15 / Nina: stage 20 — handled by backend)
+    // Viradas + pH loop (Nete: stage 15 / Nina: stage 21 — handled by backend)
+    const initialPhCount = initial.ph_measurements.length;
+    // Edits to existing entries (by index)
     const phEdits = form.ph_measurements
+      .slice(0, initialPhCount)
       .map((v, i) => ({ index: i, value: Number(v), changed: v !== (initial.ph_measurements[i] ?? "") && v !== "" }))
       .filter((e) => e.changed)
       .map(({ index, value }) => ({ index, value }));
-    if (phEdits.length > 0) payload.measurements.ph_measurements = phEdits;
+    // New entries appended beyond the original count (no index)
+    const phNew = form.ph_measurements
+      .slice(initialPhCount)
+      .filter((v) => v !== "")
+      .map((v) => ({ value: Number(v) }));
+    const allPhChanges = [...phEdits, ...phNew];
+    if (allPhChanges.length > 0) payload.measurements.ph_measurements = allPhChanges;
     numIfChanged("turningCyclesCount", (v) => { payload.topLevel.turningCyclesCount = v; });
 
     // Salga e secagem (Nete: stages 17/18 / Nina: stages 21/22 — handled by backend)
@@ -645,10 +666,10 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
                 />
               </div>
             </div>
-            {form.ph_measurements.length > 0 && (
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                {form.ph_measurements.map((val, idx) => (
-                  <div key={idx}>
+            <div className="mt-4 space-y-3">
+              {form.ph_measurements.map((val, idx) => (
+                <div key={idx} className="flex items-end gap-2">
+                  <div className="flex-1">
                     <Label htmlFor={`edit-ph-${idx}`}>{idx + 1}ª Medição de pH</Label>
                     <Input
                       id={`edit-ph-${idx}`}
@@ -659,9 +680,31 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
                       data-testid={`input-edit-ph-measurement-${idx}`}
                     />
                   </div>
-                ))}
-              </div>
-            )}
+                  {idx >= initialRef.current.ph_measurements.length && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 mb-0.5 text-muted-foreground hover:text-destructive"
+                      onClick={() => removePh(idx)}
+                      data-testid={`button-remove-ph-${idx}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addPh}
+                data-testid="button-add-ph-measurement"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Adicionar Medição de pH
+              </Button>
+            </div>
           </section>
 
           {/* Salga e Secagem */}
