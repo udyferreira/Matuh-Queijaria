@@ -768,7 +768,7 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
               />
               <DateTimeField
                 label="Início da Secagem em Prateleiras"
-                idPrefix="input-edit-shelf-start"
+                idPrefix="input-edit-shelf"
                 value={form.shelf_start_time_iso}
                 onChange={(v) => set("shelf_start_time_iso", v)}
               />
