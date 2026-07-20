@@ -58,6 +58,53 @@ function datetimeBRTToISO(localVal: string): string {
   }
 }
 
+interface DateTimeFieldProps {
+  value: string; // YYYY-MM-DDTHH:MM
+  onChange: (v: string) => void;
+  label: string;
+  idPrefix: string;
+}
+
+function DateTimeField({ value, onChange, label, idPrefix }: DateTimeFieldProps) {
+  const [datePart, timePart] = value ? value.split("T") : ["", ""];
+
+  function handleDate(newDate: string) {
+    onChange(`${newDate}T${timePart ?? ""}`);
+  }
+
+  function handleTime(newTime: string) {
+    onChange(`${datePart ?? ""}T${newTime}`);
+  }
+
+  return (
+    <div>
+      <Label>{label}</Label>
+      <div className="flex gap-2 mt-1">
+        <div className="flex-1">
+          <Label htmlFor={`${idPrefix}-date`} className="text-xs text-muted-foreground">Data</Label>
+          <Input
+            id={`${idPrefix}-date`}
+            type="date"
+            value={datePart ?? ""}
+            onChange={(e) => handleDate(e.target.value)}
+            data-testid={`${idPrefix}-date`}
+          />
+        </div>
+        <div className="flex-1">
+          <Label htmlFor={`${idPrefix}-time`} className="text-xs text-muted-foreground">Hora</Label>
+          <Input
+            id={`${idPrefix}-time`}
+            type="time"
+            value={timePart ?? ""}
+            onChange={(e) => handleTime(e.target.value)}
+            data-testid={`${idPrefix}-time`}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function timestampToDateInput(ts: string | Date | undefined | null): string {
   if (!ts) return "";
   try {
@@ -712,27 +759,19 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
               {labels.brineShelveLabel}
             </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-brine-entry">Entrada na Salga (data e hora)</Label>
-                <Input
-                  id="edit-brine-entry"
-                  type="datetime-local"
-                  value={form.brine_entry_time_iso}
-                  onChange={(e) => set("brine_entry_time_iso", e.target.value)}
-                  data-testid="input-edit-brine-entry"
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit-shelf-start">Início da Secagem em Prateleiras</Label>
-                <Input
-                  id="edit-shelf-start"
-                  type="datetime-local"
-                  value={form.shelf_start_time_iso}
-                  onChange={(e) => set("shelf_start_time_iso", e.target.value)}
-                  data-testid="input-edit-shelf-start"
-                />
-              </div>
+            <div className="grid grid-cols-1 gap-4">
+              <DateTimeField
+                label="Entrada na Salga (data e hora)"
+                idPrefix="input-edit-brine-entry"
+                value={form.brine_entry_time_iso}
+                onChange={(v) => set("brine_entry_time_iso", v)}
+              />
+              <DateTimeField
+                label="Início da Secagem em Prateleiras"
+                idPrefix="input-edit-shelf-start"
+                value={form.shelf_start_time_iso}
+                onChange={(v) => set("shelf_start_time_iso", v)}
+              />
             </div>
           </section>
 
