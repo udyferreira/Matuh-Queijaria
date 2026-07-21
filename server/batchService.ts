@@ -1365,7 +1365,9 @@ export async function editCompletedBatch(
       }
     }
 
-    if (m.ph_measurements && m.ph_measurements.length > 0) {
+    const hasPhEdits = m.ph_measurements && m.ph_measurements.length > 0;
+    const hasPhDeletions = m.ph_measurement_deletions && m.ph_measurement_deletions.length > 0;
+    if (hasPhEdits || hasPhDeletions) {
       // Prefer existing ph_measurements array; for legacy batches without it, reconstruct from _history.
       // Nina historical batches may have stored pH at stageId 20 (old recipe); current recipe uses 21.
       const altLoopStageId = isNina ? 20 : null;
@@ -1376,31 +1378,33 @@ export async function editCompletedBatch(
               (h.stageId === loopStageId || (altLoopStageId && h.stageId === altLoopStageId)))
             .map((h: any) => ({ value: h.value, stageId: loopStageId, timestamp: h.timestamp }));
 
-      for (const edit of m.ph_measurements) {
-        if (edit.index !== undefined) {
-          // Edit existing entry by index
-          if (edit.index >= 0 && edit.index < phArr.length) {
-            const prevValue = phArr[edit.index].value;
-            const prevTimestamp = phArr[edit.index].timestamp;
-            const valueChanged = edit.value !== prevValue;
-            const tsChanged = edit.timestamp !== undefined && edit.timestamp !== prevTimestamp;
-            if (valueChanged || tsChanged) {
-              recordEdit(`ph_measurement_${edit.index}`, edit.value, prevValue, loopStageId);
-              phArr[edit.index] = {
-                ...phArr[edit.index],
-                value: edit.value,
-                ...(edit.timestamp !== undefined ? { timestamp: edit.timestamp } : {}),
-              };
+      if (hasPhEdits) {
+        for (const edit of m.ph_measurements) {
+          if (edit.index !== undefined) {
+            // Edit existing entry by index
+            if (edit.index >= 0 && edit.index < phArr.length) {
+              const prevValue = phArr[edit.index].value;
+              const prevTimestamp = phArr[edit.index].timestamp;
+              const valueChanged = edit.value !== prevValue;
+              const tsChanged = edit.timestamp !== undefined && edit.timestamp !== prevTimestamp;
+              if (valueChanged || tsChanged) {
+                recordEdit(`ph_measurement_${edit.index}`, edit.value, prevValue, loopStageId);
+                phArr[edit.index] = {
+                  ...phArr[edit.index],
+                  value: edit.value,
+                  ...(edit.timestamp !== undefined ? { timestamp: edit.timestamp } : {}),
+                };
+              }
             }
+          } else {
+            // New entry — append to array and record in history
+            const ts = edit.timestamp ?? now;
+            phArr.push({ value: edit.value, stageId: loopStageId, timestamp: ts });
+            recordEdit('ph_measurement', edit.value, null, loopStageId);
           }
-        } else {
-          // New entry — append to array and record in history
-          const ts = edit.timestamp ?? now;
-          phArr.push({ value: edit.value, stageId: loopStageId, timestamp: ts });
-          recordEdit('ph_measurement', edit.value, null, loopStageId);
         }
       }
-      if (m.ph_measurement_deletions && m.ph_measurement_deletions.length > 0) {
+      if (hasPhDeletions) {
         const toDelete = new Set(m.ph_measurement_deletions);
         const prevPhArr = [...phArr];
         phArr = phArr.filter((_: any, i: number) => !toDelete.has(i));
@@ -1411,9 +1415,7 @@ export async function editCompletedBatch(
         }
       }
       measurements.ph_measurements = phArr;
-      if (phArr.length > 0) {
-        measurements.ph_value = phArr[phArr.length - 1].value;
-      }
+      measurements.ph_value = phArr.length > 0 ? phArr[phArr.length - 1].value : null;
     }
   }
 
