@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "d_uYWrmSmlM6ZeGpaALBJ"
+uri = "file://relatorio_ph_lotes.xlsx"
+type = "table"
+title = "Relatório pH — Lotes de Produção"
