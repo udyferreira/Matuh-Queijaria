@@ -715,20 +715,7 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
               {labels.loopLabel}
             </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-turns">Viradas Realizadas</Label>
-                <Input
-                  id="edit-turns"
-                  type="number"
-                  step="1"
-                  value={form.turningCyclesCount}
-                  onChange={(e) => set("turningCyclesCount", e.target.value)}
-                  data-testid="input-edit-turning-cycles"
-                />
-              </div>
-            </div>
-            <div className="mt-4 space-y-3">
+            <div className="space-y-3">
               {form.ph_measurements.map((item, idx) => {
                 const isNew = idx >= initialRef.current.ph_measurements.length;
                 const [datePart, timePart] = item.timestamp ? item.timestamp.split("T") : ["", ""];
@@ -751,8 +738,8 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
                         </Button>
                       )}
                     </div>
-                    <div className="flex items-end gap-2">
-                      <div className="w-24 shrink-0">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                      <div className="w-full sm:w-24 sm:shrink-0">
                         <Label htmlFor={`edit-ph-val-${idx}`} className="text-xs text-muted-foreground">pH</Label>
                         <Input
                           id={`edit-ph-val-${idx}`}
@@ -763,7 +750,7 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
                           data-testid={`input-edit-ph-measurement-${idx}`}
                         />
                       </div>
-                      <div className="flex-1">
+                      <div className="w-full sm:flex-1">
                         <Label htmlFor={`edit-ph-date-${idx}`} className="text-xs text-muted-foreground">Data</Label>
                         <Input
                           id={`edit-ph-date-${idx}`}
@@ -773,7 +760,7 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
                           data-testid={`input-edit-ph-date-${idx}`}
                         />
                       </div>
-                      <div className="w-28 shrink-0">
+                      <div className="w-full sm:w-28 sm:shrink-0">
                         <Label htmlFor={`edit-ph-time-${idx}`} className="text-xs text-muted-foreground">Hora (BRT)</Label>
                         <Input
                           id={`edit-ph-time-${idx}`}
@@ -787,16 +774,31 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
                   </div>
                 );
               })}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={addPh}
-                data-testid="button-add-ph-measurement"
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Adicionar Medição de pH
-              </Button>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  onClick={addPh}
+                  data-testid="button-add-ph-measurement"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Medição de pH
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-4 pt-1">
+                <div>
+                  <Label htmlFor="edit-turns">Viradas Realizadas</Label>
+                  <Input
+                    id="edit-turns"
+                    type="number"
+                    step="1"
+                    value={form.turningCyclesCount}
+                    onChange={(e) => set("turningCyclesCount", e.target.value)}
+                    data-testid="input-edit-turning-cycles"
+                  />
+                </div>
+              </div>
             </div>
           </section>
 
