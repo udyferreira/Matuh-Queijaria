@@ -237,16 +237,22 @@ function exportToExcel(batches: ProductionBatch[], stageTimers: Record<number, n
     
     allStageIds.forEach((stageId) => {
       const stageRows = getStageData(batch, stageId, measurementsByStage, stageTimers, recipeId);
+      const batchMeta = {
+        "Lote": formatBatchCode(batch.startedAt),
+        "Tipo": (batch as any).recipeName || getCheeseTypeName(batch.recipeId),
+        "Volume (L)": batch.milkVolumeL,
+        "Data Conclusão": batch.completedAt ? new Date(batch.completedAt).toLocaleDateString("pt-BR") : "N/A",
+        "Etapa": `${stageId} - ${stageNames[stageId] || `Etapa ${stageId}`}`,
+      };
       stageRows.forEach((row) => {
-        data.push({
-          "Lote": formatBatchCode(batch.startedAt),
-          "Tipo": (batch as any).recipeName || getCheeseTypeName(batch.recipeId),
-          "Volume (L)": batch.milkVolumeL,
-          "Data Conclusão": batch.completedAt ? new Date(batch.completedAt).toLocaleDateString("pt-BR") : "N/A",
-          "Etapa": `${stageId} - ${stageNames[stageId] || `Etapa ${stageId}`}`,
-          "Campo": row.label,
-          "Valor": row.value,
-        });
+        if (row.kind === 'ph_table') {
+          row.items.forEach((item) => {
+            const ts = [item.date, item.time].filter(Boolean).join(' ');
+            data.push({ ...batchMeta, "Campo": `${item.n}ª Medição de pH`, "Valor": ts ? `${item.ph} — ${ts}` : item.ph });
+          });
+        } else {
+          data.push({ ...batchMeta, "Campo": row.label, "Valor": row.value });
+        }
       });
     });
   });
@@ -285,12 +291,17 @@ function batchMonthInfo(batchCode: string): { key: string; label: string } | nul
   return { key, label: label.charAt(0).toUpperCase() + label.slice(1) };
 }
 
+interface PhTableItem { n: number; ph: string; date: string; time: string }
+type StageRow =
+  | { label: string; value: string; kind?: undefined }
+  | { label: string; value: '__ph_table__'; kind: 'ph_table'; items: PhTableItem[] };
+
 function getStageData(batch: ProductionBatch, stageId: number, measurementsByStage: Record<number, MeasurementHistoryItem[]>, stageTimers: Record<number, number> = {}, recipeId?: string) {
   const isNina = (recipeId ?? (batch as any).recipeId) === "QUEIJO_NINA";
   const measurements = batch.measurements as Record<string, any> || {};
   const calculatedInputs = batch.calculatedInputs as Record<string, number> || {};
   const stageHistory = measurementsByStage[stageId] || [];
-  const rows: Array<{ label: string; value: string }> = [];
+  const rows: StageRow[] = [];
 
   function fromMeasurementsOrHistory(key: string): any {
     if (measurements[key] != null) return measurements[key];
@@ -396,19 +407,32 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
     const loopPhArr = phArr.filter((p: any) =>
       p.stageId === loopStageId || (altLoopStageId !== null && p.stageId === altLoopStageId) || p.stageId == null
     );
-    if (loopPhArr.length > 0) {
-      loopPhArr.forEach((item: any, idx: number) => {
-        const timeStr = item.timestamp ? ` — ${formatTimeIso(item.timestamp)}` : '';
-        rows.push({ label: `${idx + 1}ª Medição de pH`, value: `${item.value}${timeStr}` });
+
+    const phItems: Array<{ value: any; timestamp?: string }> = loopPhArr.length > 0
+      ? loopPhArr
+      : (() => {
+          const altHistory = altLoopStageId !== null ? (measurementsByStage[altLoopStageId] || []) : [];
+          return [...stageHistory, ...altHistory]
+            .filter(i => i.key === 'ph_value' || i.key === 'ph_measurement')
+            .map(i => ({ value: i.value, timestamp: i.timestamp }));
+        })();
+
+    if (phItems.length > 0) {
+      const tableItems: PhTableItem[] = phItems.map((item, idx) => {
+        let date = '';
+        let time = '';
+        if (item.timestamp) {
+          try {
+            const d = new Date(item.timestamp);
+            date = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
+            time = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(d);
+          } catch { /* leave empty */ }
+        }
+        return { n: idx + 1, ph: String(item.value), date, time };
       });
-    } else {
-      const altHistory = altLoopStageId !== null ? (measurementsByStage[altLoopStageId] || []) : [];
-      const phItems = [...stageHistory, ...altHistory].filter(i => i.key === 'ph_value' || i.key === 'ph_measurement');
-      phItems.forEach((item, idx) => {
-        const timeStr = item.timestamp ? ` — ${formatTimeIso(item.timestamp)}` : '';
-        rows.push({ label: `${idx + 1}ª Medição de pH`, value: `${item.value}${timeStr}` });
-      });
+      rows.push({ label: 'Medições de pH', value: '__ph_table__', kind: 'ph_table', items: tableItems });
     }
+
     const turningCount = (batch as any).turningCyclesCount ?? measurements.turning_cycles_count
       ?? stageHistory.find(i => i.key === 'turning_cycles_count')?.value;
     if (turningCount != null) rows.push({ label: "Viradas Realizadas", value: String(turningCount) });
@@ -537,15 +561,43 @@ function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionB
                       {stageId}. {stageNames[stageId] || `Etapa ${stageId}`}
                     </h4>
                     <div className="flex flex-col gap-1">
-                      {stageRows.map((row, idx) => (
-                        <div 
-                          key={idx} 
-                          className="flex justify-between items-center bg-secondary/30 rounded-md px-3 py-1.5 text-sm print:bg-gray-100"
-                        >
-                          <span className="text-muted-foreground print:text-gray-600">{row.label}</span>
-                          <span className="font-medium">{row.value}</span>
-                        </div>
-                      ))}
+                      {stageRows.map((row, idx) => {
+                        if (row.kind === 'ph_table') {
+                          return (
+                            <div key={idx} className="mt-1">
+                              <table className="w-full text-sm border-collapse">
+                                <thead>
+                                  <tr className="bg-secondary/50 print:bg-gray-200">
+                                    <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tl-md w-16">Virada</th>
+                                    <th className="text-center px-3 py-1.5 font-semibold text-muted-foreground w-20">pH</th>
+                                    <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground">Data</th>
+                                    <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tr-md">Hora (BRT)</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {row.items.map((item) => (
+                                    <tr key={item.n} className="even:bg-secondary/20 print:even:bg-gray-100">
+                                      <td className="px-3 py-1.5 text-muted-foreground">{item.n}ª</td>
+                                      <td className="px-3 py-1.5 text-center font-medium">{item.ph}</td>
+                                      <td className="px-3 py-1.5">{item.date || '—'}</td>
+                                      <td className="px-3 py-1.5">{item.time || '—'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div 
+                            key={idx} 
+                            className="flex justify-between items-center bg-secondary/30 rounded-md px-3 py-1.5 text-sm print:bg-gray-100"
+                          >
+                            <span className="text-muted-foreground print:text-gray-600">{row.label}</span>
+                            <span className="font-medium">{row.value}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );

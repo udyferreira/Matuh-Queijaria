@@ -655,6 +655,7 @@ export async function registerRoutes(
       ph_measurements: z.array(z.object({
         index: z.number().int().min(0).optional(), // undefined = new entry to append
         value: z.number().min(0).max(14),
+        timestamp: z.string().datetime().optional(),
       })).optional(),
     }).optional(),
     calculatedInputs: z.record(z.string(), calcValueSchema).optional(),

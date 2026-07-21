@@ -1270,6 +1270,7 @@ export async function rollbackBatch(batchId: number, apiCtx?: ApiContext | null)
 export interface PhMeasurementEdit {
   index?: number; // undefined = new entry to append
   value: number;
+  timestamp?: string; // ISO string, optional
 }
 
 export interface EditCompletedBatchPayload {
@@ -1378,15 +1379,23 @@ export async function editCompletedBatch(
         if (edit.index !== undefined) {
           // Edit existing entry by index
           if (edit.index >= 0 && edit.index < phArr.length) {
-            const prev = phArr[edit.index].value;
-            if (edit.value !== prev) {
-              recordEdit(`ph_measurement_${edit.index}`, edit.value, prev, loopStageId);
-              phArr[edit.index] = { ...phArr[edit.index], value: edit.value };
+            const prevValue = phArr[edit.index].value;
+            const prevTimestamp = phArr[edit.index].timestamp;
+            const valueChanged = edit.value !== prevValue;
+            const tsChanged = edit.timestamp !== undefined && edit.timestamp !== prevTimestamp;
+            if (valueChanged || tsChanged) {
+              recordEdit(`ph_measurement_${edit.index}`, edit.value, prevValue, loopStageId);
+              phArr[edit.index] = {
+                ...phArr[edit.index],
+                value: edit.value,
+                ...(edit.timestamp !== undefined ? { timestamp: edit.timestamp } : {}),
+              };
             }
           }
         } else {
           // New entry — append to array and record in history
-          phArr.push({ value: edit.value, stageId: loopStageId, timestamp: now });
+          const ts = edit.timestamp ?? now;
+          phArr.push({ value: edit.value, stageId: loopStageId, timestamp: ts });
           recordEdit('ph_measurement', edit.value, null, loopStageId);
         }
       }
