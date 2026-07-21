@@ -509,10 +509,28 @@ export default function BatchDetail() {
                              </Button>
                            </div>
                            {isLoopPhStage && (() => {
-                             const m = batch.measurements as Record<string, any> || {};
-                             const history: Array<{key: string; value: any; stageId: number; timestamp: string}> = m._history || [];
-                             const phEntries = history.filter(e => e.stageId === batch.currentStageId && (e.key === 'ph_value' || e.key === 'ph_measurement')).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-                             const lastEntry = phEntries[0];
+                             const bm = batch.measurements as Record<string, any> || {};
+                             const loopStageId = batch.currentStageId;
+                             const isNinaBatch = (batch as any).recipeId === 'QUEIJO_NINA';
+                             const altLoopStageId: number | null = isNinaBatch ? 20 : null;
+                             // Prefer ph_measurements array (like Reports.tsx); fall back to _history
+                             const phArr: any[] = bm.ph_measurements || [];
+                             const loopPhArr = phArr.filter((p: any) =>
+                               p.stageId === loopStageId || (altLoopStageId !== null && p.stageId === altLoopStageId) || p.stageId == null
+                             );
+                             const bHistory: Array<{key: string; value: any; stageId: number; timestamp: string}> = bm._history || [];
+                             const allMeasurements: Array<{value: any; timestamp: string}> = loopPhArr.length > 0
+                               ? loopPhArr
+                               : bHistory
+                                   .filter(e => (e.stageId === loopStageId || (altLoopStageId !== null && e.stageId === altLoopStageId)) && (e.key === 'ph_value' || e.key === 'ph_measurement'))
+                                   .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+                             const lastEntry = allMeasurements.length > 0 ? allMeasurements[allMeasurements.length - 1] : null;
+                             const fmtDate = (iso: string) => {
+                               try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso)); } catch { return '—'; }
+                             };
+                             const fmtTime = (iso: string) => {
+                               try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(iso)); } catch { return '—'; }
+                             };
                              const fmtDt = (iso: string) => {
                                try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(iso)); } catch { return iso; }
                              };
@@ -531,20 +549,37 @@ export default function BatchDetail() {
                                  <div className="text-sm text-muted-foreground">
                                    Registre o pH {loopIntervalText}. Quando o pH ficar abaixo de 5.3, clique em "Concluir Etapa" abaixo.
                                  </div>
-                                 <div className="grid grid-cols-2 gap-2 mt-2">
-                                   <div className="bg-muted/30 border border-border/50 rounded-lg p-2 text-center">
-                                     <div className="text-xs text-muted-foreground mb-1">Último registro</div>
-                                     <div className="font-mono text-sm font-bold" data-testid="text-last-ph-time">
-                                       {lastEntry ? fmtDt(lastEntry.timestamp) : <span className="italic text-muted-foreground">Nenhum</span>}
-                                     </div>
-                                     {lastEntry && <div className="text-xs text-primary mt-0.5">pH {lastEntry.value}</div>}
+                                 {allMeasurements.length > 0 && (
+                                   <div className="mt-2 overflow-x-auto">
+                                     <table className="w-full text-sm border-collapse">
+                                       <thead>
+                                         <tr className="bg-secondary/50">
+                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tl-md w-16">Virada</th>
+                                           <th className="text-center px-3 py-1.5 font-semibold text-muted-foreground w-20">pH</th>
+                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground">Data</th>
+                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tr-md">Hora (BRT)</th>
+                                         </tr>
+                                       </thead>
+                                       <tbody>
+                                         {allMeasurements.map((item, idx) => (
+                                           <tr key={idx} className="even:bg-secondary/20" data-testid={`row-ph-${idx}`}>
+                                             <td className="px-3 py-1.5 text-muted-foreground">{idx + 1}ª</td>
+                                             <td className="px-3 py-1.5 text-center font-medium" data-testid={`text-ph-value-${idx}`}>{item.value}</td>
+                                             <td className="px-3 py-1.5">{item.timestamp ? fmtDate(item.timestamp) : '—'}</td>
+                                             <td className="px-3 py-1.5">{item.timestamp ? fmtTime(item.timestamp) : '—'}</td>
+                                           </tr>
+                                         ))}
+                                       </tbody>
+                                     </table>
                                    </div>
-                                   <div className={`border rounded-lg p-2 text-center ${isPastDue ? 'bg-amber-400/10 border-amber-400/30' : 'bg-muted/30 border-border/50'}`}>
-                                     <div className="text-xs text-muted-foreground mb-1">Próxima medição</div>
-                                     <div className={`font-mono text-sm font-bold ${isPastDue ? 'text-amber-400' : ''}`} data-testid="text-next-ph-time">
+                                 )}
+                                 <div className={`border rounded-lg p-2 flex items-center justify-between mt-2 ${isPastDue ? 'bg-amber-400/10 border-amber-400/30' : 'bg-muted/30 border-border/50'}`}>
+                                   <div className="text-xs text-muted-foreground">Próxima medição</div>
+                                   <div className="flex items-center gap-2">
+                                     <span className={`font-mono text-sm font-bold ${isPastDue ? 'text-amber-400' : ''}`} data-testid="text-next-ph-time">
                                        {nextTime ? fmtDt(nextTime.toISOString()) : <span className="italic text-muted-foreground">—</span>}
-                                     </div>
-                                     {isPastDue && <div className="text-xs text-amber-400 mt-0.5">Hora de medir!</div>}
+                                     </span>
+                                     {isPastDue && <span className="text-xs text-amber-400 font-semibold">Hora de medir!</span>}
                                    </div>
                                  </div>
                                </div>
