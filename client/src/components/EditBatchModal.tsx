@@ -140,7 +140,7 @@ interface FormState {
   initial_ph: string;
   pieces_quantity: string;
   press_start_time: string;
-  ph_measurements: Array<{ value: string; timestamp: string }>;
+  ph_measurements: Array<{ value: string; timestamp: string; originalIndex?: number }>;
   turningCyclesCount: string;
   brine_entry_time_iso: string;
   shelf_start_time_iso: string;
@@ -171,17 +171,19 @@ function buildInitialState(batch: ProductionBatch): FormState {
   const loopPhArr = phArr.filter((p: any) =>
     p.stageId === loopStageId || (altLoopStageId !== null && p.stageId === altLoopStageId) || p.stageId == null
   );
-  const phMeasurements: Array<{ value: string; timestamp: string }> = loopPhArr.length > 0
-    ? loopPhArr.map((p: any) => ({
+  const phMeasurements: Array<{ value: string; timestamp: string; originalIndex: number }> = loopPhArr.length > 0
+    ? loopPhArr.map((p: any, idx: number) => ({
         value: p.value != null ? String(p.value) : "",
         timestamp: p.timestamp ? isoToDatetimeBRT(p.timestamp) : "",
+        originalIndex: idx,
       }))
     : history
         .filter((h: any) => (h.key === 'ph_value' || h.key === 'ph_measurement') &&
           (h.stageId === loopStageId || (altLoopStageId !== null && h.stageId === altLoopStageId)))
-        .map((h: any) => ({
+        .map((h: any, idx: number) => ({
           value: String(h.value),
           timestamp: h.timestamp ? isoToDatetimeBRT(h.timestamp) : "",
+          originalIndex: idx,
         }));
 
   // initial_ph: prefer measurements.initial_ph, fall back to recipe-specific stageId in history
@@ -246,6 +248,8 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
 
   const m = (batch.measurements as Record<string, any>) || {};
 
+  const [deletedOriginalIndices, setDeletedOriginalIndices] = useState<number[]>([]);
+
   const mutation = useMutation({
     mutationFn: async (payload: any) =>
       apiRequest("PATCH", `/api/batches/${batch.id}/report-edit`, payload),
@@ -279,6 +283,10 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
   function removePh(index: number) {
     setForm((prev) => {
       const arr = [...prev.ph_measurements];
+      const entry = arr[index];
+      if (entry?.originalIndex !== undefined) {
+        setDeletedOriginalIndices((d) => [...d, entry.originalIndex!]);
+      }
       arr.splice(index, 1);
       return { ...prev, ph_measurements: arr };
     });
@@ -348,28 +356,28 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
     strIfChanged("press_start_time", (v) => { payload.measurements.press_start_time = v; });
 
     // Viradas + pH loop (Nete: stage 15 / Nina: stage 21 — handled by backend)
-    const initialPhCount = initial.ph_measurements.length;
-    // Edits to existing entries (by index) — include timestamp even if only it changed
+    // Edits to existing entries (by originalIndex) — handle index shifts caused by deletions
     const phEdits = form.ph_measurements
-      .slice(0, initialPhCount)
-      .map((item, i) => {
-        const initItem = initial.ph_measurements[i] ?? { value: "", timestamp: "" };
+      .filter((item) => item.originalIndex !== undefined)
+      .map((item) => {
+        const origIdx = item.originalIndex!;
+        const initItem = initial.ph_measurements[origIdx] ?? { value: "", timestamp: "" };
         const valueChanged = item.value !== "" && item.value !== initItem.value;
-        const tsChanged = item.timestamp !== initItem.timestamp;
-        return { index: i, value: Number(item.value), timestamp: item.timestamp ? datetimeBRTToISO(item.timestamp) : undefined, changed: valueChanged || tsChanged };
+        const tsChanged = item.timestamp !== (initItem.timestamp ?? "");
+        return { index: origIdx, value: Number(item.value), timestamp: item.timestamp ? datetimeBRTToISO(item.timestamp) : undefined, changed: valueChanged || tsChanged };
       })
-      .filter((e) => e.changed && form.ph_measurements[e.index].value !== "")
+      .filter((e) => e.changed && e.value > 0)
       .map(({ index, value, timestamp }) => ({ index, value, ...(timestamp ? { timestamp } : {}) }));
-    // New entries appended beyond the original count (no index)
+    // New entries without originalIndex
     const phNew = form.ph_measurements
-      .slice(initialPhCount)
-      .filter((item) => item.value !== "")
+      .filter((item) => item.originalIndex === undefined && item.value !== "")
       .map((item) => {
         const ts = item.timestamp ? datetimeBRTToISO(item.timestamp) : undefined;
         return { value: Number(item.value), ...(ts ? { timestamp: ts } : {}) };
       });
     const allPhChanges = [...phEdits, ...phNew];
     if (allPhChanges.length > 0) payload.measurements.ph_measurements = allPhChanges;
+    if (deletedOriginalIndices.length > 0) payload.measurements.ph_measurement_deletions = deletedOriginalIndices;
     numIfChanged("turningCyclesCount", (v) => { payload.topLevel.turningCyclesCount = v; });
 
     // Salga e secagem (Nete: stages 17/18 / Nina: stages 21/22 — handled by backend)
@@ -717,7 +725,6 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
             </h3>
             <div className="space-y-3">
               {form.ph_measurements.map((item, idx) => {
-                const isNew = idx >= initialRef.current.ph_measurements.length;
                 const [datePart, timePart] = item.timestamp ? item.timestamp.split("T") : ["", ""];
                 return (
                   <div key={idx} className="rounded-md border border-border bg-muted/30 px-3 py-2">
@@ -725,18 +732,16 @@ export function EditBatchModal({ batch, open, onClose }: Props) {
                       <span className="text-xs font-semibold text-muted-foreground bg-muted px-2 py-0.5 rounded">
                         {idx + 1}ª virada
                       </span>
-                      {isNew && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="ml-auto h-6 w-6 text-muted-foreground hover:text-destructive"
-                          onClick={() => removePh(idx)}
-                          data-testid={`button-remove-ph-${idx}`}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="ml-auto h-6 w-6 text-muted-foreground hover:text-destructive"
+                        onClick={() => removePh(idx)}
+                        data-testid={`button-remove-ph-${idx}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                       <div className="w-full sm:w-24 sm:shrink-0">

@@ -1286,6 +1286,7 @@ export interface EditCompletedBatchPayload {
     pieces_quantity?: number;
     press_start_time?: string;
     ph_measurements?: PhMeasurementEdit[];
+    ph_measurement_deletions?: number[];
     brine_entry_time_iso?: string;
     shelf_start_time_iso?: string;
   };
@@ -1397,6 +1398,16 @@ export async function editCompletedBatch(
           const ts = edit.timestamp ?? now;
           phArr.push({ value: edit.value, stageId: loopStageId, timestamp: ts });
           recordEdit('ph_measurement', edit.value, null, loopStageId);
+        }
+      }
+      if (m.ph_measurement_deletions && m.ph_measurement_deletions.length > 0) {
+        const toDelete = new Set(m.ph_measurement_deletions);
+        const prevPhArr = [...phArr];
+        phArr = phArr.filter((_: any, i: number) => !toDelete.has(i));
+        for (const delIdx of m.ph_measurement_deletions) {
+          if (delIdx >= 0 && delIdx < prevPhArr.length) {
+            recordEdit(`ph_measurement_delete_${delIdx}`, null, prevPhArr[delIdx].value, loopStageId);
+          }
         }
       }
       measurements.ph_measurements = phArr;
