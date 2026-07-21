@@ -2782,20 +2782,20 @@ export async function registerRoutes(
                 sessionAttributes
               ));
             } else {
-              // pH still above target - continue loop, schedule new 1h30 reminder
-              console.log(`[Stage 15] pH ${phValue} above target. Continue monitoring.`);
+              // pH still above target - continue loop, schedule new reminder
+              console.log(`[Stage ${stageId}] pH ${phValue} above target. Continue monitoring.`);
               
               let reminderMsg = '';
               if (apiCtx) {
                 try {
                   const updatedBatchForReminder = await batchService.getBatch(activeBatch.id);
                   const batchRM = getRecipeForBatch(activeBatch);
-                  const loopStage = batchRM.getStage(15);
-                  const maxHours = loopStage?.max_loop_duration_hours || 1.5;
-                  const reminderSeconds = TEST_MODE ? 10 : maxHours * 60 * 60;
+                  const loopStage = batchRM.getStage(stageId);
+                  const intervalHours = loopStage?.timer?.interval_hours ?? loopStage?.max_loop_duration_hours ?? 1.5;
+                  const reminderSeconds = TEST_MODE ? 10 : intervalHours * 60 * 60;
                   
                   const scheduledAlerts = ((updatedBatchForReminder as any)?.scheduledAlerts || {}) as Record<string, ScheduledAlert>;
-                  const alertKey = 'stage_15';
+                  const alertKey = `stage_${stageId}`;
                   if (scheduledAlerts[alertKey]) {
                     const alertDueAt = scheduledAlerts[alertKey].dueAtISO
                       ? new Date(scheduledAlerts[alertKey].dueAtISO).getTime()
@@ -2807,10 +2807,10 @@ export async function registerRoutes(
                       try {
                         await cancelReminder(apiCtx, scheduledAlerts[alertKey].reminderId);
                       } catch (cancelErr) {
-                        console.warn(`[Stage 15] cancelReminder failed (non-fatal): ${cancelErr}. Will proceed to schedule new reminder.`);
+                        console.warn(`[Stage ${stageId}] cancelReminder failed (non-fatal): ${cancelErr}. Will proceed to schedule new reminder.`);
                       }
                     } else {
-                      console.log(`[Stage 15] Previous reminder already fired (dueAt=${scheduledAlerts[alertKey].dueAtISO}). Skipping cancelReminder API call.`);
+                      console.log(`[Stage ${stageId}] Previous reminder already fired (dueAt=${scheduledAlerts[alertKey].dueAtISO}). Skipping cancelReminder API call.`);
                     }
                     delete scheduledAlerts[alertKey];
                     await storage.updateBatch(activeBatch.id, { scheduledAlerts });
@@ -2818,7 +2818,7 @@ export async function registerRoutes(
                   const reminderResult = await scheduleReminderForWait(
                     apiCtx,
                     { id: activeBatch.id, recipeId: (updatedBatchForReminder as any).recipeId },
-                    15,
+                    stageId,
                     reminderSeconds,
                     undefined,
                     loopStage?.name,
@@ -2827,20 +2827,20 @@ export async function registerRoutes(
                   if (reminderResult.reminderId) {
                     scheduledAlerts[alertKey] = {
                       reminderId: reminderResult.reminderId,
-                      stageId: 15,
+                      stageId,
                       dueAtISO: new Date(Date.now() + reminderSeconds * 1000).toISOString(),
                       kind: 'ph_check_reminder'
                     };
                     await storage.updateBatch(activeBatch.id, { scheduledAlerts });
                     const reminderMin = Math.round(reminderSeconds / 60);
                     reminderMsg = ` Vou te lembrar em ${reminderMin} minuto${reminderMin !== 1 ? 's' : ''} para medir o pH novamente.`;
-                    console.log(`[Stage 15] Reminder scheduled for ${reminderSeconds}s (${reminderMin}min) for next pH check`);
+                    console.log(`[Stage ${stageId}] Reminder scheduled for ${reminderSeconds}s (${reminderMin}min) for next pH check`);
                   } else if (reminderResult.permissionDenied) {
-                    console.log(`[Stage 15] Reminder permission denied after pH log`);
+                    console.log(`[Stage ${stageId}] Reminder permission denied after pH log`);
                     reminderMsg = ' Para eu lembrar de medir o pH, habilite as permissões de lembrete no app da Alexa.';
                   }
                 } catch (err) {
-                  console.log(`[Stage 15] Error scheduling reminder after pH: ${err}`);
+                  console.log(`[Stage ${stageId}] Error scheduling reminder after pH: ${err}`);
                 }
               }
               

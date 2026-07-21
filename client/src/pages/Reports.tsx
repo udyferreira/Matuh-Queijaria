@@ -398,13 +398,15 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
     );
     if (loopPhArr.length > 0) {
       loopPhArr.forEach((item: any, idx: number) => {
-        rows.push({ label: `${idx + 1}ª Medição de pH`, value: String(item.value) });
+        const timeStr = item.timestamp ? ` — ${formatTimeIso(item.timestamp)}` : '';
+        rows.push({ label: `${idx + 1}ª Medição de pH`, value: `${item.value}${timeStr}` });
       });
     } else {
       const altHistory = altLoopStageId !== null ? (measurementsByStage[altLoopStageId] || []) : [];
       const phItems = [...stageHistory, ...altHistory].filter(i => i.key === 'ph_value' || i.key === 'ph_measurement');
       phItems.forEach((item, idx) => {
-        rows.push({ label: `${idx + 1}ª Medição de pH`, value: String(item.value) });
+        const timeStr = item.timestamp ? ` — ${formatTimeIso(item.timestamp)}` : '';
+        rows.push({ label: `${idx + 1}ª Medição de pH`, value: `${item.value}${timeStr}` });
       });
     }
     const turningCount = (batch as any).turningCyclesCount ?? measurements.turning_cycles_count
