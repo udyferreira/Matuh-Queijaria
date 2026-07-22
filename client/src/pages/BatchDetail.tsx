@@ -854,65 +854,78 @@ export default function BatchDetail() {
                   const labelMap = batch.recipeId === 'QUEIJO_NINA' ? LABEL_MAP_NINA : LABEL_MAP_NETE;
 
                   
-                  type MeasurementItem = { label: string; value: string; editKey: string; historyIndex?: number; stageId?: number; editable: boolean };
+                  type PhTableRow = { ph: string; date: string; time: string };
+                  type MeasurementItem =
+                    | { kind: 'row'; label: string; value: string; editKey: string; historyIndex?: number; stageId?: number; editable: boolean }
+                    | { kind: 'ph_table'; stageId: number; label: string; rows: PhTableRow[] };
                   const items: MeasurementItem[] = [];
-                  
+                  const fmtPhDate = (iso: string) => { try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso)); } catch { return '—'; } };
+                  const fmtPhTime = (iso: string) => { try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(iso)); } catch { return '—'; } };
+
+                  const insertPhTables = (phGroupsByStage: Record<number, { rows: PhTableRow[]; insertAtIdx: number }>) => {
+                    const inserts = Object.entries(phGroupsByStage)
+                      .map(([sid, { rows, insertAtIdx }]) => ({ stageId: Number(sid), rows, insertAtIdx, label: `Etapa ${sid} — Medições de pH` }))
+                      .sort((a, b) => a.insertAtIdx - b.insertAtIdx);
+                    let offset = 0;
+                    for (const { stageId, rows, insertAtIdx, label } of inserts) {
+                      items.splice(insertAtIdx + offset, 0, { kind: 'ph_table', stageId, label, rows });
+                      offset++;
+                    }
+                  };
+
                   if (history.length > 0) {
-                    const phByStage: Record<number, number> = {};
-                    
+                    const phGroupsByStage: Record<number, { rows: PhTableRow[]; insertAtIdx: number }> = {};
+
                     history.forEach((entry, idx) => {
                       if (entry.key === 'loop_exit_reason' || entry.key === 'rollback') return;
                       const isPh = entry.key === 'ph_value' || entry.key === 'ph_measurement';
                       if (!isPh && !(entry.key in labelMap)) return;
 
-                      let label: string;
-                      
                       if (isPh) {
-                        phByStage[entry.stageId] = (phByStage[entry.stageId] || 0) + 1;
-                        const count = phByStage[entry.stageId];
-                        label = count === 1 
-                          ? `Etapa ${entry.stageId} - Medição de pH`
-                          : `Etapa ${entry.stageId} - ${count}ª Medição de pH`;
+                        if (!phGroupsByStage[entry.stageId]) {
+                          phGroupsByStage[entry.stageId] = { rows: [], insertAtIdx: items.length };
+                        }
+                        phGroupsByStage[entry.stageId].rows.push({
+                          ph: String(entry.value),
+                          date: entry.timestamp ? fmtPhDate(entry.timestamp) : '—',
+                          time: entry.timestamp ? fmtPhTime(entry.timestamp) : '—',
+                        });
                       } else {
-                        label = `Etapa ${entry.stageId} - ${labelMap[entry.key]}`;
+                        const label = `Etapa ${entry.stageId} - ${labelMap[entry.key]}`;
+                        let displayValue = String(entry.value);
+                        const isTimeKey = entry.key.endsWith('_time_iso') || entry.key === 'ferment_add_time' || entry.key === 'rennet_add_time';
+                        if (isTimeKey) {
+                          try {
+                            const needsDate = entry.key === 'brine_entry_time_iso' || entry.key === 'shelf_start_time_iso';
+                            displayValue = new Intl.DateTimeFormat('pt-BR', {
+                              timeZone: 'America/Sao_Paulo',
+                              ...(needsDate ? { day: '2-digit', month: '2-digit', year: 'numeric' } : {}),
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            }).format(new Date(entry.value));
+                          } catch { /* keep raw */ }
+                        }
+                        items.push({ kind: 'row', label, value: displayValue, editKey: entry.key, historyIndex: idx, stageId: entry.stageId, editable: true });
                       }
-                      let displayValue = String(entry.value);
-                      const isTimeKey = entry.key.endsWith('_time_iso') || entry.key === 'ferment_add_time' || entry.key === 'rennet_add_time';
-                      if (isTimeKey) {
-                        try {
-                          const needsDate = entry.key === 'brine_entry_time_iso' || entry.key === 'shelf_start_time_iso';
-                          displayValue = new Intl.DateTimeFormat('pt-BR', {
-                            timeZone: 'America/Sao_Paulo',
-                            ...(needsDate ? { day: '2-digit', month: '2-digit', year: 'numeric' } : {}),
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          }).format(new Date(entry.value));
-                        } catch { /* keep raw */ }
-                      }
-                      
-                      items.push({
-                        label,
-                        value: displayValue,
-                        editKey: entry.key,
-                        historyIndex: idx,
-                        stageId: entry.stageId,
-                        editable: true,
-                      });
                     });
+                    insertPhTables(phGroupsByStage);
                   } else {
                     const phArray = measurements.ph as Array<{value: number; timestamp: string; stageId?: number}> || [];
-                    const phByStage: Record<number, number> = {};
-                    
+                    const phGroupsByStage: Record<number, { rows: PhTableRow[]; insertAtIdx: number }> = {};
+
                     phArray.forEach((entry, idx) => {
                       const stageId = entry.stageId ?? (idx === 0 ? 13 : 15);
-                      phByStage[stageId] = (phByStage[stageId] || 0) + 1;
-                      const count = phByStage[stageId];
-                      const label = count === 1
-                        ? `Etapa ${stageId} - Medição de pH`
-                        : `Etapa ${stageId} - ${count}ª Medição de pH`;
-                      items.push({ label, value: String(entry.value), editKey: 'ph_value', stageId, editable: true });
+                      if (!phGroupsByStage[stageId]) {
+                        phGroupsByStage[stageId] = { rows: [], insertAtIdx: items.length };
+                      }
+                      phGroupsByStage[stageId].rows.push({
+                        ph: String(entry.value),
+                        date: entry.timestamp ? fmtPhDate(entry.timestamp) : '—',
+                        time: entry.timestamp ? fmtPhTime(entry.timestamp) : '—',
+                      });
                     });
-                    
+                    insertPhTables(phGroupsByStage);
+
                     Object.entries(measurements).forEach(([key, val]) => {
                       if (key.startsWith('_') || key === 'ph_measurements' || key === 'ph' || key === 'ph_value' || key === 'loop_exit_reason') return;
                       const label = labelMap[key] || key.replace(/_/g, ' ');
@@ -924,7 +937,7 @@ export default function BatchDetail() {
                       } else {
                         displayValue = typeof val === 'object' ? String(val?.value ?? val) : String(val);
                       }
-                      items.push({ label, value: displayValue, editKey: key, editable: true });
+                      items.push({ kind: 'row', label, value: displayValue, editKey: key, editable: true });
                     });
                   }
                   
@@ -937,6 +950,34 @@ export default function BatchDetail() {
                   }
                   
                   return items.map((item, idx) => {
+                    if (item.kind === 'ph_table') {
+                      return (
+                        <div key={idx} className="py-2 border-b border-border/50">
+                          <span className="text-xs text-muted-foreground block mb-1">{item.label}</span>
+                          <table className="w-full text-sm border-collapse mt-1">
+                            <thead>
+                              <tr className="bg-secondary/50">
+                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tl-md w-16">Virada</th>
+                                <th className="text-center px-3 py-1.5 font-semibold text-muted-foreground w-20">pH</th>
+                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground">Data</th>
+                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tr-md">Hora (BRT)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {item.rows.map((row, n) => (
+                                <tr key={n} className="even:bg-secondary/20" data-testid={`row-ph-history-${item.stageId}-${n}`}>
+                                  <td className="px-3 py-1.5 text-muted-foreground">{n + 1}ª</td>
+                                  <td className="px-3 py-1.5 text-center font-mono font-bold">{row.ph}</td>
+                                  <td className="px-3 py-1.5">{row.date}</td>
+                                  <td className="px-3 py-1.5">{row.time}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    }
+
                     const uniqueKey = `${item.editKey}-${item.historyIndex ?? idx}`;
                     const isEditingThis = editingKey === uniqueKey;
 
