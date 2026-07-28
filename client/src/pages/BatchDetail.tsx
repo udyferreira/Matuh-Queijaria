@@ -873,6 +873,8 @@ export default function BatchDetail() {
                     }
                   };
 
+                  const stageTypeMap: Record<number, string> = (batch as any).stageTypeMap || {};
+
                   if (history.length > 0) {
                     const phGroupsByStage: Record<number, { rows: PhTableRow[]; insertAtIdx: number }> = {};
 
@@ -882,14 +884,24 @@ export default function BatchDetail() {
                       if (!isPh && !(entry.key in labelMap)) return;
 
                       if (isPh) {
-                        if (!phGroupsByStage[entry.stageId]) {
-                          phGroupsByStage[entry.stageId] = { rows: [], insertAtIdx: items.length };
+                        const stageType = stageTypeMap[entry.stageId];
+                        if (stageType === 'loop') {
+                          // Loop stage: agrupado na tabela Virada/pH/Data/Hora
+                          if (!phGroupsByStage[entry.stageId]) {
+                            phGroupsByStage[entry.stageId] = { rows: [], insertAtIdx: items.length };
+                          }
+                          phGroupsByStage[entry.stageId].rows.push({
+                            ph: String(entry.value),
+                            date: entry.timestamp ? fmtPhDate(entry.timestamp) : '—',
+                            time: entry.timestamp ? fmtPhTime(entry.timestamp) : '—',
+                          });
+                        } else {
+                          // Etapa não-loop (ex.: measure): linhas simples
+                          if (entry.timestamp) {
+                            items.push({ kind: 'row', label: `Etapa ${entry.stageId} — Hora da medição de pH`, value: fmtPhTime(entry.timestamp), editKey: `${entry.key}_time_${idx}`, historyIndex: idx, stageId: entry.stageId, editable: false });
+                          }
+                          items.push({ kind: 'row', label: `Etapa ${entry.stageId} — Medição do pH`, value: String(entry.value), editKey: entry.key, historyIndex: idx, stageId: entry.stageId, editable: false });
                         }
-                        phGroupsByStage[entry.stageId].rows.push({
-                          ph: String(entry.value),
-                          date: entry.timestamp ? fmtPhDate(entry.timestamp) : '—',
-                          time: entry.timestamp ? fmtPhTime(entry.timestamp) : '—',
-                        });
                       } else {
                         const label = `Etapa ${entry.stageId} - ${labelMap[entry.key]}`;
                         let displayValue = String(entry.value);
