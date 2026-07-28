@@ -554,19 +554,19 @@ export default function BatchDetail() {
                                      <table className="w-full text-sm border-collapse">
                                        <thead>
                                          <tr className="bg-secondary/50">
-                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tl-md w-16">Virada</th>
-                                           <th className="text-center px-3 py-1.5 font-semibold text-muted-foreground w-20">pH</th>
-                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground">Data</th>
-                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tr-md">Hora (BRT)</th>
+                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tl-md w-1/4">Virada</th>
+                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-1/4">Data</th>
+                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-1/4">Hora (BRT)</th>
+                                           <th className="text-center px-3 py-1.5 font-semibold text-muted-foreground rounded-tr-md w-1/4">pH</th>
                                          </tr>
                                        </thead>
                                        <tbody>
                                          {allMeasurements.map((item, idx) => (
                                            <tr key={idx} className="even:bg-secondary/20" data-testid={`row-ph-${idx}`}>
                                              <td className="px-3 py-1.5 text-muted-foreground">{idx + 1}ª</td>
-                                             <td className="px-3 py-1.5 text-center font-medium" data-testid={`text-ph-value-${idx}`}>{item.value}</td>
                                              <td className="px-3 py-1.5">{item.timestamp ? fmtDate(item.timestamp) : '—'}</td>
                                              <td className="px-3 py-1.5">{item.timestamp ? fmtTime(item.timestamp) : '—'}</td>
+                                             <td className="px-3 py-1.5 text-center font-medium" data-testid={`text-ph-value-${idx}`}>{item.value}</td>
                                            </tr>
                                          ))}
                                        </tbody>
@@ -969,19 +969,19 @@ export default function BatchDetail() {
                           <table className="w-full text-sm border-collapse mt-1">
                             <thead>
                               <tr className="bg-secondary/50">
-                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tl-md w-16">Virada</th>
-                                <th className="text-center px-3 py-1.5 font-semibold text-muted-foreground w-20">pH</th>
-                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground">Data</th>
-                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tr-md">Hora (BRT)</th>
+                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tl-md w-1/4">Virada</th>
+                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-1/4">Data</th>
+                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-1/4">Hora (BRT)</th>
+                                <th className="text-center px-3 py-1.5 font-semibold text-muted-foreground rounded-tr-md w-1/4">pH</th>
                               </tr>
                             </thead>
                             <tbody>
                               {item.rows.map((row, n) => (
                                 <tr key={n} className="even:bg-secondary/20" data-testid={`row-ph-history-${item.stageId}-${n}`}>
                                   <td className="px-3 py-1.5 text-muted-foreground">{n + 1}ª</td>
-                                  <td className="px-3 py-1.5 text-center font-mono font-bold">{row.ph}</td>
                                   <td className="px-3 py-1.5">{row.date}</td>
                                   <td className="px-3 py-1.5">{row.time}</td>
+                                  <td className="px-3 py-1.5 text-center font-mono font-bold">{row.ph}</td>
                                 </tr>
                               ))}
                             </tbody>

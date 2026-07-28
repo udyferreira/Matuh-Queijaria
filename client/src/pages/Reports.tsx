@@ -568,19 +568,19 @@ function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionB
                               <table className="w-full text-sm border-collapse">
                                 <thead>
                                   <tr className="bg-secondary/50 print:bg-gray-200">
-                                    <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tl-md w-16">Virada</th>
-                                    <th className="text-center px-3 py-1.5 font-semibold text-muted-foreground w-20">pH</th>
-                                    <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground">Data</th>
-                                    <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tr-md">Hora (BRT)</th>
+                                    <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tl-md w-1/4">Virada</th>
+                                    <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-1/4">Data</th>
+                                    <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-1/4">Hora (BRT)</th>
+                                    <th className="text-center px-3 py-1.5 font-semibold text-muted-foreground rounded-tr-md w-1/4">pH</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {row.items.map((item) => (
                                     <tr key={item.n} className="even:bg-secondary/20 print:even:bg-gray-100">
                                       <td className="px-3 py-1.5 text-muted-foreground">{item.n}ª</td>
-                                      <td className="px-3 py-1.5 text-center font-medium">{item.ph}</td>
                                       <td className="px-3 py-1.5">{item.date || '—'}</td>
                                       <td className="px-3 py-1.5">{item.time || '—'}</td>
+                                      <td className="px-3 py-1.5 text-center font-medium">{item.ph}</td>
                                     </tr>
                                   ))}
                                 </tbody>
