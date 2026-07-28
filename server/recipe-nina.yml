@@ -68,7 +68,7 @@ inputs:
     unit: "ml"
     dosing:
       mode: "per_20_liters"
-      value: 1
+      value: 1.2
     required: true
 
 derived_volumes:
