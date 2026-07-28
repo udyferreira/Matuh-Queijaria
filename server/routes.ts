@@ -182,8 +182,8 @@ export async function registerRoutes(
     }
 
     const stageTypeMap: Record<number, string> = {};
-    for (const s of (rm as any).recipe.stages) {
-      if (s.id != null && s.type) stageTypeMap[s.id] = s.type;
+    for (const s of rm.getRecipeDetail().stages) {
+      if (s.stageId != null && s.type) stageTypeMap[s.stageId] = s.type;
     }
 
     res.json({

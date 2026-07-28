@@ -898,9 +898,9 @@ export default function BatchDetail() {
                         } else {
                           // Etapa não-loop (ex.: measure): linhas simples
                           if (entry.timestamp) {
-                            items.push({ kind: 'row', label: `Etapa ${entry.stageId} — Hora da medição de pH`, value: fmtPhTime(entry.timestamp), editKey: `${entry.key}_time_${idx}`, historyIndex: idx, stageId: entry.stageId, editable: false });
+                            items.push({ kind: 'row', label: `Etapa ${entry.stageId} — Hora da medição de pH`, value: fmtPhTime(entry.timestamp), editKey: `${entry.key}_time_${idx}`, historyIndex: idx, stageId: entry.stageId, editable: true });
                           }
-                          items.push({ kind: 'row', label: `Etapa ${entry.stageId} — Medição do pH`, value: String(entry.value), editKey: entry.key, historyIndex: idx, stageId: entry.stageId, editable: false });
+                          items.push({ kind: 'row', label: `Etapa ${entry.stageId} — Medição do pH`, value: String(entry.value), editKey: entry.key, historyIndex: idx, stageId: entry.stageId, editable: true });
                         }
                       } else {
                         const label = `Etapa ${entry.stageId} - ${labelMap[entry.key]}`;
