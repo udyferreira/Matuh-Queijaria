@@ -182,7 +182,11 @@ export async function startBatch(params: StartBatchParams): Promise<StartBatchRe
     };
   }
 
-  const batchRm = recipeRegistry.getForRecipeId(recipeId) || recipeManager;
+  // New batches always start on the latest stage-list version for their recipe.
+  // Existing in-progress batches are unaffected: they keep resolving against
+  // whatever version they were created with (see getRecipeForBatch).
+  const recipeVersion = recipeRegistry.getLatestVersion(recipeId);
+  const batchRm = recipeRegistry.getForRecipeId(recipeId, recipeVersion) || recipeManager;
   const inputs = batchRm.calculateInputs(milkVolumeL);
   
   const initialMeasurements: Record<string, any> = {
@@ -198,6 +202,7 @@ export async function startBatch(params: StartBatchParams): Promise<StartBatchRe
 
   const batch = await storage.createBatch({
     recipeId: recipeId,
+    recipeVersion,
     currentStageId: 3,
     milkVolumeL: String(milkVolumeL),
     calculatedInputs: inputs,
@@ -438,42 +443,11 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
   const batchRecipeId = ((batch as any).recipeId || 'QUEIJO_NETE') as string;
   const isNete = batchRecipeId === 'QUEIJO_NETE';
 
-  // Nete-specific: auto-record ferment/brine/shelf timestamps by hardcoded stage IDs
-  if (isNete && nextStage.id === 4 && !measurements.ferment_lr_dx_add_time_iso) {
-    measurements.ferment_lr_dx_add_time_iso = nowIso;
-    const mHistory = measurements._history || [];
-    mHistory.push({ id: generateId(), key: 'ferment_lr_dx_add_time_iso', value: nowIso, stageId: 4, timestamp: nowIso });
-    measurements._history = mHistory;
-    touchedMeasurements = true;
-  }
-
-  if (isNete && nextStage.id === 5 && !measurements.ferment_kl_coalho_add_time_iso) {
-    measurements.ferment_kl_coalho_add_time_iso = nowIso;
-    const mHistory = measurements._history || [];
-    mHistory.push({ id: generateId(), key: 'ferment_kl_coalho_add_time_iso', value: nowIso, stageId: 5, timestamp: nowIso });
-    measurements._history = mHistory;
-    touchedMeasurements = true;
-  }
-
-  if (isNete && nextStage.id === 17 && !measurements.brine_entry_time_iso) {
-    measurements.brine_entry_time_iso = nowIso;
-    const mHistory = measurements._history || [];
-    mHistory.push({ id: generateId(), key: 'brine_entry_time_iso', value: nowIso, stageId: 17, timestamp: nowIso });
-    measurements._history = mHistory;
-    touchedMeasurements = true;
-  }
-
-  if (isNete && nextStage.id === 18 && !measurements.shelf_start_time_iso) {
-    measurements.shelf_start_time_iso = nowIso;
-    const mHistory = measurements._history || [];
-    mHistory.push({ id: generateId(), key: 'shelf_start_time_iso', value: nowIso, stageId: 18, timestamp: nowIso });
-    measurements._history = mHistory;
-    touchedMeasurements = true;
-  }
-
-  // Generic: auto_record_timestamp defined in YAML — records on ENTRY to the next stage
-  // Used for: Nina stage 7 (ferment_add_time), stage 9 (rennet_add_time),
-  //           stage 23 (brine_entry_time_iso), stage 24 (shelf_start_time_iso)
+  // Generic: auto_record_timestamp defined in YAML — records on ENTRY to the next stage.
+  // Both recipes (and all their versions) declare this field on the relevant stages
+  // (Nina: ferment/rennet add, brine entry, shelf start; Nete: ferment LR/DX + KL/coalho
+  // add, brine entry, shelf start), so this single generic block covers every case
+  // without hardcoding stage numbers per recipe/version.
   if (nextStage.auto_record_timestamp && !measurements[nextStage.auto_record_timestamp]) {
     measurements[nextStage.auto_record_timestamp] = nowIso;
     const mHistory = measurements._history || [];
@@ -832,7 +806,9 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
 export async function logTime(batchId: number, timeValue: string, timeType?: string) {
   const batch = await storage.getBatch(batchId);
   if (!batch) return { success: false, error: "Lote não encontrado" };
-  
+
+  const rm = getRecipeForBatch(batch);
+
   const normalizeTimeType = (s?: string): string | null => {
     if (!s || s === '?' || !s.trim()) return null;
     return s.toLowerCase().trim()
@@ -840,62 +816,52 @@ export async function logTime(batchId: number, timeValue: string, timeType?: str
       .replace(/[^a-z]/g, '');
   };
 
-  const timeTypeMapping: Record<string, { key: string; expectedStage: number }> = {
-    'flocculation': { key: 'flocculation_time', expectedStage: 6 },
-    'cut': { key: 'cut_point_time', expectedStage: 7 },
-    'cut_point': { key: 'cut_point_time', expectedStage: 7 },
-    'press': { key: 'press_start_time', expectedStage: 14 },
-    'press_start': { key: 'press_start_time', expectedStage: 14 },
-    'floculacao': { key: 'flocculation_time', expectedStage: 6 },
-    'flocoacao': { key: 'flocculation_time', expectedStage: 6 },
-    'flucoacao': { key: 'flocculation_time', expectedStage: 6 },
-    'fortunacao': { key: 'flocculation_time', expectedStage: 6 },
-    'flocuacao': { key: 'flocculation_time', expectedStage: 6 },
-    'corte': { key: 'cut_point_time', expectedStage: 7 },
-    'pontodecorte': { key: 'cut_point_time', expectedStage: 7 },
-    'ponto': { key: 'cut_point_time', expectedStage: 7 },
-    'prensa': { key: 'press_start_time', expectedStage: 14 },
-    'prensagem': { key: 'press_start_time', expectedStage: 14 },
+  // Spoken words map to the recipe's own `expected_time_type` field (e.g.
+  // "floculação", "corte", "prensa"). The actual stage id is looked up
+  // dynamically via getStageByExpectedTimeType so this works unchanged for
+  // any recipe/version, regardless of how stages get renumbered.
+  const wordToCanonical: Record<string, string> = {
+    flocculation: 'floculação', floculacao: 'floculação', flocoacao: 'floculação',
+    flucoacao: 'floculação', fortunacao: 'floculação', flocuacao: 'floculação',
+    cut: 'corte', cut_point: 'corte', corte: 'corte', pontodecorte: 'corte', ponto: 'corte',
+    press: 'prensa', press_start: 'prensa', prensa: 'prensa', prensagem: 'prensa',
   };
 
-  const stageInferMap: Record<number, { key: string; expectedStage: number }> = {
-    6: { key: 'flocculation_time', expectedStage: 6 },
-    7: { key: 'cut_point_time', expectedStage: 7 },
-    14: { key: 'press_start_time', expectedStage: 14 },
-    11: { key: 'flocculation_time', expectedStage: 11 },
-    12: { key: 'cut_point_time', expectedStage: 12 },
-    20: { key: 'press_start_time', expectedStage: 20 },
-  };
-  
   const normalized = normalizeTimeType(timeType);
-  let mapping = normalized ? timeTypeMapping[normalized] : null;
+  let canonical: string | null = normalized ? (wordToCanonical[normalized] ?? null) : null;
 
-  if (!mapping && normalized) {
+  if (!canonical && normalized) {
     if (normalized.includes('floc') || normalized.includes('fluc') || normalized.includes('fort')) {
-      mapping = { key: 'flocculation_time', expectedStage: 6 };
+      canonical = 'floculação';
     } else if (normalized.includes('cort')) {
-      mapping = { key: 'cut_point_time', expectedStage: 7 };
-    } else if (normalized.includes('prens') || normalized.includes('prensa')) {
-      mapping = { key: 'press_start_time', expectedStage: 14 };
+      canonical = 'corte';
+    } else if (normalized.includes('prens')) {
+      canonical = 'prensa';
     }
   }
 
-  if (!mapping) {
-    mapping = stageInferMap[batch.currentStageId] || null;
-    if (mapping) {
-      console.log(`[logTime] Inferred timeType from stage ${batch.currentStageId} => ${mapping.key} (raw timeType: "${timeType}")`);
+  let stage = canonical ? rm.getStageByExpectedTimeType(canonical) : undefined;
+
+  if (!stage) {
+    // Fall back to whatever time type the operator's *current* stage itself
+    // expects, instead of a hardcoded per-stage-number table.
+    const currentStage = rm.getStage(batch.currentStageId);
+    if (currentStage?.expected_time_type && currentStage.operator_input_required?.length) {
+      stage = currentStage;
+      console.log(`[logTime] Inferred timeType from stage ${batch.currentStageId} => ${currentStage.expected_time_type} (raw timeType: "${timeType}")`);
     }
   }
-  
-  if (!mapping) {
+
+  if (!stage || !stage.operator_input_required?.length) {
     return { 
       success: false, 
       error: "Não reconheci o tipo de horário. Diga, por exemplo, 'hora da floculação às dezoito horas'.",
       code: "INVALID_TIME_TYPE"
     };
   }
-  
-  const { key, expectedStage } = mapping;
+
+  const key = stage.operator_input_required[0];
+  const expectedStage = stage.id;
   
   // Validate that we're on the correct stage (warning only, still allow)
   if (batch.currentStageId !== expectedStage) {
@@ -1098,8 +1064,14 @@ export function getCalculatedInputHint(batch: any, stageId: number): string {
   const calculatedInputs = (batch.calculatedInputs as Record<string, number>) || {};
   const recipeId = batch.recipeId || 'QUEIJO_NETE';
   const hints: string[] = [];
+  // Resolved dynamically from this batch's own recipe/version rather than hardcoded
+  // stage numbers, so hints stay correct even if a future version inserts/reorders
+  // stages (e.g. the WHEY_TO_REMOVE stage shifted from id 15 to 16 in Nina v2).
+  const rm = getRecipeForBatch(batch);
 
   if (recipeId === 'QUEIJO_NETE') {
+    // Insertion point for Nete's extra wait stage is at id 10 (v2); all of these
+    // stage ids (2-5) sit below it, so they stay stable across versions.
     if (stageId === 3 && calculatedInputs.FERMENT_KL) {
       hints.push(`Use ${calculatedInputs.FERMENT_KL} ml de fermento KL.`);
     }
@@ -1112,6 +1084,9 @@ export function getCalculatedInputHint(batch: any, stageId: number): string {
       hints.push(`Use ${calculatedInputs.RENNET} ml de coalho.`);
     }
   } else if (recipeId === 'QUEIJO_NINA') {
+    // Insertion point for Nina's extra wait stage is at id 14 (v2). Stages 2, 3, 7,
+    // 9, 10 sit below it and stay stable; WHEY_TO_REMOVE's stage (15 in v1, 16 in
+    // v2) is resolved dynamically since it sits right at the shift boundary.
     if (stageId === 2) {
       const dx = calculatedInputs.FERMENT_DX;
       const ht = calculatedInputs.FERMENT_HT;
@@ -1135,7 +1110,8 @@ export function getCalculatedInputHint(batch: any, stageId: number): string {
     if (stageId === 10 && calculatedInputs.HOT_WATER) {
       hints.push(`Aquecer ${calculatedInputs.HOT_WATER} litros de água a 60°C.`);
     }
-    if (stageId === 15 && calculatedInputs.WHEY_TO_REMOVE) {
+    const wheyStageId = rm.getStageByVolumeSource('WHEY_TO_REMOVE')?.id ?? 15;
+    if (stageId === wheyStageId && calculatedInputs.WHEY_TO_REMOVE) {
       hints.push(`Retirar ${calculatedInputs.WHEY_TO_REMOVE} litros de soro.`);
     }
   }
@@ -1225,9 +1201,11 @@ export async function rollbackBatch(batchId: number, apiCtx?: ApiContext | null)
     };
   }
 
+  const rm = getRecipeForBatch(batch);
+
   let targetStageId = batch.currentStageId - 1;
   while (targetStageId > 0) {
-    const s = getRecipeForBatch(batch).getStage(targetStageId);
+    const s = rm.getStage(targetStageId);
     if (s && s.type !== "system") break;
     targetStageId--;
   }
@@ -1277,7 +1255,7 @@ export async function rollbackBatch(batchId: number, apiCtx?: ApiContext | null)
     history: updatedHistory,
   };
 
-  if (currentStageId === 15) {
+  if (rm.isLoopStage(currentStageId)) {
     updates.turningCyclesCount = 0;
   }
 
@@ -1347,8 +1325,12 @@ export async function editCompletedBatch(
   const history: any[] = [...(measurements._history || [])];
   const fieldsEdited: string[] = [];
   const isNina = ((batch as any).recipeId || 'QUEIJO_NETE') === 'QUEIJO_NINA';
-  const loopStageId = isNina ? 21 : 15;
-  const camStageId = isNina ? 25 : 19;
+  const rm = getRecipeForBatch(batch);
+  // Resolved dynamically from this batch's own recipe/version rather than hardcoded
+  // per-recipe stage numbers, so edits keep pointing at the right stage even after
+  // stages are inserted/renumbered for future batches.
+  const loopStageId = rm.getLoopStageId() ?? (isNina ? 21 : 15);
+  const camStageId = rm.getStageByOperatorInput('chamber_2_entry_date')?.id ?? (isNina ? 25 : 19);
 
   function recordEdit(key: string, newValue: any, previousValue: any, stageId: number) {
     history.push({ key, value: newValue, previousValue, stageId, timestamp: now, action: 'post_completion_edit', editedVia: 'web' });
@@ -1361,35 +1343,26 @@ export async function editCompletedBatch(
   if (payload.measurements) {
     const m = payload.measurements;
 
-    const simpleFields: Array<{ key: string; stageId: number }> = [
-      { key: 'milk_temperature_c', stageId: 1 },
-      { key: 'milk_ph', stageId: 1 },
-      ...(isNina ? [
-        { key: 'ferment_add_time', stageId: 7 },
-        { key: 'rennet_add_time', stageId: 9 },
-        { key: 'flocculation_time', stageId: 11 },
-        { key: 'cut_point_time', stageId: 12 },
-        { key: 'initial_ph', stageId: 19 },
-        { key: 'pieces_quantity', stageId: 19 },
-        { key: 'press_start_time', stageId: 20 },
-        { key: 'brine_entry_time_iso', stageId: 23 },
-        { key: 'shelf_start_time_iso', stageId: 24 },
-      ] : [
-        { key: 'ferment_lr_dx_add_time_iso', stageId: 4 },
-        { key: 'ferment_kl_coalho_add_time_iso', stageId: 5 },
-        { key: 'flocculation_time', stageId: 6 },
-        { key: 'cut_point_time', stageId: 7 },
-        { key: 'initial_ph', stageId: 13 },
-        { key: 'pieces_quantity', stageId: 13 },
-        { key: 'press_start_time', stageId: 14 },
-        { key: 'brine_entry_time_iso', stageId: 17 },
-        { key: 'shelf_start_time_iso', stageId: 18 },
-      ]),
+    // Every measurement key either recipe can possibly store. Which stage each
+    // one belongs to is resolved dynamically per-batch via getStageForMeasurementKey,
+    // so this list needs no per-recipe/per-version branching — a key simply resolves
+    // to `undefined` (and is skipped) if this batch's recipe/version doesn't have it.
+    const editableKeys = [
+      'milk_temperature_c', 'milk_ph',
+      'ferment_add_time', 'rennet_add_time',
+      'ferment_lr_dx_add_time_iso', 'ferment_kl_coalho_add_time_iso',
+      'flocculation_time', 'cut_point_time',
+      'initial_ph', 'pieces_quantity',
+      'press_start_time',
+      'brine_entry_time_iso', 'shelf_start_time_iso',
     ];
 
-    for (const { key, stageId } of simpleFields) {
+    for (const key of editableKeys) {
       const newVal = (m as any)[key];
-      if (newVal !== undefined && newVal !== measurements[key]) {
+      if (newVal === undefined) continue;
+      const stageId = rm.getStageForMeasurementKey(key)?.id;
+      if (stageId === undefined) continue; // this recipe/version doesn't have this field
+      if (newVal !== measurements[key]) {
         recordEdit(key, newVal, measurements[key], stageId);
         measurements[key] = newVal;
       }

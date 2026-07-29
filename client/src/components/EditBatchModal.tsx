@@ -150,13 +150,28 @@ interface FormState {
   chamber2ExitDate: string;
 }
 
+// batch.stages is embedded server-side from that exact batch's recipe + recipeVersion
+// (see GET /api/batches/completed), so looking up a stage by role here stays correct
+// even after stages are inserted/renumbered for future batches.
+type BatchStageMeta = { stageId: number; type?: string; requiredInputs?: string[]; storedValues?: string[] };
+
+function getBatchStages(batch: ProductionBatch): BatchStageMeta[] {
+  return ((batch as any).stages as BatchStageMeta[] | undefined) || [];
+}
+
+function findStageIdByRole(batch: ProductionBatch, predicate: (s: BatchStageMeta) => boolean): number | undefined {
+  return getBatchStages(batch).find(predicate)?.stageId;
+}
+
 function buildInitialState(batch: ProductionBatch): FormState {
   const m = (batch.measurements as Record<string, any>) || {};
   const calc = (batch.calculatedInputs as Record<string, any>) || {};
   const history: any[] = m._history || [];
   const isNina = (batch as any).recipeId === 'QUEIJO_NINA';
-  const loopStageId = isNina ? 21 : 15;
-  const initialPhStageId = isNina ? 18 : 13;
+  const loopStageId = findStageIdByRole(batch, s => s.type === 'loop') ?? (isNina ? 21 : 15);
+  const initialPhStageId = findStageIdByRole(batch, s =>
+    (s.requiredInputs?.includes('initial_ph') || s.storedValues?.includes('initial_ph')) ?? false
+  ) ?? (isNina ? 18 : 13);
 
   function mOrHistory(key: string): any {
     if (m[key] != null) return m[key];

@@ -102,9 +102,10 @@ export async function registerRoutes(
   // --- Recipe Info Route (read-only, YAML-based) ---
 
   app.get("/api/recipe", (req, res) => {
-    const { recipeId } = req.query;
+    const { recipeId, version } = req.query;
     if (recipeId && typeof recipeId === 'string') {
-      const rm = recipeRegistry.getForRecipeId(recipeId);
+      const parsedVersion = typeof version === 'string' && version.trim() !== '' ? Number(version) : undefined;
+      const rm = recipeRegistry.getForRecipeId(recipeId, parsedVersion);
       if (!rm) return res.status(404).json({ message: "Recipe not found" });
       return res.json(rm.getRecipeDetail());
     }
@@ -148,7 +149,18 @@ export async function registerRoutes(
 
   app.get("/api/batches/completed", async (req, res) => {
     const batches = await storage.getCompletedBatches();
-    res.json(batches);
+    // Enrich with each batch's own recipe/version stage list so the client can
+    // render stage names/rows dynamically instead of hardcoding per-recipe tables.
+    const enriched = batches.map(b => {
+      const rm = getRecipeForBatch(b);
+      return {
+        ...b,
+        recipeName: rm.getRecipeName(),
+        totalStages: rm.getRecipeSummary().stageCount,
+        stages: rm.getRecipeDetail().stages,
+      };
+    });
+    res.json(enriched);
   });
 
   app.get("/api/batches/active", async (req, res) => {
@@ -191,6 +203,7 @@ export async function registerRoutes(
       activeTimers,
       stageInfo,
       stageTypeMap,
+      stages: rm.getRecipeDetail().stages,
       totalStages: rm.getRecipeSummary().stageCount,
       recipeName: rm.getRecipeName()
     });

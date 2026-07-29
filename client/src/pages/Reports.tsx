@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useQuery } from "@tanstack/react-query";
 import { useCompletedBatches } from "@/hooks/use-batches";
 import { getCheeseTypeName, formatBatchCode, ProductionBatch } from "@shared/schema";
 import { parseDateOnly } from "@/lib/utils";
@@ -16,62 +15,37 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { zipSync, strToU8 } from "fflate";
 import { EditBatchModal } from "@/components/EditBatchModal";
 
-const STAGE_NAMES_NETE: Record<number, string> = {
-  1: "Separar o leite e medir parâmetros iniciais",
-  2: "Calcular fermentos e coalho",
-  3: "Aquecer o leite",
-  4: "Adicionar fermentos LR e DX",
-  5: "Adicionar fermento KL e coalho",
-  6: "Anotar horário de floculação",
-  7: "Anotar horário do ponto de corte",
-  8: "Corte da massa com a Lira",
-  9: "Corte complementar com espátula",
-  10: "Mexedura progressiva da massa",
-  11: "Enformagem com peneira e paninho",
-  12: "Dessoragem em mesa",
-  13: "Medir pH inicial e registrar quantidade de peças",
-  14: "Colocar na prensa",
-  15: "Virar queijos e medir pH",
-  16: "Transferir para câmara de secagem",
-  17: "Salga em tanque",
-  18: "Secagem em prateleiras",
-  19: "Transferir para Câmara 2 (início da maturação)",
-};
-
-const STAGE_NAMES_NINA: Record<number, string> = {
-  1: "Separar o leite e medir parâmetros iniciais",
-  2: "Calcular fermentos, coalho e volumes derivados",
-  3: "Retirar 10% do leite e aquecer no tanque pequeno",
-  4: "Aquecer o leite no tanque de queijo até 32 graus",
-  5: "Desnatar tanque pequeno e juntar ao tanque de queijo",
-  6: "Lavar o tanque pequeno",
-  7: "Adicionar fermentos DX e HT",
-  8: "Adicionar coalho e colocar a Lira",
-  9: "Aquecer água a 60 graus no tanque pequeno",
-  10: "Anotar horário da floculação",
-  11: "Anotar horário do ponto de corte da massa",
-  12: "Cortar a massa com a Lira",
-  13: "Mexer a massa por 5 minutos",
-  14: "Retirar 20% do soro",
-  15: "Aquecer massa com água quente até 38 graus",
-  16: "Retirar todo o soro do tanque",
-  17: "Cortar a massa e colocar nas formas",
-  18: "Medir pH inicial e registrar quantidade de peças",
-  19: "Colocar na prensa e registrar horário",
-  20: "Virar queijos e medir pH",
-  21: "Virar queijos e medir pH",
-  22: "Transferir para câmara de secagem",
-  23: "Entrada na salmoura",
-  24: "Secagem em prateleira",
-  25: "Transferir para Câmara 2 de maturação",
-};
-
-function getStageNames(recipeId: string | undefined): Record<number, string> {
-  return recipeId === "QUEIJO_NINA" ? STAGE_NAMES_NINA : STAGE_NAMES_NETE;
+// Stage name/count/role data comes from each batch's own `stages` field
+// (embedded server-side from that batch's exact recipe + recipeVersion — see
+// GET /api/batches/completed), never from a static per-recipe table. This is
+// what keeps reports correct for both pre- and post-versioning batches without
+// hardcoding stage numbers here.
+interface BatchStageMeta {
+  stageId: number;
+  name: string;
+  type?: string;
+  requiredInputs?: string[];
+  storedValues?: string[];
+  autoRecordTimestamp?: string;
+  timer?: { durationMin?: number; intervalMin?: number };
 }
 
-function getTotalStages(recipeId: string | undefined): number {
-  return recipeId === "QUEIJO_NINA" ? 25 : 19;
+function getBatchStages(batch: ProductionBatch): BatchStageMeta[] {
+  return ((batch as any).stages as BatchStageMeta[] | undefined) || [];
+}
+
+function getStageNamesForBatch(batch: ProductionBatch): Record<number, string> {
+  const names: Record<number, string> = {};
+  for (const s of getBatchStages(batch)) {
+    names[s.stageId] = s.name;
+  }
+  return names;
+}
+
+function getTotalStagesForBatch(batch: ProductionBatch): number {
+  const stages = getBatchStages(batch);
+  if (stages.length > 0) return stages.length;
+  return (batch as any).totalStages ?? 0;
 }
 
 const MEASUREMENT_LABELS: Record<string, string> = {
@@ -219,13 +193,12 @@ function downloadXlsx(rows: Array<Record<string, unknown>>, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function exportToExcel(batches: ProductionBatch[], stageTimers: Record<number, number> = {}) {
+function exportToExcel(batches: ProductionBatch[]) {
   const data: any[] = [];
   
   batches.forEach((batch) => {
-    const recipeId = (batch as any).recipeId;
-    const stageNames = getStageNames(recipeId);
-    const allStageIds = Array.from({ length: getTotalStages(recipeId) }, (_, i) => i + 1);
+    const stageNames = getStageNamesForBatch(batch);
+    const allStageIds = Array.from({ length: getTotalStagesForBatch(batch) }, (_, i) => i + 1);
     const measurements = batch.measurements as Record<string, any> || {};
     const history: MeasurementHistoryItem[] = (measurements._history || []).filter((item: any) => item.key !== 'rollback' && item.key !== 'loop_exit_reason');
     
@@ -236,7 +209,7 @@ function exportToExcel(batches: ProductionBatch[], stageTimers: Record<number, n
     }, {} as Record<number, MeasurementHistoryItem[]>);
     
     allStageIds.forEach((stageId) => {
-      const stageRows = getStageData(batch, stageId, measurementsByStage, stageTimers, recipeId);
+      const stageRows = getStageData(batch, stageId, measurementsByStage);
       const batchMeta = {
         "Lote": formatBatchCode(batch.startedAt),
         "Tipo": (batch as any).recipeName || getCheeseTypeName(batch.recipeId),
@@ -296,29 +269,38 @@ type StageRow =
   | { label: string; value: string; kind?: undefined }
   | { label: string; value: '__ph_table__'; kind: 'ph_table'; items: PhTableItem[] };
 
-function getStageData(batch: ProductionBatch, stageId: number, measurementsByStage: Record<number, MeasurementHistoryItem[]>, stageTimers: Record<number, number> = {}, recipeId?: string) {
-  const isNina = (recipeId ?? (batch as any).recipeId) === "QUEIJO_NINA";
+function getStageData(batch: ProductionBatch, stageId: number, measurementsByStage: Record<number, MeasurementHistoryItem[]>) {
+  const isNina = (batch as any).recipeId === "QUEIJO_NINA";
   const measurements = batch.measurements as Record<string, any> || {};
   const calculatedInputs = batch.calculatedInputs as Record<string, number> || {};
   const stageHistory = measurementsByStage[stageId] || [];
   const rows: StageRow[] = [];
+
+  // Resolved from this batch's own recipe/version stage list — which stage id
+  // holds which piece of data can shift between versions, but the semantic role
+  // (declared via requiredInputs/storedValues/type/autoRecordTimestamp in the
+  // YAML) never does, so all matching below keys off role, not stage number.
+  const stageMeta = getBatchStages(batch).find((s) => s.stageId === stageId);
+  const requiredInputs = stageMeta?.requiredInputs || [];
+  const storedValues = stageMeta?.storedValues || [];
+  const has = (key: string) => requiredInputs.includes(key) || storedValues.includes(key);
 
   function fromMeasurementsOrHistory(key: string): any {
     if (measurements[key] != null) return measurements[key];
     return stageHistory.find(i => i.key === key)?.value;
   }
 
-  // ── Etapa 1: parâmetros iniciais do leite (ambas as receitas) ─────────────
-  if (stageId === 1) {
+  // ── Parâmetros iniciais do leite (etapa que registra milk_temperature_c/milk_ph) ──
+  if (has('milk_temperature_c') || has('milk_ph')) {
     if (batch.milkVolumeL) rows.push({ label: "Volume de Leite", value: `${batch.milkVolumeL} L` });
-    const temp = measurements.milk_temperature_c ?? stageHistory.find(h => h.key === 'milk_temperature_c')?.value;
+    const temp = fromMeasurementsOrHistory('milk_temperature_c');
     if (temp != null) rows.push({ label: "Temperatura do Leite", value: `${temp} °C` });
-    const ph = measurements.milk_ph ?? stageHistory.find(h => h.key === 'milk_ph')?.value;
+    const ph = fromMeasurementsOrHistory('milk_ph');
     if (ph != null) rows.push({ label: "pH do Leite", value: String(ph) });
   }
 
-  // ── Etapa 2: fermentos calculados (receitas têm fermentos diferentes) ──────
-  if (stageId === 2 && Object.keys(calculatedInputs).length > 0) {
+  // ── Fermentos calculados (etapa de tipo "system" que faz o cálculo) ────────
+  if (stageMeta?.type === 'system' && Object.keys(calculatedInputs).length > 0) {
     if (isNina) {
       const ninaLabels: Record<string, string> = {
         FERMENT_DX: "Fermento DX (mL)",
@@ -341,67 +323,56 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
     }
   }
 
-  // ── Nete: etapa 4 → horário adição fermentos LR/DX ──────────────────────
-  if (!isNina && stageId === 4) {
-    const isoVal = measurements.ferment_lr_dx_add_time_iso || stageHistory.find(i => i.key === 'ferment_lr_dx_add_time_iso')?.value;
-    if (isoVal) rows.push({ label: "Horário de Adição (Fermentos LR/DX)", value: formatTimeIso(String(isoVal)) });
+  // ── Horário de adição de fermentos/coalho (auto_record_timestamp) ─────────
+  const autoTimestampLabels: Record<string, string> = {
+    ferment_lr_dx_add_time_iso: "Horário de Adição (Fermentos LR/DX)",
+    ferment_kl_coalho_add_time_iso: "Horário de Adição (Fermento KL + Coalho)",
+    ferment_add_time: "Horário de Adição (Fermentos DX + HT)",
+    rennet_add_time: "Horário de Adição do Coalho",
+  };
+  if (stageMeta?.autoRecordTimestamp && autoTimestampLabels[stageMeta.autoRecordTimestamp]) {
+    const key = stageMeta.autoRecordTimestamp;
+    const isoVal = fromMeasurementsOrHistory(key);
+    if (isoVal) rows.push({ label: autoTimestampLabels[key], value: formatTimeIso(String(isoVal)) });
   }
 
-  // ── Nete: etapa 5 → horário adição KL + coalho ───────────────────────────
-  if (!isNina && stageId === 5) {
-    const isoVal = measurements.ferment_kl_coalho_add_time_iso || stageHistory.find(i => i.key === 'ferment_kl_coalho_add_time_iso')?.value;
-    if (isoVal) rows.push({ label: "Horário de Adição (Fermento KL + Coalho)", value: formatTimeIso(String(isoVal)) });
-  }
-
-  // ── Nina: etapa 7 → horário adição fermentos DX + HT ────────────────────
-  if (isNina && stageId === 7) {
-    const isoVal = measurements.ferment_add_time || stageHistory.find(i => i.key === 'ferment_add_time')?.value;
-    if (isoVal) rows.push({ label: "Horário de Adição (Fermentos DX + HT)", value: formatTimeIso(String(isoVal)) });
-  }
-
-  // ── Nina: etapa 8 → horário adição coalho ────────────────────────────────
-  if (isNina && stageId === 8) {
-    const isoVal = measurements.rennet_add_time || stageHistory.find(i => i.key === 'rennet_add_time')?.value;
-    if (isoVal) rows.push({ label: "Horário de Adição do Coalho", value: formatTimeIso(String(isoVal)) });
-  }
-
-  // ── Floculação: Nete etapa 6, Nina etapa 10 ──────────────────────────────
-  if ((!isNina && stageId === 6) || (isNina && stageId === 10)) {
+  // ── Floculação ─────────────────────────────────────────────────────────────
+  if (has('flocculation_time')) {
     const val = fromMeasurementsOrHistory('flocculation_time');
     if (val != null) rows.push({ label: "Horário de Floculação", value: String(val) });
   }
 
-  // ── Ponto de corte: Nete etapa 7, Nina etapa 11 ──────────────────────────
-  if ((!isNina && stageId === 7) || (isNina && stageId === 11)) {
+  // ── Ponto de corte ─────────────────────────────────────────────────────────
+  if (has('cut_point_time')) {
     const val = fromMeasurementsOrHistory('cut_point_time');
     if (val != null) rows.push({ label: "Horário do Ponto de Corte", value: String(val) });
   }
 
-  // ── Timer de mexedura: Nete etapa 10, Nina etapa 13 ──────────────────────
-  if ((!isNina && stageId === 10) || (isNina && stageId === 13)) {
-    const timerKey = isNina ? 13 : 10;
-    const durationMin = stageTimers[timerKey];
-    if (durationMin !== undefined) rows.push({ label: "Tempo de Mexedura da Massa", value: `${durationMin} minutos` });
+  // ── Timer de mexedura (etapa de tipo "stir") ──────────────────────────────
+  if (stageMeta?.type === 'stir' && stageMeta.timer?.durationMin !== undefined) {
+    rows.push({ label: "Tempo de Mexedura da Massa", value: `${stageMeta.timer.durationMin} minutos` });
   }
 
-  // ── pH inicial + peças: Nete etapa 13, Nina etapa 18 ─────────────────────
-  if ((!isNina && stageId === 13) || (isNina && stageId === 18)) {
+  // ── pH inicial + peças ─────────────────────────────────────────────────────
+  if (has('initial_ph') || has('pieces_quantity')) {
     const phVal = measurements.initial_ph ?? stageHistory.find(i => i.key === 'ph_value' || i.key === 'initial_ph')?.value;
     if (phVal != null) rows.push({ label: "pH Inicial", value: String(phVal) });
-    const piecesVal = measurements.pieces_quantity ?? stageHistory.find(i => i.key === 'pieces_quantity')?.value;
+    const piecesVal = fromMeasurementsOrHistory('pieces_quantity');
     if (piecesVal != null) rows.push({ label: "Quantidade de Peças", value: String(piecesVal) });
   }
 
-  // ── Prensa: Nete etapa 14, Nina etapa 19 ─────────────────────────────────
-  if ((!isNina && stageId === 14) || (isNina && stageId === 19)) {
+  // ── Prensa ─────────────────────────────────────────────────────────────────
+  if (has('press_start_time')) {
     const val = fromMeasurementsOrHistory('press_start_time');
     if (val != null) rows.push({ label: "Início da Prensagem", value: String(val) });
   }
 
-  // ── Loop pH/viradas: Nete etapa 15, Nina etapa 21 ────────────────────────
-  // Nina historical batches may have stored pH at stageId 20 (old recipe); current recipe uses 21.
-  if ((!isNina && stageId === 15) || (isNina && stageId === 21)) {
-    const loopStageId = isNina ? 21 : 15;
+  // ── Loop pH/viradas (etapa de tipo "loop") ────────────────────────────────
+  if (stageMeta?.type === 'loop') {
+    const loopStageId = stageId;
+    // Legacy Nina batches (predating recipe versioning) may have stored pH at
+    // stageId 20 due to an unrelated historical renumbering — kept as a fixed
+    // literal, not derived from the current loop stage id.
     const altLoopStageId: number | null = isNina ? 20 : null;
     const phArr: any[] = measurements.ph_measurements || [];
     const loopPhArr = phArr.filter((p: any) =>
@@ -438,20 +409,20 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
     if (turningCount != null) rows.push({ label: "Viradas Realizadas", value: String(turningCount) });
   }
 
-  // ── Salga: Nete etapa 17, Nina etapa 23 ──────────────────────────────────
-  if ((!isNina && stageId === 17) || (isNina && stageId === 23)) {
-    const isoVal = measurements.brine_entry_time_iso || stageHistory.find(i => i.key === 'brine_entry_time_iso')?.value;
+  // ── Salga (auto_record_timestamp) ─────────────────────────────────────────
+  if (stageMeta?.autoRecordTimestamp === 'brine_entry_time_iso') {
+    const isoVal = fromMeasurementsOrHistory('brine_entry_time_iso');
     if (isoVal) rows.push({ label: "Entrada na Salga", value: formatDateTimeIso(String(isoVal)) });
   }
 
-  // ── Secagem prateleiras: Nete etapa 18, Nina etapa 24 ────────────────────
-  if ((!isNina && stageId === 18) || (isNina && stageId === 24)) {
-    const isoVal = measurements.shelf_start_time_iso || stageHistory.find(i => i.key === 'shelf_start_time_iso')?.value;
+  // ── Secagem em prateleiras (auto_record_timestamp) ────────────────────────
+  if (stageMeta?.autoRecordTimestamp === 'shelf_start_time_iso') {
+    const isoVal = fromMeasurementsOrHistory('shelf_start_time_iso');
     if (isoVal) rows.push({ label: "Início da Secagem em Prateleiras", value: formatDateTimeIso(String(isoVal)) });
   }
 
-  // ── Câmara 2: Nete etapa 19, Nina etapa 25 ───────────────────────────────
-  if ((!isNina && stageId === 19) || (isNina && stageId === 25)) {
+  // ── Câmara 2 (etapa que registra chamber_2_entry_date) ────────────────────
+  if (has('chamber_2_entry_date')) {
     if (batch.chamber2EntryDate) {
       rows.push({ label: "Data de Entrada na Câmara 2", value: parseDateOnly(batch.chamber2EntryDate) });
     }
@@ -471,7 +442,7 @@ function getStageData(batch: ProductionBatch, stageId: number, measurementsBySta
   return rows;
 }
 
-function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionBatch; printRef?: React.RefObject<HTMLDivElement>; stageTimers?: Record<number, number> }) {
+function BatchReport({ batch, printRef }: { batch: ProductionBatch; printRef?: React.RefObject<HTMLDivElement> }) {
   const [expanded, setExpanded] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   
@@ -487,10 +458,9 @@ function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionB
     return acc;
   }, {} as Record<number, MeasurementHistoryItem[]>);
 
-  const batchRecipeId = (batch as any).recipeId;
-  const stageNames = getStageNames(batchRecipeId);
-  const allStageIds = Array.from({ length: getTotalStages(batchRecipeId) }, (_, i) => i + 1);
-  const stagesWithData = allStageIds.filter((stageId) => getStageData(batch, stageId, measurementsByStage, stageTimers, batchRecipeId).length > 0);
+  const stageNames = getStageNamesForBatch(batch);
+  const allStageIds = Array.from({ length: getTotalStagesForBatch(batch) }, (_, i) => i + 1);
+  const stagesWithData = allStageIds.filter((stageId) => getStageData(batch, stageId, measurementsByStage).length > 0);
 
   return (
     <>
@@ -553,7 +523,7 @@ function BatchReport({ batch, printRef, stageTimers = {} }: { batch: ProductionB
           ) : (
             <div className="space-y-3">
               {stagesWithData.map((stageId) => {
-                const stageRows = getStageData(batch, stageId, measurementsByStage, stageTimers, batchRecipeId);
+                const stageRows = getStageData(batch, stageId, measurementsByStage);
 
                 return (
                   <div key={stageId} className="border-l-2 border-primary/50 pl-4 print:border-gray-400">
@@ -1264,7 +1234,7 @@ function KpiDashboard({ batches }: { batches: ProductionBatch[] }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function PrintableReport({ batches, stageTimers = {} }: { batches: ProductionBatch[]; stageTimers?: Record<number, number> }) {
+function PrintableReport({ batches }: { batches: ProductionBatch[] }) {
   return (
     <div className="p-8">
       <div className="text-center mb-8">
@@ -1283,9 +1253,8 @@ function PrintableReport({ batches, stageTimers = {} }: { batches: ProductionBat
           return acc;
         }, {} as Record<number, MeasurementHistoryItem[]>);
 
-        const printRecipeId = (batch as any).recipeId;
-        const printStageNames = getStageNames(printRecipeId);
-        const allStageIds = Array.from({ length: getTotalStages(printRecipeId) }, (_, i) => i + 1);
+        const printStageNames = getStageNamesForBatch(batch);
+        const allStageIds = Array.from({ length: getTotalStagesForBatch(batch) }, (_, i) => i + 1);
         
         return (
           <div key={batch.id} className="mb-8 break-inside-avoid">
@@ -1298,7 +1267,7 @@ function PrintableReport({ batches, stageTimers = {} }: { batches: ProductionBat
             </div>
             
             {allStageIds.map((stageId) => {
-              const stageRows = getStageData(batch, stageId, measurementsByStage, stageTimers, printRecipeId);
+              const stageRows = getStageData(batch, stageId, measurementsByStage);
               if (stageRows.length === 0) return null;
               
               return (
@@ -1327,25 +1296,6 @@ function PrintableReport({ batches, stageTimers = {} }: { batches: ProductionBat
 export default function Reports() {
   const { data: completedBatches, isLoading } = useCompletedBatches();
   const printRef = useRef<HTMLDivElement>(null);
-
-  const { data: recipeDataNete } = useQuery<{ stages: Array<{ stageId: number; timer?: { durationMin?: number } }> }>({
-    queryKey: ['/api/recipe'],
-  });
-
-  const { data: recipeDataNina } = useQuery<{ stages: Array<{ stageId: number; timer?: { durationMin?: number } }> }>({
-    queryKey: ['/api/recipe?recipeId=QUEIJO_NINA'],
-  });
-
-  const stageTimers: Record<number, number> = {};
-  for (const recipeData of [recipeDataNete, recipeDataNina]) {
-    if (recipeData?.stages) {
-      for (const stage of recipeData.stages) {
-        if (stage.timer?.durationMin !== undefined) {
-          stageTimers[stage.stageId] = stage.timer.durationMin;
-        }
-      }
-    }
-  }
 
   const [selectedRecipe, setSelectedRecipe] = useState<"all" | "QUEIJO_NETE" | "QUEIJO_NINA">("all");
   const [selectedMonths, setSelectedMonths] = useState<Set<string>>(new Set());
@@ -1442,7 +1392,7 @@ export default function Reports() {
 
   const handleExportExcel = () => {
     if (filteredBatches.length > 0) {
-      exportToExcel(filteredBatches, stageTimers);
+      exportToExcel(filteredBatches);
     }
   };
 
@@ -1652,7 +1602,7 @@ export default function Reports() {
               ) : (
                 <div>
                   {filteredBatches.map((batch) => (
-                    <BatchReport key={batch.id} batch={batch} stageTimers={stageTimers} />
+                    <BatchReport key={batch.id} batch={batch} />
                   ))}
                 </div>
               )}
@@ -1664,7 +1614,7 @@ export default function Reports() {
       <div className="hidden">
         <div ref={printRef}>
           {filteredBatches.length > 0 && (
-            <PrintableReport batches={filteredBatches} stageTimers={stageTimers} />
+            <PrintableReport batches={filteredBatches} />
           )}
         </div>
       </div>

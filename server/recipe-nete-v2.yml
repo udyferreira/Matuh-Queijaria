@@ -1,5 +1,5 @@
 schema_version: "1.4"
-version: 1
+version: 2
 recipe_id: "QUEIJO_NETE"
 name: "Nete"
 family: "fresco"
@@ -182,6 +182,18 @@ stages:
       - "Quando terminar, diga 'próxima etapa'"
 
   - id: 10
+    name: "Tempo de espera antes da Mexedura"
+    type: "wait"
+    timer:
+      duration_min: 5
+      blocking: true
+    llm_guidance: >
+      Repouso de 5 minutos após os cortes, antes de iniciar a mexedura
+      progressiva. Esse intervalo permite que os grãos firmem levemente na
+      superfície, reduzindo a quebra e a perda de finos no soro durante a
+      mexedura seguinte. Não há ação manual nesta etapa: a Alexa avisará
+      automaticamente quando o tempo terminar.
+  - id: 11
     name: "Mexedura progressiva da massa"
     type: "stir"
     parameters:
@@ -192,14 +204,14 @@ stages:
     instructions:
       - "Mexer a massa de forma progressiva"
 
-  - id: 11
+  - id: 12
     name: "Enformagem com peneira e paninho"
     type: "mold"
     instructions:
       - "Enformar os queijos usando peneira e paninho"
       - "Quando terminar, diga 'próxima etapa'"
 
-  - id: 12
+  - id: 13
     name: "Dessoragem em mesa"
     type: "drain"
     parameters:
@@ -208,7 +220,7 @@ stages:
       - "Deixar dessorar em mesa por alguns minutos"
       - "Quando terminar, diga 'próxima etapa'"
 
-  - id: 13
+  - id: 14
     name: "Medir pH inicial e registrar quantidade de peças"
     type: "measure"
     operator_input_required:
@@ -220,7 +232,7 @@ stages:
     expected_intent: "RegisterPHAndPiecesIntent"
     input_prompt: "Informe o pH inicial dizendo: 'pH cinco vírgula dois'."
 
-  - id: 14
+  - id: 15
     name: "Colocar na prensa"
     type: "press"
     operator_input_required:
@@ -231,7 +243,7 @@ stages:
     expected_time_type: "prensa"
     input_prompt: "Registre o horário de início da prensagem dizendo: 'hora da prensa às quinze e vinte'."
 
-  - id: 15
+  - id: 16
     name: "Virar queijos e medir pH"
     type: "loop"
     loop_condition:
@@ -256,7 +268,7 @@ stages:
       Cada loop representa uma virada dos queijos com medição de pH.
       Informe o operador que deve dizer o pH atual, por exemplo: 'pH cinco vírgula três'.
 
-  - id: 16
+  - id: 17
     name: "Transferir para câmara de secagem"
     type: "transfer"
     timing:
@@ -265,7 +277,7 @@ stages:
       - "Transferir os queijos para a câmara de secagem"
       - "Quando terminar, diga 'próxima etapa'"
 
-  - id: 17
+  - id: 18
     name: "Salga em tanque"
     type: "brine"
     auto_record_timestamp: "brine_entry_time_iso"
@@ -275,7 +287,7 @@ stages:
     instructions:
       - "Colocar os queijos no tanque de salmoura"
 
-  - id: 18
+  - id: 19
     name: "Secagem em prateleiras"
     type: "dry"
     auto_record_timestamp: "shelf_start_time_iso"
@@ -285,7 +297,7 @@ stages:
     instructions:
       - "Dispor os queijos nas prateleiras para secagem"
 
-  - id: 19
+  - id: 20
     name: "Transferir para Câmara 2"
     type: "transfer"
     operator_input_required:

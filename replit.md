@@ -1,7 +1,7 @@
 # Matuh Queijaria - Artisan Cheese Production Agent
 
 ## Overview
-Matuh Queijaria is a backend-driven production management system for artisan cheese making. It integrates voice control via Alexa to track and manage cheese production batches through a canonical 19-stage recipe. The system handles timers, measurements (pH, temperature), and calculates ingredient proportions. Its primary purpose is to ensure strict adherence to the production process for food safety and quality, with LLM integration serving as a cognitive assistant for natural language interpretation and guidance, not as a process executor. The project aims to streamline cheese production, improve consistency, and provide a user-friendly interface for managing complex recipes.
+Matuh Queijaria is a backend-driven production management system for artisan cheese making. It integrates voice control via Alexa to track and manage cheese production batches through versioned, YAML-defined recipes (Queijo Nete and Queijo Nina). The system handles timers, measurements (pH, temperature), and calculates ingredient proportions. Its primary purpose is to ensure strict adherence to the production process for food safety and quality, with LLM integration serving as a cognitive assistant for natural language interpretation and guidance, not as a process executor. The project aims to streamline cheese production, improve consistency, and provide a user-friendly interface for managing complex recipes.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -25,7 +25,8 @@ Preferred communication style: Simple, everyday language.
 ### Backend
 - **Runtime**: Node.js with Express and TypeScript.
 - **API Design**: RESTful endpoints with Zod validation.
-- **Recipe Engine**: YAML-based canonical recipe, loaded at startup and immutable during runtime.
+- **Recipe Engine**: YAML-based recipes, loaded at startup and immutable during runtime.
+- **Recipe Versioning**: Each recipe (Nete, Nina) can have multiple YAML stage-list versions (e.g. `recipe-nete.yml` = v1, `recipe-nete-v2.yml` = v2), all loaded into an in-memory `RecipeRegistry` keyed by `(recipeId, version)`. There are no recipe rows in the database — versions live entirely in code/YAML. `production_batches.recipe_version` is an additive column stamped at batch creation with that recipe's latest available version; existing batches keep their original version forever, so a stage insertion or renumbering in a new version never affects in-progress or historical batches. All stage-id-dependent server logic (timers, rollback, pH/measurement lookups, post-completion edits) resolves stage roles dynamically via the batch's own `RecipeManager` (e.g. `getLoopStageId()`, `getStageForMeasurementKey()`, `getStageByAutoRecordTimestamp()`) rather than hardcoded per-recipe stage numbers, so it stays correct across versions. The client mirrors this: batch API responses embed a `stages` array (that batch's own resolved stage metadata) so Reports/BatchDetail/EditBatchModal look up stage roles instead of hardcoding ids.
 - **Security**:
     - **Authentication**: `express-session` with PostgreSQL-backed sessions, bcryptjs for password hashing.
     - **Alexa Webhook Verification**: Validates certificate chain, signing certificate, X.509 certificate, request signature, and timestamp.

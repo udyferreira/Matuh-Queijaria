@@ -82,6 +82,11 @@ interface RecipeProcess {
 
 interface Recipe {
   schema_version: string;
+  // Which numbered stage list this is for its recipe_id. Recipes with no
+  // explicit version are treated as version 1. Batches record which version
+  // they were created with (see productionBatches.recipeVersion) so that
+  // adding/renumbering stages never changes what an in-progress batch sees.
+  version?: number;
   recipe_id: string;
   name: string;
   description?: string;
@@ -108,6 +113,59 @@ export class RecipeManager {
 
   getRecipeId(): string {
     return this.recipe.recipe_id;
+  }
+
+  getVersion(): number {
+    return this.recipe.version ?? 1;
+  }
+
+  getAllStages(): RecipeStage[] {
+    return this.recipe.stages;
+  }
+
+  // Finds the (single) stage of type 'loop' for this recipe/version, regardless
+  // of its numeric id. Use instead of hardcoding a loop stage number per recipe.
+  getLoopStageId(): number | undefined {
+    return this.recipe.stages.find(s => s.type === 'loop')?.id;
+  }
+
+  // Finds a stage by a value it stores (stored_values), independent of numbering.
+  getStageByStoredValue(key: string): RecipeStage | undefined {
+    return this.recipe.stages.find(s => s.stored_values?.includes(key));
+  }
+
+  // Finds a stage that requires a given operator input, independent of numbering.
+  getStageByOperatorInput(key: string): RecipeStage | undefined {
+    return this.recipe.stages.find(s => s.operator_input_required?.includes(key));
+  }
+
+  // Finds the stage that auto-records the given timestamp key on entry, independent of numbering.
+  getStageByAutoRecordTimestamp(key: string): RecipeStage | undefined {
+    return this.recipe.stages.find(s => s.auto_record_timestamp === key);
+  }
+
+  // Finds the stage whose parameters.volume_source references a given derived-volume
+  // input id (e.g. "WHEY_TO_REMOVE", "HOT_WATER"), independent of numbering. Used so
+  // calculated-input speech hints stay correct after a stage insertion shifts ids.
+  getStageByVolumeSource(volumeSourceId: string): RecipeStage | undefined {
+    return this.recipe.stages.find(s => s.parameters?.volume_source === volumeSourceId);
+  }
+
+  // Finds the stage expecting a given spoken time type (e.g. "floculação", "corte",
+  // "prensa"), comparing accent-insensitively so ASR variants still match.
+  getStageByExpectedTimeType(timeType: string): RecipeStage | undefined {
+    const normalize = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const target = normalize(timeType);
+    return this.recipe.stages.find(s => s.expected_time_type && normalize(s.expected_time_type) === target);
+  }
+
+  // Finds whichever stage governs a given measurement key (operator input, stored
+  // value, or auto-recorded timestamp), independent of numbering. Used to resolve
+  // history entries and edits to "the right stage" without hardcoding per-recipe ids.
+  getStageForMeasurementKey(key: string): RecipeStage | undefined {
+    return this.getStageByOperatorInput(key)
+      ?? this.getStageByStoredValue(key)
+      ?? this.getStageByAutoRecordTimestamp(key);
   }
 
   getMaturationDays(): number {
@@ -178,7 +236,9 @@ export class RecipeManager {
       } : undefined,
       loopActions: stage.loop_actions,
       llmGuidance: stage.llm_guidance,
-      parameters: stage.parameters
+      parameters: stage.parameters,
+      autoRecordTimestamp: stage.auto_record_timestamp,
+      expectedTimeType: stage.expected_time_type
     };
   }
 
@@ -428,6 +488,12 @@ export class RecipeManager {
 // --- RecipeRegistry: loads all recipe-*.yml files at startup ---
 
 class RecipeRegistry {
+  // recipeId -> version -> manager. A recipe can have multiple stage-list
+  // versions loaded at once (e.g. recipe-nina.yml = v1, recipe-nina-v2.yml = v2);
+  // which one a batch resolves against is decided by its own recipeVersion field,
+  // never by "whatever loaded last", so in-progress batches are never reinterpreted.
+  private managersByVersion: Map<string, Map<number, RecipeManager>> = new Map();
+  // recipeId -> a manager for that recipe (any version) kept for legacy/no-batch-context lookups
   private managers: Map<string, RecipeManager> = new Map();
 
   constructor() {
@@ -445,8 +511,20 @@ class RecipeRegistry {
         const contents = fs.readFileSync(filePath, 'utf8');
         const data = yaml.load(contents) as Recipe;
         const manager = new RecipeManager(data);
-        this.managers.set(data.recipe_id, manager);
-        console.log(`[RecipeRegistry] Loaded: ${data.name} (${data.recipe_id}) — ${data.stages.length} stages`);
+        const version = manager.getVersion();
+
+        if (!this.managersByVersion.has(data.recipe_id)) {
+          this.managersByVersion.set(data.recipe_id, new Map());
+        }
+        this.managersByVersion.get(data.recipe_id)!.set(version, manager);
+
+        // Keep version 1 (or whichever loads first if v1 is absent) as the
+        // legacy default for code paths that have no batch/version context.
+        if (!this.managers.has(data.recipe_id) || version === 1) {
+          this.managers.set(data.recipe_id, manager);
+        }
+
+        console.log(`[RecipeRegistry] Loaded: ${data.name} (${data.recipe_id}) v${version} — ${data.stages.length} stages`);
       } catch (e) {
         console.error(`[RecipeRegistry] Failed to load ${file}:`, e);
       }
@@ -457,8 +535,28 @@ class RecipeRegistry {
     }
   }
 
-  getForRecipeId(recipeId: string): RecipeManager | undefined {
-    return this.managers.get(recipeId);
+  // Returns the manager for a given recipe + version. Falls back to version 1,
+  // then to any loaded version, if the requested version isn't available
+  // (e.g. version field was removed or the batch predates versioning).
+  getForRecipeId(recipeId: string, version?: number): RecipeManager | undefined {
+    const versions = this.managersByVersion.get(recipeId);
+    if (!versions) return undefined;
+    if (version !== undefined && versions.has(version)) return versions.get(version);
+    if (versions.has(1)) return versions.get(1);
+    return Array.from(versions.values())[0];
+  }
+
+  // Highest stage-list version available for a recipe. New batches are created
+  // against this version; existing batches keep resolving against their own
+  // recorded version regardless of what this returns.
+  getLatestVersion(recipeId: string): number {
+    const versions = this.managersByVersion.get(recipeId);
+    if (!versions || versions.size === 0) return 1;
+    return Math.max(...Array.from(versions.keys()));
+  }
+
+  getLatestForRecipeId(recipeId: string): RecipeManager | undefined {
+    return this.getForRecipeId(recipeId, this.getLatestVersion(recipeId));
   }
 
   getDefault(): RecipeManager {
@@ -479,11 +577,15 @@ export const recipeManager = recipeRegistry.getDefault();
 // Export TEST_MODE for use in routes
 export { TEST_MODE };
 
-// Returns the RecipeManager for the given batch, dispatching by recipeId
+// Returns the RecipeManager for the given batch, dispatching by recipeId AND by
+// the batch's own recipeVersion — so a batch always resolves stage numbers
+// against the exact stage list it was created with, even after new stages are
+// added to the recipe for future batches.
 export function getRecipeForBatch(batch: any): RecipeManager {
   const recipeId = batch?.recipeId;
   if (recipeId) {
-    const rm = recipeRegistry.getForRecipeId(recipeId);
+    const version = batch?.recipeVersion ?? 1;
+    const rm = recipeRegistry.getForRecipeId(recipeId, version);
     if (rm) return rm;
   }
   return recipeManager;

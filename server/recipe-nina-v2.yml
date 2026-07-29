@@ -1,5 +1,5 @@
 schema_version: "1.4"
-version: 1
+version: 2
 recipe_id: "QUEIJO_NINA"
 name: "Nina"
 family: "semi-cozido"
@@ -285,6 +285,18 @@ stages:
       semi-cozida característica deste queijo.
 
   - id: 14
+    name: "Tempo de espera antes da Mexedura"
+    type: "wait"
+    timer:
+      duration_min: 5
+      blocking: true
+    llm_guidance: >
+      Repouso de 5 minutos após o corte, antes de iniciar a mexedura. Esse
+      intervalo permite que os grãos firmem levemente na superfície,
+      reduzindo a quebra e a perda de finos no soro durante a mexedura
+      seguinte. Não há ação manual nesta etapa: a Alexa avisará
+      automaticamente quando o tempo terminar.
+  - id: 15
     name: "Mexer a massa por 5 minutos"
     type: "stir"
     parameters:
@@ -302,7 +314,7 @@ stages:
       muito pequenos. Após os 5 minutos, prossiga imediatamente para a retirada
       do soro.
 
-  - id: 15
+  - id: 16
     name: "Retirar soro do tanque"
     type: "drain"
     parameters:
@@ -315,7 +327,7 @@ stages:
       prepara o ambiente para a adição da água quente. Confirme ao operador
       o volume exato de soro a retirar, conforme calculado pelo sistema.
 
-  - id: 16
+  - id: 17
     name: "Aquecer massa com água quente até 38 graus"
     type: "heat_curd"
     parameters:
@@ -338,7 +350,7 @@ stages:
       textura macia e levemente elástica do queijo. O operador deve monitorar com
       termômetro e avançar manualmente ao atingir 38°C.
 
-  - id: 17
+  - id: 18
     name: "Retirar todo o soro do tanque"
     type: "drain"
     parameters:
@@ -347,14 +359,14 @@ stages:
       - "Retirar todo o soro do tanque"
       - "Quando terminar, diga 'próxima etapa'"
 
-  - id: 18
+  - id: 19
     name: "Cortar a massa e colocar nas fôrmas"
     type: "mold"
     instructions:
       - "Cortar a massa e colocar nas fôrmas com paninho"
       - "Quando terminar, diga 'próxima etapa'"
 
-  - id: 19
+  - id: 20
     name: "Medir pH inicial e registrar quantidade de peças"
     type: "measure"
     operator_input_required:
@@ -371,7 +383,7 @@ stages:
       para o controle de rendimento e para o acompanhamento da acidificação
       durante a prensagem.
 
-  - id: 20
+  - id: 21
     name: "Colocar na prensa e registrar horário"
     type: "press"
     operator_input_required:
@@ -385,7 +397,7 @@ stages:
       - "Colocar os queijos na prensa"
       - "Registrar o horário de início da prensagem"
 
-  - id: 21
+  - id: 22
     name: "Virar queijos e medir pH"
     type: "loop"
     loop_condition:
@@ -411,7 +423,7 @@ stages:
       Informe o operador que deve dizer o pH atual, por exemplo: 'pH cinco vírgula dois'.
       Cada ciclo representa uma virada com medição de pH.
 
-  - id: 22
+  - id: 23
     name: "Transferir para câmara de secagem"
     type: "transfer"
     timing:
@@ -420,7 +432,7 @@ stages:
       - "Transferir os queijos para a câmara de secagem"
       - "Quando terminar, diga 'próxima etapa'"
 
-  - id: 23
+  - id: 24
     name: "Entrada na salmoura"
     type: "brine"
     auto_record_timestamp: "brine_entry_time_iso"
@@ -431,7 +443,7 @@ stages:
       - "Colocar os queijos no tanque de salmoura"
       - "O timer de 13 horas será iniciado automaticamente"
 
-  - id: 24
+  - id: 25
     name: "Secagem em prateleira"
     type: "dry"
     auto_record_timestamp: "shelf_start_time_iso"
@@ -441,7 +453,7 @@ stages:
     instructions:
       - "Dispor os queijos nas prateleiras para secagem por 24 horas"
 
-  - id: 25
+  - id: 26
     name: "Transferir para Câmara 2 de maturação"
     type: "transfer"
     operator_input_required:

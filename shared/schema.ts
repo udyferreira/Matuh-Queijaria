@@ -8,6 +8,9 @@ import { relations } from "drizzle-orm";
 export const productionBatches = pgTable("production_batches", {
   id: serial("id").primaryKey(),
   recipeId: text("recipe_id").notNull(),
+  // Which version of the recipe's stage list this batch was created with (see server/recipe.ts).
+  // Existing rows default to 1 so they keep resolving against the original stage numbering.
+  recipeVersion: integer("recipe_version").notNull().default(1),
   currentStageId: integer("current_stage_id").notNull().default(1),
   milkVolumeL: numeric("milk_volume_l").notNull(),
   status: text("status", { enum: ["active", "paused", "completed", "cancelled"] }).notNull().default("active"),
