@@ -44,6 +44,7 @@ export default function BatchDetail() {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [editTime, setEditTime] = useState<string>('');
+  const [editDate, setEditDate] = useState<string>('');
   const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   // Heat curd stage (Nina stage 15) — 3-min repeating timer until 38°C is reached
@@ -453,7 +454,7 @@ export default function BatchDetail() {
                                value={inputVal} 
                                onChange={(e) => setInputVal(e.target.value)}
                                type="number"
-                               step="0.1"
+                               step="0.01"
                                className="text-lg h-12"
                                placeholder="Ex: 6.5"
                                autoFocus
@@ -499,7 +500,7 @@ export default function BatchDetail() {
                                value={inputVal} 
                                onChange={(e) => setInputVal(e.target.value)}
                                type={inputType === 'ph' ? 'number' : 'time'}
-                               step={inputType === 'ph' ? '0.1' : undefined}
+                               step={inputType === 'ph' ? '0.01' : undefined}
                                className="text-lg h-12"
                                placeholder="Insira o valor..."
                                autoFocus
@@ -570,11 +571,12 @@ export default function BatchDetail() {
                                            const loopEditKey = item.historyIndex !== undefined ? `loop_ph_active_${item.historyIndex}` : null;
                                            const isEditingRow = loopEditKey !== null && editingKey === loopEditKey;
                                            const getTimeInput = (iso: string) => { try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso)).replace('h', ':'); } catch { return ''; } };
+                                            const getDateInput = (iso: string) => { try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso)); } catch { return ''; } };
                                            const saveLoopPh = () => {
                                              const numPh = parseFloat(editValue);
                                              if (isNaN(numPh)) return;
                                              let newTimestamp: string | undefined;
-                                             if (editTime && item.timestamp) { try { const p = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(item.timestamp)).split('/'); newTimestamp = new Date(`${p[2]}-${p[1]}-${p[0]}T${editTime}:00.000-03:00`).toISOString(); } catch { /* ignore */ } }
+                                              if ((editDate || editTime) && item.timestamp) { try { const datePart = editDate || getDateInput(item.timestamp); const timePart = editTime || getTimeInput(item.timestamp); newTimestamp = new Date(`${datePart}T${timePart}:00.000-03:00`).toISOString(); } catch { /* ignore */ } }
                                              editMeasurement({ id, data: { key: 'ph_value', value: numPh, historyIndex: item.historyIndex, stageId: loopStageId, ...(newTimestamp ? { newTimestamp } : {}) } as any }, {
                                                onSuccess: () => { setEditingKey(null); toast({ title: 'Medição atualizada' }); },
                                                onError: (e) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
@@ -583,10 +585,10 @@ export default function BatchDetail() {
                                            return (
                                            <tr key={idx} className="even:bg-secondary/20" data-testid={`row-ph-${idx}`}>
                                              <td className="px-3 py-1.5 text-muted-foreground">{idx + 1}ª</td>
-                                             <td className="px-3 py-1.5">{item.timestamp ? fmtDate(item.timestamp) : '—'}</td>
+                                              <td className="px-3 py-1.5">{isEditingRow ? <Input type="date" className="h-6 w-[8rem] text-xs font-mono px-1" value={editDate} onChange={e => setEditDate(e.target.value)} /> : item.timestamp ? fmtDate(item.timestamp) : '—'}</td>
                                              <td className="px-3 py-1.5">{isEditingRow ? <Input type="time" className="h-6 w-[5.5rem] text-xs font-mono px-1" value={editTime} onChange={e => setEditTime(e.target.value)} /> : item.timestamp ? fmtTime(item.timestamp) : '—'}</td>
                                              <td className="px-3 py-1.5 text-center font-medium" data-testid={`text-ph-value-${idx}`}>{isEditingRow ? <Input type="number" step="0.01" className="h-6 w-14 text-xs font-mono text-center px-1" value={editValue} onChange={e => setEditValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveLoopPh(); if (e.key === 'Escape') setEditingKey(null); }} /> : item.value}</td>
-                                             <td className="px-2 py-1">{loopEditKey !== null && (isEditingRow ? (<div className="flex items-center justify-end gap-1"><Button size="icon" variant="ghost" className="h-6 w-6" disabled={isEditing} onClick={saveLoopPh}><Check className="w-3 h-3" /></Button><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingKey(null)}><X className="w-3 h-3" /></Button></div>) : (<Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingKey(loopEditKey); setEditValue(String(item.value)); setEditTime(item.timestamp ? getTimeInput(item.timestamp) : ''); }}><Pencil className="w-3 h-3 text-muted-foreground" /></Button>))}</td>
+                                              <td className="px-2 py-1">{loopEditKey !== null && (isEditingRow ? (<div className="flex items-center justify-end gap-1"><Button size="icon" variant="ghost" className="h-6 w-6" disabled={isEditing} onClick={saveLoopPh}><Check className="w-3 h-3" /></Button><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingKey(null)}><X className="w-3 h-3" /></Button></div>) : (<Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingKey(loopEditKey); setEditValue(String(item.value)); setEditTime(item.timestamp ? getTimeInput(item.timestamp) : ''); setEditDate(item.timestamp ? getDateInput(item.timestamp) : ''); }}><Pencil className="w-3 h-3 text-muted-foreground" /></Button>))}</td>
                                            </tr>
                                            );
                                          })}
@@ -1004,11 +1006,12 @@ export default function BatchDetail() {
                                 const histEditKey = row.historyIndex !== undefined ? `loop_ph_hist_${row.historyIndex}` : null;
                                 const isEditingRow = histEditKey !== null && editingKey === histEditKey;
                                 const getTimeInput = (iso: string) => { try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso)).replace('h', ':'); } catch { return ''; } };
+                                const getDateInput = (iso: string) => { try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso)); } catch { return ''; } };
                                 const saveHistPh = () => {
                                   const numPh = parseFloat(editValue);
                                   if (isNaN(numPh)) return;
                                   let newTimestamp: string | undefined;
-                                  if (editTime && row.rawTimestamp) { try { const p = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(row.rawTimestamp)).split('/'); newTimestamp = new Date(`${p[2]}-${p[1]}-${p[0]}T${editTime}:00.000-03:00`).toISOString(); } catch { /* ignore */ } }
+                                  if ((editDate || editTime) && row.rawTimestamp) { try { const datePart = editDate || getDateInput(row.rawTimestamp); const timePart = editTime || getTimeInput(row.rawTimestamp); newTimestamp = new Date(`${datePart}T${timePart}:00.000-03:00`).toISOString(); } catch { /* ignore */ } }
                                   editMeasurement({ id, data: { key: 'ph_value', value: numPh, historyIndex: row.historyIndex, stageId: item.stageId, ...(newTimestamp ? { newTimestamp } : {}) } as any }, {
                                     onSuccess: () => { setEditingKey(null); toast({ title: 'Medição atualizada' }); },
                                     onError: (e) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
@@ -1017,10 +1020,10 @@ export default function BatchDetail() {
                                 return (
                                 <tr key={n} className="even:bg-secondary/20" data-testid={`row-ph-history-${item.stageId}-${n}`}>
                                   <td className="px-3 py-1.5 text-muted-foreground">{n + 1}ª</td>
-                                  <td className="px-3 py-1.5">{row.date}</td>
+                                  <td className="px-3 py-1.5">{isEditingRow ? <Input type="date" className="h-6 w-[8rem] text-xs font-mono px-1" value={editDate} onChange={e => setEditDate(e.target.value)} /> : row.date}</td>
                                   <td className="px-3 py-1.5">{isEditingRow ? <Input type="time" className="h-6 w-[5.5rem] text-xs font-mono px-1" value={editTime} onChange={e => setEditTime(e.target.value)} /> : row.time}</td>
                                   <td className="px-3 py-1.5 text-center font-mono font-bold">{isEditingRow ? <Input type="number" step="0.01" className="h-6 w-14 text-xs font-mono text-center px-1" value={editValue} onChange={e => setEditValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveHistPh(); if (e.key === 'Escape') setEditingKey(null); }} /> : row.ph}</td>
-                                  <td className="px-2 py-1">{histEditKey !== null && (isEditingRow ? (<div className="flex items-center justify-end gap-1"><Button size="icon" variant="ghost" className="h-6 w-6" disabled={isEditing} onClick={saveHistPh}><Check className="w-3 h-3" /></Button><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingKey(null)}><X className="w-3 h-3" /></Button></div>) : (<Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingKey(histEditKey); setEditValue(row.ph); setEditTime(row.rawTimestamp ? getTimeInput(row.rawTimestamp) : ''); }}><Pencil className="w-3 h-3 text-muted-foreground" /></Button>))}</td>
+                                  <td className="px-2 py-1">{histEditKey !== null && (isEditingRow ? (<div className="flex items-center justify-end gap-1"><Button size="icon" variant="ghost" className="h-6 w-6" disabled={isEditing} onClick={saveHistPh}><Check className="w-3 h-3" /></Button><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingKey(null)}><X className="w-3 h-3" /></Button></div>) : (<Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingKey(histEditKey); setEditValue(row.ph); setEditTime(row.rawTimestamp ? getTimeInput(row.rawTimestamp) : ''); setEditDate(row.rawTimestamp ? getDateInput(row.rawTimestamp) : ''); }}><Pencil className="w-3 h-3 text-muted-foreground" /></Button>))}</td>
                                 </tr>
                                 );
                               })}

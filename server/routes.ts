@@ -572,7 +572,8 @@ export async function registerRoutes(
 
       if (historyIndex !== undefined && measurements._history) {
         const history = measurements._history as Array<{ key: string; value: any; stageId: number; timestamp: string }>;
-        if (historyIndex >= 0 && historyIndex < history.length && history[historyIndex].key === key) {
+        const isPhKey = (k: string) => k === 'ph_value' || k === 'ph_measurement';
+        if (historyIndex >= 0 && historyIndex < history.length && (history[historyIndex].key === key || (isPhKey(key) && isPhKey(history[historyIndex].key)))) {
           oldTimestampForPhSync = history[historyIndex].timestamp;
           history[historyIndex].value = value;
           // ph_value timestamp = when the measurement was taken, not when it was edited.
