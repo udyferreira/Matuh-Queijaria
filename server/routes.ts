@@ -355,13 +355,15 @@ export async function registerRoutes(
         // Also update latest ph_value for quick access
         measurements.ph_value = value;
         
-        // Also sync to _history and ph_measurements for consistency
+        // Also sync to _history and ph_measurements for consistency.
+        // Share the same id between both arrays so edits can locate the right entry unambiguously.
+        const phEntryId = generateId();
         const inputHistory = measurements._history || [];
-        inputHistory.push({ key: 'ph_value', value, timestamp, stageId: batch.currentStageId });
+        inputHistory.push({ id: phEntryId, key: 'ph_value', value, timestamp, stageId: batch.currentStageId });
         measurements._history = inputHistory;
         
         const phMeasurements = measurements.ph_measurements || [];
-        phMeasurements.push({ value, timestamp, stageId: batch.currentStageId });
+        phMeasurements.push({ id: phEntryId, value, timestamp, stageId: batch.currentStageId });
         measurements.ph_measurements = phMeasurements;
     } else if (type === 'time') {
         // e.g. flocculation time
@@ -448,9 +450,11 @@ export async function registerRoutes(
     // Store the canonical value
     measurements[key] = value;
     
-    // Also store in history array for tracking
+    // Also store in history array for tracking. Share one id between _history and
+    // ph_measurements (below) so an edit can later locate both entries unambiguously.
+    const canonicalEntryId = generateId();
     const inputHistory = measurements._history || [];
-    inputHistory.push({ key, value, unit, notes, timestamp, stageId: batch.currentStageId });
+    inputHistory.push({ id: canonicalEntryId, key, value, unit, notes, timestamp, stageId: batch.currentStageId });
     measurements._history = inputHistory;
 
     // Loop-pH stage: delegate to centralized logPh for timer management
@@ -478,7 +482,7 @@ export async function registerRoutes(
     // Special handling for pH measurements array
     if (key === 'ph_value') {
       const phMeasurements = measurements.ph_measurements || [];
-      phMeasurements.push({ value, timestamp, stageId: batch.currentStageId });
+      phMeasurements.push({ id: canonicalEntryId, value, timestamp, stageId: batch.currentStageId });
       measurements.ph_measurements = phMeasurements;
     }
 
@@ -524,7 +528,7 @@ export async function registerRoutes(
 
   app.put("/api/batches/:id/measurements", async (req, res) => {
     const batchId = Number(req.params.id);
-    const { key, value, historyIndex, stageId, newTimestamp } = req.body;
+    const { key, value, entryId, historyIndex, stageId, newTimestamp } = req.body;
 
     if (!key || value === undefined) {
       return res.status(400).json({ message: "key e value são obrigatórios" });
@@ -569,16 +573,31 @@ export async function registerRoutes(
       });
     } else {
       let oldTimestampForPhSync: string | undefined;
+      let matchedEntryId: string | undefined;
 
-      if (historyIndex !== undefined && measurements._history) {
-        const history = measurements._history as Array<{ key: string; value: any; stageId: number; timestamp: string }>;
+      if (measurements._history) {
+        const history = measurements._history as Array<{ id?: string; key: string; value: any; stageId: number; timestamp: string }>;
         const isPhKey = (k: string) => k === 'ph_value' || k === 'ph_measurement';
-        if (historyIndex >= 0 && historyIndex < history.length && (history[historyIndex].key === key || (isPhKey(key) && isPhKey(history[historyIndex].key)))) {
-          oldTimestampForPhSync = history[historyIndex].timestamp;
-          history[historyIndex].value = value;
+
+        // Preferred: match by stable entry id (immune to positional drift or timestamp truncation).
+        // Fallback: legacy historyIndex-based match, only used for entries created before ids existed.
+        let targetEntry: typeof history[number] | undefined;
+        if (entryId) {
+          targetEntry = history.find(h => h.id === entryId);
+        } else if (historyIndex !== undefined && historyIndex >= 0 && historyIndex < history.length) {
+          const candidate = history[historyIndex];
+          if (candidate.key === key || (isPhKey(key) && isPhKey(candidate.key))) {
+            targetEntry = candidate;
+          }
+        }
+
+        if (targetEntry) {
+          matchedEntryId = targetEntry.id;
+          oldTimestampForPhSync = targetEntry.timestamp;
+          targetEntry.value = value;
           // ph_value timestamp = when the measurement was taken, not when it was edited.
           // Use newTimestamp if explicitly provided; for ph_value preserve original; otherwise update to now.
-          history[historyIndex].timestamp = newTimestamp
+          targetEntry.timestamp = newTimestamp
             ? String(newTimestamp)
             : key === 'ph_value'
               ? oldTimestampForPhSync
@@ -592,12 +611,15 @@ export async function registerRoutes(
         }
         measurements[key] = value;
         if (measurements.ph_measurements && stageId) {
-          const pmArr = measurements.ph_measurements as Array<{ value: any; stageId: number; timestamp: string }>;
-          // Use oldTimestamp to identify the exact entry — fixes loop stages where multiple
-          // entries share the same stageId (find-by-stageId would always hit the first one).
-          const match = oldTimestampForPhSync
-            ? pmArr.find((m) => m.timestamp === oldTimestampForPhSync)
-            : pmArr.find((m) => m.stageId === stageId);
+          const pmArr = measurements.ph_measurements as Array<{ id?: string; value: any; stageId: number; timestamp: string }>;
+          // Prefer matching by the same stable id shared with the _history entry (set when the
+          // measurement was created). Fall back to the old timestamp, then to stageId, for legacy
+          // entries that predate stable ids — fixes loop stages where multiple entries share stageId.
+          const match = matchedEntryId
+            ? pmArr.find((m) => m.id === matchedEntryId)
+            : oldTimestampForPhSync
+              ? pmArr.find((m) => m.timestamp === oldTimestampForPhSync)
+              : pmArr.find((m) => m.stageId === stageId);
           if (match) {
             match.value = value;
             if (newTimestamp) match.timestamp = String(newTimestamp);

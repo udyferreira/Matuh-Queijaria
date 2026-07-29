@@ -255,8 +255,8 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
         const turningCount = (freshBatch as any).turningCyclesCount || 0;
         const timestamp = new Date().toISOString();
         const historyEntries = [
-          { key: 'turning_cycles_count', value: turningCount, stageId: loopStageId, timestamp },
-          { key: 'loop_exit_reason', value: 'ph_reached', stageId: loopStageId, timestamp }
+          { id: generateId(), key: 'turning_cycles_count', value: turningCount, stageId: loopStageId, timestamp },
+          { id: generateId(), key: 'loop_exit_reason', value: 'ph_reached', stageId: loopStageId, timestamp }
         ];
         const history = freshMeasurements._history || [];
         history.push(...historyEntries);
@@ -442,7 +442,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
   if (isNete && nextStage.id === 4 && !measurements.ferment_lr_dx_add_time_iso) {
     measurements.ferment_lr_dx_add_time_iso = nowIso;
     const mHistory = measurements._history || [];
-    mHistory.push({ key: 'ferment_lr_dx_add_time_iso', value: nowIso, stageId: 4, timestamp: nowIso });
+    mHistory.push({ id: generateId(), key: 'ferment_lr_dx_add_time_iso', value: nowIso, stageId: 4, timestamp: nowIso });
     measurements._history = mHistory;
     touchedMeasurements = true;
   }
@@ -450,7 +450,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
   if (isNete && nextStage.id === 5 && !measurements.ferment_kl_coalho_add_time_iso) {
     measurements.ferment_kl_coalho_add_time_iso = nowIso;
     const mHistory = measurements._history || [];
-    mHistory.push({ key: 'ferment_kl_coalho_add_time_iso', value: nowIso, stageId: 5, timestamp: nowIso });
+    mHistory.push({ id: generateId(), key: 'ferment_kl_coalho_add_time_iso', value: nowIso, stageId: 5, timestamp: nowIso });
     measurements._history = mHistory;
     touchedMeasurements = true;
   }
@@ -458,7 +458,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
   if (isNete && nextStage.id === 17 && !measurements.brine_entry_time_iso) {
     measurements.brine_entry_time_iso = nowIso;
     const mHistory = measurements._history || [];
-    mHistory.push({ key: 'brine_entry_time_iso', value: nowIso, stageId: 17, timestamp: nowIso });
+    mHistory.push({ id: generateId(), key: 'brine_entry_time_iso', value: nowIso, stageId: 17, timestamp: nowIso });
     measurements._history = mHistory;
     touchedMeasurements = true;
   }
@@ -466,7 +466,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
   if (isNete && nextStage.id === 18 && !measurements.shelf_start_time_iso) {
     measurements.shelf_start_time_iso = nowIso;
     const mHistory = measurements._history || [];
-    mHistory.push({ key: 'shelf_start_time_iso', value: nowIso, stageId: 18, timestamp: nowIso });
+    mHistory.push({ id: generateId(), key: 'shelf_start_time_iso', value: nowIso, stageId: 18, timestamp: nowIso });
     measurements._history = mHistory;
     touchedMeasurements = true;
   }
@@ -477,7 +477,7 @@ export async function advanceBatch(batchId: number, apiCtx?: ApiContext | null):
   if (nextStage.auto_record_timestamp && !measurements[nextStage.auto_record_timestamp]) {
     measurements[nextStage.auto_record_timestamp] = nowIso;
     const mHistory = measurements._history || [];
-    mHistory.push({ key: nextStage.auto_record_timestamp, value: nowIso, stageId: nextStage.id, timestamp: nowIso });
+    mHistory.push({ id: generateId(), key: nextStage.auto_record_timestamp, value: nowIso, stageId: nextStage.id, timestamp: nowIso });
     measurements._history = mHistory;
     touchedMeasurements = true;
   }
@@ -732,19 +732,20 @@ export async function logPh(batchId: number, phValue: number, piecesQuantity?: n
   // Initial pH stage (stored_values contains 'initial_ph'): store as initial_ph + pieces
   if (isInitialPhStage) {
     measurements.initial_ph = phValue;
-    inputHistory.push({ key: 'initial_ph', value: phValue, timestamp, stageId });
+    inputHistory.push({ id: generateId(), key: 'initial_ph', value: phValue, timestamp, stageId });
     
     if (piecesQuantity !== undefined) {
       measurements.pieces_quantity = piecesQuantity;
-      inputHistory.push({ key: 'pieces_quantity', value: piecesQuantity, timestamp, stageId });
+      inputHistory.push({ id: generateId(), key: 'pieces_quantity', value: piecesQuantity, timestamp, stageId });
     }
   } else {
     // Loop stages and others: store as ph_value in history array
     measurements.ph_value = phValue;
+    const phEntryId = generateId();
     const phHistory = measurements.ph_measurements || [];
-    phHistory.push({ value: phValue, timestamp, stageId });
+    phHistory.push({ id: phEntryId, value: phValue, timestamp, stageId });
     measurements.ph_measurements = phHistory;
-    inputHistory.push({ key: 'ph_measurement', value: phValue, timestamp, stageId });
+    inputHistory.push({ id: phEntryId, key: 'ph_measurement', value: phValue, timestamp, stageId });
   }
   
   measurements._history = inputHistory;
@@ -905,7 +906,7 @@ export async function logTime(batchId: number, timeValue: string, timeType?: str
   measurements[key] = timeValue;
   
   const inputHistory = measurements._history || [];
-  inputHistory.push({ key, value: timeValue, timestamp: new Date().toISOString(), stageId: batch.currentStageId });
+  inputHistory.push({ id: generateId(), key, value: timeValue, timestamp: new Date().toISOString(), stageId: batch.currentStageId });
   measurements._history = inputHistory;
   
   await storage.updateBatch(batchId, { measurements });
@@ -973,6 +974,7 @@ export async function recordChamber2Entry(
   
   const inputHistory = measurements._history || [];
   const historyEntry: Record<string, any> = { 
+    id: generateId(),
     key: "chamber_2_entry_date", 
     value: entryDateValue, 
     timestamp: new Date().toISOString(), 

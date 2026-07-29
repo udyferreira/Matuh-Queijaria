@@ -195,6 +195,10 @@ export type CanonicalInput = {
 export type MeasurementEdit = {
   key: string;
   value: number | string;
+  /** Stable id of the _history entry being edited. Preferred over historyIndex — immune to
+   *  positional drift when concurrent entries are appended (e.g. loop-stage pH measurements). */
+  entryId?: string;
+  /** Legacy fallback, only used server-side when the entry predates stable ids. */
   historyIndex?: number;
   stageId?: number;
   /** ISO timestamp — when provided alongside ph_value, also updates the measurement timestamp */

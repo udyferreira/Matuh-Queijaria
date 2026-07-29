@@ -520,15 +520,15 @@ export default function BatchDetail() {
                              const loopPhArr = phArr.filter((p: any) =>
                                p.stageId === loopStageId || (altLoopStageId !== null && p.stageId === altLoopStageId) || p.stageId == null
                              );
-                             const bHistory: Array<{key: string; value: any; stageId: number; timestamp: string}> = bm._history || [];
-                             // Prefer _history (includes historyIndex for editing); fall back to ph_measurements
+                             const bHistory: Array<{id?: string; key: string; value: any; stageId: number; timestamp: string}> = bm._history || [];
+                             // Prefer _history (includes stable id for editing); fall back to ph_measurements
                              const historyBasedMeasurements = bHistory
-                               .map((e, hIdx) => ({ value: e.value, timestamp: e.timestamp, historyIndex: hIdx, _sid: e.stageId, _key: e.key }))
+                               .map((e, hIdx) => ({ value: e.value, timestamp: e.timestamp, entryId: e.id, historyIndex: hIdx, _sid: e.stageId, _key: e.key }))
                                .filter(e => (e._sid === loopStageId || (altLoopStageId !== null && e._sid === altLoopStageId)) && (e._key === 'ph_value' || e._key === 'ph_measurement'))
                                .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-                             const allMeasurements: Array<{value: any; timestamp: string; historyIndex?: number}> = historyBasedMeasurements.length > 0
+                             const allMeasurements: Array<{value: any; timestamp: string; entryId?: string; historyIndex?: number}> = historyBasedMeasurements.length > 0
                                ? historyBasedMeasurements
-                               : loopPhArr.map((p: any) => ({ value: p.value, timestamp: p.timestamp, historyIndex: undefined }));
+                               : loopPhArr.map((p: any) => ({ value: p.value, timestamp: p.timestamp, entryId: p.id, historyIndex: undefined }));
                              const lastEntry = allMeasurements.length > 0 ? allMeasurements[allMeasurements.length - 1] : null;
                              const fmtDate = (iso: string) => {
                                try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso)); } catch { return '—'; }
@@ -568,7 +568,7 @@ export default function BatchDetail() {
                                        </thead>
                                        <tbody>
                                          {allMeasurements.map((item, idx) => {
-                                           const loopEditKey = item.historyIndex !== undefined ? `loop_ph_active_${item.historyIndex}` : null;
+                                           const loopEditKey = (item.entryId ?? item.historyIndex) !== undefined ? `loop_ph_active_${item.entryId ?? item.historyIndex}` : null;
                                            const isEditingRow = loopEditKey !== null && editingKey === loopEditKey;
                                            const getTimeInput = (iso: string) => { try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso)).replace('h', ':'); } catch { return ''; } };
                                             const getDateInput = (iso: string) => { try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso)); } catch { return ''; } };
@@ -577,7 +577,7 @@ export default function BatchDetail() {
                                              if (isNaN(numPh)) return;
                                              let newTimestamp: string | undefined;
                                                if (item.timestamp) { try { const origDate = getDateInput(item.timestamp); const origTime = getTimeInput(item.timestamp); const dateChanged = editDate !== origDate; const timeChanged = editTime !== origTime; if (dateChanged || timeChanged) { const datePart = editDate || origDate; const timePart = editTime || origTime; newTimestamp = new Date(`${datePart}T${timePart}:00.000-03:00`).toISOString(); } } catch { /* ignore */ } }
-                                             editMeasurement({ id, data: { key: 'ph_value', value: numPh, historyIndex: item.historyIndex, stageId: loopStageId, ...(newTimestamp ? { newTimestamp } : {}) } as any }, {
+                                             editMeasurement({ id, data: { key: 'ph_value', value: numPh, entryId: item.entryId, historyIndex: item.historyIndex, stageId: loopStageId, ...(newTimestamp ? { newTimestamp } : {}) } as any }, {
                                                onSuccess: () => { setEditingKey(null); toast({ title: 'Medição atualizada' }); },
                                                onError: (e) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
                                              });
@@ -843,7 +843,7 @@ export default function BatchDetail() {
                 
                 {(() => {
                   const measurements = batch.measurements as Record<string, any> || {};
-                  const history = measurements._history as Array<{key: string; value: any; stageId: number; timestamp: string}> || [];
+                  const history = measurements._history as Array<{id?: string; key: string; value: any; stageId: number; timestamp: string}> || [];
                   
                   const LABEL_MAP_COMMON: Record<string, string> = {
                     'ph_value': 'Medição de pH',
@@ -877,9 +877,9 @@ export default function BatchDetail() {
                   const labelMap = batch.recipeId === 'QUEIJO_NINA' ? LABEL_MAP_NINA : LABEL_MAP_NETE;
 
                   
-                  type PhTableRow = { ph: string; date: string; time: string; historyIndex?: number; rawTimestamp?: string };
+                  type PhTableRow = { ph: string; date: string; time: string; entryId?: string; historyIndex?: number; rawTimestamp?: string };
                   type MeasurementItem =
-                    | { kind: 'row'; label: string; value: string; editKey: string; historyIndex?: number; stageId?: number; editable: boolean }
+                    | { kind: 'row'; label: string; value: string; editKey: string; entryId?: string; historyIndex?: number; stageId?: number; editable: boolean }
                     | { kind: 'ph_table'; stageId: number; label: string; rows: PhTableRow[] };
                   const items: MeasurementItem[] = [];
                   const fmtPhDate = (iso: string) => { try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso)); } catch { return '—'; } };
@@ -917,15 +917,16 @@ export default function BatchDetail() {
                             ph: String(entry.value),
                             date: entry.timestamp ? fmtPhDate(entry.timestamp) : '—',
                             time: entry.timestamp ? fmtPhTime(entry.timestamp) : '—',
+                            entryId: entry.id,
                             historyIndex: idx,
                             rawTimestamp: entry.timestamp,
                           });
                         } else {
                           // Etapa não-loop (ex.: measure): linhas simples
                           if (entry.timestamp) {
-                            items.push({ kind: 'row', label: `Etapa ${entry.stageId} — Hora da medição de pH`, value: fmtPhTime(entry.timestamp), editKey: `${entry.key}_time_${idx}`, historyIndex: idx, stageId: entry.stageId, editable: true });
+                            items.push({ kind: 'row', label: `Etapa ${entry.stageId} — Hora da medição de pH`, value: fmtPhTime(entry.timestamp), editKey: `${entry.key}_time_${idx}`, entryId: entry.id, historyIndex: idx, stageId: entry.stageId, editable: true });
                           }
-                          items.push({ kind: 'row', label: `Etapa ${entry.stageId} — Medição do pH`, value: String(entry.value), editKey: entry.key, historyIndex: idx, stageId: entry.stageId, editable: true });
+                          items.push({ kind: 'row', label: `Etapa ${entry.stageId} — Medição do pH`, value: String(entry.value), editKey: entry.key, entryId: entry.id, historyIndex: idx, stageId: entry.stageId, editable: true });
                         }
                       } else {
                         const label = `Etapa ${entry.stageId} - ${labelMap[entry.key]}`;
@@ -942,7 +943,7 @@ export default function BatchDetail() {
                             }).format(new Date(entry.value));
                           } catch { /* keep raw */ }
                         }
-                        items.push({ kind: 'row', label, value: displayValue, editKey: entry.key, historyIndex: idx, stageId: entry.stageId, editable: true });
+                        items.push({ kind: 'row', label, value: displayValue, editKey: entry.key, entryId: entry.id, historyIndex: idx, stageId: entry.stageId, editable: true });
                       }
                     });
                     insertPhTables(phGroupsByStage);
@@ -1003,7 +1004,7 @@ export default function BatchDetail() {
                             </thead>
                             <tbody>
                               {item.rows.map((row, n) => {
-                                const histEditKey = row.historyIndex !== undefined ? `loop_ph_hist_${row.historyIndex}` : null;
+                                const histEditKey = (row.entryId ?? row.historyIndex) !== undefined ? `loop_ph_hist_${row.entryId ?? row.historyIndex}` : null;
                                 const isEditingRow = histEditKey !== null && editingKey === histEditKey;
                                 const getTimeInput = (iso: string) => { try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso)).replace('h', ':'); } catch { return ''; } };
                                 const getDateInput = (iso: string) => { try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso)); } catch { return ''; } };
@@ -1012,7 +1013,7 @@ export default function BatchDetail() {
                                   if (isNaN(numPh)) return;
                                   let newTimestamp: string | undefined;
                                    if (row.rawTimestamp) { try { const origDate = getDateInput(row.rawTimestamp); const origTime = getTimeInput(row.rawTimestamp); const dateChanged = editDate !== origDate; const timeChanged = editTime !== origTime; if (dateChanged || timeChanged) { const datePart = editDate || origDate; const timePart = editTime || origTime; newTimestamp = new Date(`${datePart}T${timePart}:00.000-03:00`).toISOString(); } } catch { /* ignore */ } }
-                                  editMeasurement({ id, data: { key: 'ph_value', value: numPh, historyIndex: row.historyIndex, stageId: item.stageId, ...(newTimestamp ? { newTimestamp } : {}) } as any }, {
+                                  editMeasurement({ id, data: { key: 'ph_value', value: numPh, entryId: row.entryId, historyIndex: row.historyIndex, stageId: item.stageId, ...(newTimestamp ? { newTimestamp } : {}) } as any }, {
                                     onSuccess: () => { setEditingKey(null); toast({ title: 'Medição atualizada' }); },
                                     onError: (e) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
                                   });
@@ -1033,7 +1034,7 @@ export default function BatchDetail() {
                       );
                     }
 
-                    const uniqueKey = `${item.editKey}-${item.historyIndex ?? idx}`;
+                    const uniqueKey = `${item.editKey}-${item.entryId ?? item.historyIndex ?? idx}`;
                     const isEditingThis = editingKey === uniqueKey;
 
                     return (
@@ -1060,7 +1061,7 @@ export default function BatchDetail() {
                                     const numVal = parseFloat(editValue);
                                     finalVal = keepAsString || isNaN(numVal) ? editValue : numVal;
                                   }
-                                  editMeasurement({ id, data: { key: item.editKey, value: finalVal, historyIndex: item.historyIndex, stageId: item.stageId } }, {
+                                  editMeasurement({ id, data: { key: item.editKey, value: finalVal, entryId: item.entryId, historyIndex: item.historyIndex, stageId: item.stageId } }, {
                                     onSuccess: () => { setEditingKey(null); toast({ title: "Medição atualizada" }); },
                                     onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
                                   });
@@ -1083,7 +1084,7 @@ export default function BatchDetail() {
                                   const numVal = parseFloat(editValue);
                                   finalVal = keepAsString || isNaN(numVal) ? editValue : numVal;
                                 }
-                                editMeasurement({ id, data: { key: item.editKey, value: finalVal, historyIndex: item.historyIndex, stageId: item.stageId } }, {
+                                editMeasurement({ id, data: { key: item.editKey, value: finalVal, entryId: item.entryId, historyIndex: item.historyIndex, stageId: item.stageId } }, {
                                   onSuccess: () => { setEditingKey(null); toast({ title: "Medição atualizada" }); },
                                   onError: (e) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
                                 });
