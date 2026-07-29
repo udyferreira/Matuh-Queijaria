@@ -1061,6 +1061,34 @@ export async function logDate(batchId: number, dateValue: string, dateType?: str
 
 
 /**
+ * Returns a hint with ALL calculated ingredients for the batch start announcement.
+ * Recipe-agnostic: reads ingredient definitions (name, unit) directly from the recipe,
+ * so no recipeId or stageId is hardcoded here.
+ */
+export function getAllCalculatedInputsHint(batch: any, rm: RecipeManager): string {
+  const calculatedInputs = (batch.calculatedInputs as Record<string, number>) || {};
+  const recipeInputs = rm.getRecipeDetail().inputs;
+
+  const parts: string[] = [];
+  for (const input of recipeInputs) {
+    if (input.id === 'MILK') continue; // leite bruto não é insumo calculado
+    const value = calculatedInputs[input.id];
+    if (value != null && value > 0) {
+      // Format: avoid unnecessary decimals (e.g. 6.0 → "6", 13.2 → "13,2")
+      const formatted = Number.isInteger(value)
+        ? String(value)
+        : value.toFixed(1).replace('.', ',');
+      parts.push(`${formatted} ${input.unit} de ${input.name}`);
+    }
+  }
+
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return ` Você vai precisar de ${parts[0]}.`;
+  const last = parts.pop();
+  return ` Você vai precisar de ${parts.join(', ')} e ${last}.`;
+}
+
+/**
  * Returns calculated-input quantity hints for the given stage (e.g. "Use 65 ml de coalho.").
  * Used by both buildStageSpeech and the Alexa buildStageGuidance path in routes.ts.
  */
