@@ -197,6 +197,8 @@ export type MeasurementEdit = {
   value: number | string;
   historyIndex?: number;
   stageId?: number;
+  /** ISO timestamp — when provided alongside ph_value, also updates the measurement timestamp */
+  newTimestamp?: string;
 };
 
 export function useEditMeasurement() {

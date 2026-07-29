@@ -43,6 +43,7 @@ export default function BatchDetail() {
   const [cancelReason, setCancelReason] = useState("");
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [editTime, setEditTime] = useState<string>('');
   const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   // Heat curd stage (Nina stage 15) — 3-min repeating timer until 38°C is reached
@@ -519,11 +520,14 @@ export default function BatchDetail() {
                                p.stageId === loopStageId || (altLoopStageId !== null && p.stageId === altLoopStageId) || p.stageId == null
                              );
                              const bHistory: Array<{key: string; value: any; stageId: number; timestamp: string}> = bm._history || [];
-                             const allMeasurements: Array<{value: any; timestamp: string}> = loopPhArr.length > 0
-                               ? loopPhArr
-                               : bHistory
-                                   .filter(e => (e.stageId === loopStageId || (altLoopStageId !== null && e.stageId === altLoopStageId)) && (e.key === 'ph_value' || e.key === 'ph_measurement'))
-                                   .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+                             // Prefer _history (includes historyIndex for editing); fall back to ph_measurements
+                             const historyBasedMeasurements = bHistory
+                               .map((e, hIdx) => ({ value: e.value, timestamp: e.timestamp, historyIndex: hIdx, _sid: e.stageId, _key: e.key }))
+                               .filter(e => (e._sid === loopStageId || (altLoopStageId !== null && e._sid === altLoopStageId)) && (e._key === 'ph_value' || e._key === 'ph_measurement'))
+                               .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+                             const allMeasurements: Array<{value: any; timestamp: string; historyIndex?: number}> = historyBasedMeasurements.length > 0
+                               ? historyBasedMeasurements
+                               : loopPhArr.map((p: any) => ({ value: p.value, timestamp: p.timestamp, historyIndex: undefined }));
                              const lastEntry = allMeasurements.length > 0 ? allMeasurements[allMeasurements.length - 1] : null;
                              const fmtDate = (iso: string) => {
                                try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso)); } catch { return '—'; }
@@ -554,21 +558,38 @@ export default function BatchDetail() {
                                      <table className="w-full text-sm border-collapse">
                                        <thead>
                                          <tr className="bg-secondary/50">
-                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tl-md w-1/4">Virada</th>
-                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-1/4">Data</th>
-                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-1/4">Hora (BRT)</th>
-                                           <th className="text-center px-3 py-1.5 font-semibold text-muted-foreground rounded-tr-md w-1/4">pH</th>
+                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tl-md w-[10%]">Virada</th>
+                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-[25%]">Data</th>
+                                           <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-[25%]">Hora (BRT)</th>
+                                           <th className="text-center px-3 py-1.5 font-semibold text-muted-foreground w-[20%]">pH</th>
+                                           <th className="px-3 py-1.5 rounded-tr-md w-[20%]"></th>
                                          </tr>
                                        </thead>
                                        <tbody>
-                                         {allMeasurements.map((item, idx) => (
+                                         {allMeasurements.map((item, idx) => {
+                                           const loopEditKey = item.historyIndex !== undefined ? `loop_ph_active_${item.historyIndex}` : null;
+                                           const isEditingRow = loopEditKey !== null && editingKey === loopEditKey;
+                                           const getTimeInput = (iso: string) => { try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso)).replace('h', ':'); } catch { return ''; } };
+                                           const saveLoopPh = () => {
+                                             const numPh = parseFloat(editValue);
+                                             if (isNaN(numPh)) return;
+                                             let newTimestamp: string | undefined;
+                                             if (editTime && item.timestamp) { try { const p = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(item.timestamp)).split('/'); newTimestamp = new Date(`${p[2]}-${p[1]}-${p[0]}T${editTime}:00.000-03:00`).toISOString(); } catch { /* ignore */ } }
+                                             editMeasurement({ id, data: { key: 'ph_value', value: numPh, historyIndex: item.historyIndex, stageId: loopStageId, ...(newTimestamp ? { newTimestamp } : {}) } as any }, {
+                                               onSuccess: () => { setEditingKey(null); toast({ title: 'Medição atualizada' }); },
+                                               onError: (e) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
+                                             });
+                                           };
+                                           return (
                                            <tr key={idx} className="even:bg-secondary/20" data-testid={`row-ph-${idx}`}>
                                              <td className="px-3 py-1.5 text-muted-foreground">{idx + 1}ª</td>
                                              <td className="px-3 py-1.5">{item.timestamp ? fmtDate(item.timestamp) : '—'}</td>
-                                             <td className="px-3 py-1.5">{item.timestamp ? fmtTime(item.timestamp) : '—'}</td>
-                                             <td className="px-3 py-1.5 text-center font-medium" data-testid={`text-ph-value-${idx}`}>{item.value}</td>
+                                             <td className="px-3 py-1.5">{isEditingRow ? <Input type="time" className="h-6 w-[5.5rem] text-xs font-mono px-1" value={editTime} onChange={e => setEditTime(e.target.value)} /> : item.timestamp ? fmtTime(item.timestamp) : '—'}</td>
+                                             <td className="px-3 py-1.5 text-center font-medium" data-testid={`text-ph-value-${idx}`}>{isEditingRow ? <Input type="number" step="0.01" className="h-6 w-14 text-xs font-mono text-center px-1" value={editValue} onChange={e => setEditValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveLoopPh(); if (e.key === 'Escape') setEditingKey(null); }} /> : item.value}</td>
+                                             <td className="px-2 py-1">{loopEditKey !== null && (isEditingRow ? (<div className="flex items-center justify-end gap-1"><Button size="icon" variant="ghost" className="h-6 w-6" disabled={isEditing} onClick={saveLoopPh}><Check className="w-3 h-3" /></Button><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingKey(null)}><X className="w-3 h-3" /></Button></div>) : (<Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingKey(loopEditKey); setEditValue(String(item.value)); setEditTime(item.timestamp ? getTimeInput(item.timestamp) : ''); }}><Pencil className="w-3 h-3 text-muted-foreground" /></Button>))}</td>
                                            </tr>
-                                         ))}
+                                           );
+                                         })}
                                        </tbody>
                                      </table>
                                    </div>
@@ -854,7 +875,7 @@ export default function BatchDetail() {
                   const labelMap = batch.recipeId === 'QUEIJO_NINA' ? LABEL_MAP_NINA : LABEL_MAP_NETE;
 
                   
-                  type PhTableRow = { ph: string; date: string; time: string };
+                  type PhTableRow = { ph: string; date: string; time: string; historyIndex?: number; rawTimestamp?: string };
                   type MeasurementItem =
                     | { kind: 'row'; label: string; value: string; editKey: string; historyIndex?: number; stageId?: number; editable: boolean }
                     | { kind: 'ph_table'; stageId: number; label: string; rows: PhTableRow[] };
@@ -894,6 +915,8 @@ export default function BatchDetail() {
                             ph: String(entry.value),
                             date: entry.timestamp ? fmtPhDate(entry.timestamp) : '—',
                             time: entry.timestamp ? fmtPhTime(entry.timestamp) : '—',
+                            historyIndex: idx,
+                            rawTimestamp: entry.timestamp,
                           });
                         } else {
                           // Etapa não-loop (ex.: measure): linhas simples
@@ -969,21 +992,38 @@ export default function BatchDetail() {
                           <table className="w-full text-sm border-collapse mt-1">
                             <thead>
                               <tr className="bg-secondary/50">
-                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tl-md w-1/4">Virada</th>
-                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-1/4">Data</th>
-                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-1/4">Hora (BRT)</th>
-                                <th className="text-center px-3 py-1.5 font-semibold text-muted-foreground rounded-tr-md w-1/4">pH</th>
+                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground rounded-tl-md w-[10%]">Virada</th>
+                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-[25%]">Data</th>
+                                <th className="text-left px-3 py-1.5 font-semibold text-muted-foreground w-[25%]">Hora (BRT)</th>
+                                <th className="text-center px-3 py-1.5 font-semibold text-muted-foreground w-[20%]">pH</th>
+                                <th className="px-3 py-1.5 rounded-tr-md w-[20%]"></th>
                               </tr>
                             </thead>
                             <tbody>
-                              {item.rows.map((row, n) => (
+                              {item.rows.map((row, n) => {
+                                const histEditKey = row.historyIndex !== undefined ? `loop_ph_hist_${row.historyIndex}` : null;
+                                const isEditingRow = histEditKey !== null && editingKey === histEditKey;
+                                const getTimeInput = (iso: string) => { try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso)).replace('h', ':'); } catch { return ''; } };
+                                const saveHistPh = () => {
+                                  const numPh = parseFloat(editValue);
+                                  if (isNaN(numPh)) return;
+                                  let newTimestamp: string | undefined;
+                                  if (editTime && row.rawTimestamp) { try { const p = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(row.rawTimestamp)).split('/'); newTimestamp = new Date(`${p[2]}-${p[1]}-${p[0]}T${editTime}:00.000-03:00`).toISOString(); } catch { /* ignore */ } }
+                                  editMeasurement({ id, data: { key: 'ph_value', value: numPh, historyIndex: row.historyIndex, stageId: item.stageId, ...(newTimestamp ? { newTimestamp } : {}) } as any }, {
+                                    onSuccess: () => { setEditingKey(null); toast({ title: 'Medição atualizada' }); },
+                                    onError: (e) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
+                                  });
+                                };
+                                return (
                                 <tr key={n} className="even:bg-secondary/20" data-testid={`row-ph-history-${item.stageId}-${n}`}>
                                   <td className="px-3 py-1.5 text-muted-foreground">{n + 1}ª</td>
                                   <td className="px-3 py-1.5">{row.date}</td>
-                                  <td className="px-3 py-1.5">{row.time}</td>
-                                  <td className="px-3 py-1.5 text-center font-mono font-bold">{row.ph}</td>
+                                  <td className="px-3 py-1.5">{isEditingRow ? <Input type="time" className="h-6 w-[5.5rem] text-xs font-mono px-1" value={editTime} onChange={e => setEditTime(e.target.value)} /> : row.time}</td>
+                                  <td className="px-3 py-1.5 text-center font-mono font-bold">{isEditingRow ? <Input type="number" step="0.01" className="h-6 w-14 text-xs font-mono text-center px-1" value={editValue} onChange={e => setEditValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveHistPh(); if (e.key === 'Escape') setEditingKey(null); }} /> : row.ph}</td>
+                                  <td className="px-2 py-1">{histEditKey !== null && (isEditingRow ? (<div className="flex items-center justify-end gap-1"><Button size="icon" variant="ghost" className="h-6 w-6" disabled={isEditing} onClick={saveHistPh}><Check className="w-3 h-3" /></Button><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingKey(null)}><X className="w-3 h-3" /></Button></div>) : (<Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingKey(histEditKey); setEditValue(row.ph); setEditTime(row.rawTimestamp ? getTimeInput(row.rawTimestamp) : ''); }}><Pencil className="w-3 h-3 text-muted-foreground" /></Button>))}</td>
                                 </tr>
-                              ))}
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>

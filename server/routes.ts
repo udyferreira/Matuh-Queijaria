@@ -524,7 +524,7 @@ export async function registerRoutes(
 
   app.put("/api/batches/:id/measurements", async (req, res) => {
     const batchId = Number(req.params.id);
-    const { key, value, historyIndex, stageId } = req.body;
+    const { key, value, historyIndex, stageId, newTimestamp } = req.body;
 
     if (!key || value === undefined) {
       return res.status(400).json({ message: "key e value são obrigatórios" });
@@ -568,11 +568,20 @@ export async function registerRoutes(
         maturationEndDate: matEnd,
       });
     } else {
+      let oldTimestampForPhSync: string | undefined;
+
       if (historyIndex !== undefined && measurements._history) {
         const history = measurements._history as Array<{ key: string; value: any; stageId: number; timestamp: string }>;
         if (historyIndex >= 0 && historyIndex < history.length && history[historyIndex].key === key) {
+          oldTimestampForPhSync = history[historyIndex].timestamp;
           history[historyIndex].value = value;
-          history[historyIndex].timestamp = new Date().toISOString();
+          // ph_value timestamp = when the measurement was taken, not when it was edited.
+          // Use newTimestamp if explicitly provided; for ph_value preserve original; otherwise update to now.
+          history[historyIndex].timestamp = newTimestamp
+            ? String(newTimestamp)
+            : key === 'ph_value'
+              ? oldTimestampForPhSync
+              : new Date().toISOString();
         }
       }
 
@@ -583,8 +592,15 @@ export async function registerRoutes(
         measurements[key] = value;
         if (measurements.ph_measurements && stageId) {
           const pmArr = measurements.ph_measurements as Array<{ value: any; stageId: number; timestamp: string }>;
-          const match = pmArr.find((m) => m.stageId === stageId);
-          if (match) match.value = value;
+          // Use oldTimestamp to identify the exact entry — fixes loop stages where multiple
+          // entries share the same stageId (find-by-stageId would always hit the first one).
+          const match = oldTimestampForPhSync
+            ? pmArr.find((m) => m.timestamp === oldTimestampForPhSync)
+            : pmArr.find((m) => m.stageId === stageId);
+          if (match) {
+            match.value = value;
+            if (newTimestamp) match.timestamp = String(newTimestamp);
+          }
         }
       } else {
         measurements[key] = value;
