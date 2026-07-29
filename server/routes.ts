@@ -618,7 +618,34 @@ export async function registerRoutes(
     });
 
     const updated = await storage.getBatch(batchId);
-    res.json(updated);
+    if (!updated) return res.status(404).json({ message: "Batch not found" });
+    // Return the same enriched response as GET /api/batches/:id so that
+    // setQueryData on the client updates the cache with complete data
+    // (stageTypeMap, stageInfo, etc. are required for correct rendering).
+    const rm2 = getRecipeForBatch(updated);
+    const currentStage2 = rm2.getStage(updated.currentStageId);
+    const now2 = new Date();
+    const activeTimers2 = ((updated.activeTimers as any[]) || []).map(t => ({
+      ...t,
+      isComplete: new Date(t.endTime) <= now2
+    }));
+    const stageInfo2 = currentStage2 ? rm2.formatStageDetail(currentStage2) : undefined;
+    if (stageInfo2?.timer) {
+      if (stageInfo2.timer.intervalMin != null) stageInfo2.timer.intervalMin = getIntervalDurationMinutes(currentStage2);
+      if (stageInfo2.timer.durationMin != null) stageInfo2.timer.durationMin = getTimerDurationMinutes(currentStage2);
+    }
+    const stageTypeMap2: Record<number, string> = {};
+    for (const s of rm2.getRecipeDetail().stages) {
+      if (s.stageId != null && s.type) stageTypeMap2[s.stageId] = s.type;
+    }
+    res.json({
+      ...updated,
+      activeTimers: activeTimers2,
+      stageInfo: stageInfo2,
+      stageTypeMap: stageTypeMap2,
+      totalStages: rm2.getRecipeSummary().stageCount,
+      recipeName: rm2.getRecipeName()
+    });
   });
 
 
