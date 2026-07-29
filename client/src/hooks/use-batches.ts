@@ -217,8 +217,11 @@ export function useEditMeasurement() {
       }
       return await res.json();
     },
-    onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: [api.batches.get.path, id] });
+    onSuccess: (updatedBatch, { id }) => {
+      // Update the cache directly with the batch returned by the PUT response.
+      // This avoids a async-refetch race where setEditingKey(null) re-renders
+      // the component before invalidateQueries has had a chance to complete.
+      queryClient.setQueryData([api.batches.get.path, id], updatedBatch);
       queryClient.invalidateQueries({ queryKey: [api.batches.status.path, id] });
       queryClient.invalidateQueries({ queryKey: [api.batches.logs.path, id] });
     },

@@ -576,7 +576,7 @@ export default function BatchDetail() {
                                              const numPh = parseFloat(editValue);
                                              if (isNaN(numPh)) return;
                                              let newTimestamp: string | undefined;
-                                              if ((editDate || editTime) && item.timestamp) { try { const datePart = editDate || getDateInput(item.timestamp); const timePart = editTime || getTimeInput(item.timestamp); newTimestamp = new Date(`${datePart}T${timePart}:00.000-03:00`).toISOString(); } catch { /* ignore */ } }
+                                               if (item.timestamp) { try { const origDate = getDateInput(item.timestamp); const origTime = getTimeInput(item.timestamp); const dateChanged = editDate !== origDate; const timeChanged = editTime !== origTime; if (dateChanged || timeChanged) { const datePart = editDate || origDate; const timePart = editTime || origTime; newTimestamp = new Date(`${datePart}T${timePart}:00.000-03:00`).toISOString(); } } catch { /* ignore */ } }
                                              editMeasurement({ id, data: { key: 'ph_value', value: numPh, historyIndex: item.historyIndex, stageId: loopStageId, ...(newTimestamp ? { newTimestamp } : {}) } as any }, {
                                                onSuccess: () => { setEditingKey(null); toast({ title: 'Medição atualizada' }); },
                                                onError: (e) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
@@ -1011,7 +1011,7 @@ export default function BatchDetail() {
                                   const numPh = parseFloat(editValue);
                                   if (isNaN(numPh)) return;
                                   let newTimestamp: string | undefined;
-                                  if ((editDate || editTime) && row.rawTimestamp) { try { const datePart = editDate || getDateInput(row.rawTimestamp); const timePart = editTime || getTimeInput(row.rawTimestamp); newTimestamp = new Date(`${datePart}T${timePart}:00.000-03:00`).toISOString(); } catch { /* ignore */ } }
+                                   if (row.rawTimestamp) { try { const origDate = getDateInput(row.rawTimestamp); const origTime = getTimeInput(row.rawTimestamp); const dateChanged = editDate !== origDate; const timeChanged = editTime !== origTime; if (dateChanged || timeChanged) { const datePart = editDate || origDate; const timePart = editTime || origTime; newTimestamp = new Date(`${datePart}T${timePart}:00.000-03:00`).toISOString(); } } catch { /* ignore */ } }
                                   editMeasurement({ id, data: { key: 'ph_value', value: numPh, historyIndex: row.historyIndex, stageId: item.stageId, ...(newTimestamp ? { newTimestamp } : {}) } as any }, {
                                     onSuccess: () => { setEditingKey(null); toast({ title: 'Medição atualizada' }); },
                                     onError: (e) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
