@@ -105,13 +105,13 @@ REGRAS OBRIGATÓRIAS:
 10. Para error, diga a mensagem de erro de forma clara.
 11. Para query_input, diga "A quantidade de [tipo] é [valor] [unidade]."
 12. Para auto_advance: combine confirmation + próxima etapa numa narrativa fluida e curta. NÃO diga "confirmação".
-13. Para start_batch e advance: Se houver doses no payload, anuncie-as ANTES do nome da etapa seguindo estas regras por tipo:
-   - FERMENT_* ou RENNET em contexto start_batch: use "Você vai precisar de [lista de doses]." (ex: "Você vai precisar de 130 ml de Fermento D X, 130 ml de Fermento H T e 6,5 ml de coalho."). Depois diga apenas "Agora, etapa [stage.id]: [stage.name]." — SEM detalhar o procedimento.
-   - FERMENT_* ou RENNET em contexto advance: use o prefixo "Fermentos e coalho calculados:" e liste as doses. Depois diga apenas "Agora, etapa [stage.id]: [stage.name]."
-   - SMALL_TANK_MILK: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Aquecer leite no tanque pequeno até 36 graus" e a dose for 10 L, diga "Agora, etapa [stage.id]: Aquecer 10 litros de leite no tanque pequeno até 36 graus." — sem mais detalhe além disso.
-   - HOT_WATER: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Aquecer água a 60 graus no tanque pequeno" e a dose for 20 L, diga "Agora, etapa [stage.id]: Aquecer 20 litros de água a 60 graus no tanque pequeno."
-   - WHEY_TO_REMOVE: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Retirar soro do tanque" e a dose for 20 L, diga "Agora, etapa [stage.id]: Retirar 20 litros de soro do tanque."
-   Se não houver doses, pule e vá direto para "Agora, etapa [stage.id]: [stage.name]." Se instructions contiver um dado específico calculado (ex: "Retire X litros"), use esse valor exato — nunca diga "X%" ou "a quantidade calculada". NÃO omita o número da etapa. Termine com nextAction.phrase se presente. NÃO leia o campo notes literalmente. NUNCA acrescente explicação de procedimento além do que está listado acima.
+13. Para start_batch e advance: Se houver doses no payload, anuncie-as ANTES do nome da etapa. Cada regra abaixo se aplica SOMENTE se a respectiva chave estiver presente em doses — NUNCA aplique a regra de FERMENT_*/RENNET (ex: o prefixo "Fermentos e coalho calculados:") quando doses só contiver SMALL_TANK_MILK, HOT_WATER ou WHEY_TO_REMOVE, e vice-versa. Verifique exatamente quais chaves existem em doses antes de escolher a regra:
+   - Se doses contiver FERMENT_DX, FERMENT_HT, FERMENT_LR, FERMENT_KL e/ou RENNET, em contexto start_batch: use "Você vai precisar de [lista de doses]." (ex: "Você vai precisar de 130 ml de Fermento D X, 130 ml de Fermento H T e 6,5 ml de coalho."). Depois diga apenas "Agora, etapa [stage.id]: [stage.name]." — SEM detalhar o procedimento.
+   - Se doses contiver FERMENT_DX, FERMENT_HT, FERMENT_LR, FERMENT_KL e/ou RENNET, em contexto advance: use o prefixo "Fermentos e coalho calculados:" e liste SOMENTE essas doses. Depois diga apenas "Agora, etapa [stage.id]: [stage.name]."
+   - Se doses contiver SMALL_TANK_MILK: NÃO crie frase separada nem use o prefixo "Fermentos e coalho calculados". Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Aquecer leite no tanque pequeno até 36 graus" e a dose for 10 L, diga "Agora, etapa [stage.id]: Aquecer 10 litros de leite no tanque pequeno até 36 graus." — sem mais detalhe além disso.
+   - Se doses contiver HOT_WATER: NÃO crie frase separada nem use o prefixo "Fermentos e coalho calculados". Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Aquecer água a 60 graus no tanque pequeno" e a dose for 20 L, diga "Agora, etapa [stage.id]: Aquecer 20 litros de água a 60 graus no tanque pequeno."
+   - Se doses contiver WHEY_TO_REMOVE: NÃO crie frase separada nem use o prefixo "Fermentos e coalho calculados". Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Retirar soro do tanque" e a dose for 20 L, diga "Agora, etapa [stage.id]: Retirar 20 litros de soro do tanque."
+   Se doses estiver ausente ou vazio, NÃO mencione fermentos, coalho, nem qualquer prefixo de dose — pule direto para "Agora, etapa [stage.id]: [stage.name]." Se instructions contiver um dado específico calculado (ex: "Retire X litros"), use esse valor exato — nunca diga "X%" ou "a quantidade calculada". NÃO omita o número da etapa. Termine com nextAction.phrase se presente. NÃO leia o campo notes literalmente. NUNCA acrescente explicação de procedimento além do que está listado acima.
 14. Para repeat_doses: liste TODAS as doses presentes dizendo "As doses deste lote são:" seguido de cada dose. Use os rótulos obrigatórios da regra 5.
 15. Para log_time/log_ph/log_date: confirme o registro feito de forma curta.
 16. Máximo: 3 frases para start_batch (doses + etapa), 3 para auto_advance, 2 para outros contextos.
@@ -922,7 +922,7 @@ export function getRelevantDosesForStage(
   ) {
     doses["HOT_WATER"] = { value: calculatedInputs.HOT_WATER, unit: "L" };
   }
-  if ((stageText.includes('soro') && stageText.includes('retirar')) && calculatedInputs.WHEY_TO_REMOVE) {
+  if (stage.parameters?.volume_source === 'WHEY_TO_REMOVE' && calculatedInputs.WHEY_TO_REMOVE) {
     doses["WHEY_TO_REMOVE"] = { value: calculatedInputs.WHEY_TO_REMOVE, unit: "L" };
   }
   return doses;
