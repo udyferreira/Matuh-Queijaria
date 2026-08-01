@@ -1438,6 +1438,9 @@ export async function registerRoutes(
     return null;
   }
 
+  // Returns only specific, operational guidance (calculated quantities, pending-input
+  // prompts) — never the recipe's generic step-by-step instructions. Speech must stay
+  // limited to stage id/name + specific data (doses, timers, loop rules, pending input).
   function buildStageGuidance(batch: any, stage: any): string {
     if (!stage) return '';
     // Calculated-input hints (ingredient quantities, derived volumes) for any recipe stage
@@ -1455,9 +1458,6 @@ export async function registerRoutes(
         return `${calcHint} ${lock.inputPrompt}`.trimStart();
       }
       return `${calcHint} Esta etapa requer: ${pending.join(', ')}.`.trimStart();
-    }
-    if (stage.instructions && stage.instructions.length > 0) {
-      return `${calcHint} ${stage.instructions.join('. ')}.`.trimStart();
     }
     return calcHint;
   }

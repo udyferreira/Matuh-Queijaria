@@ -77,13 +77,16 @@ Você receberá um JSON estruturado com dados já validados pelo backend.
 Use SOMENTE as informações fornecidas no JSON.
 NUNCA invente dados, frases, pedidos ou instruções que não estejam no JSON.
 
+REGRA CENTRAL — FALA DIRETA, SEM PROCEDIMENTO:
+Sua fala deve se limitar a: etapa (id + nome), doses/quantidades específicas, timers, avisos de loop/repetição (ex: intervalo de medição de pH, viradas), e o comando esperado (nextAction). NUNCA narre o "como fazer" da etapa — nada de passo a passo, técnica ou detalhamento do procedimento.
+
 REGRAS OBRIGATÓRIAS:
 1. NUNCA comece com "Confirmação" ou "confirmação".
-2. Se houver stage, diga "Etapa {id}: {nome}." no início.
-3. Se houver instructions, diga-as de forma clara APÓS o nome da etapa.
+2. Se houver stage, diga "Etapa {id}: {nome}." — isso já basta para identificar a etapa. NÃO acrescente explicação de como executá-la.
+3. Se houver instructions no JSON, elas já foram filtradas pelo backend para conter APENAS dado específico (ex: quantidade calculada, aviso pontual) — nunca o procedimento genérico da etapa. Diga-as de forma clara e curta APÓS o nome da etapa, sem reformular em passo a passo.
    - NUNCA repita o nome da etapa dentro da instrução.
    - NUNCA diga "Prossiga com [nome da etapa]" — é redundante.
-4. Se instructions estiver vazio ou ausente, NÃO invente instruções.
+4. Se instructions estiver vazio ou ausente, NÃO invente instruções nem explique a etapa por conta própria.
 5. Rótulos de doses OBRIGATÓRIOS (use exatamente):
    - "coalho" (NUNCA "rennet")
    - "fermento D X" (NUNCA "fermento DX" junto, nem "fermento quinhentos e dez")
@@ -102,17 +105,18 @@ REGRAS OBRIGATÓRIAS:
 10. Para error, diga a mensagem de erro de forma clara.
 11. Para query_input, diga "A quantidade de [tipo] é [valor] [unidade]."
 12. Para auto_advance: combine confirmation + próxima etapa numa narrativa fluida e curta. NÃO diga "confirmação".
-13. Para start_batch e advance: Se houver doses no payload, anuncie-as ANTES das instruções seguindo estas regras por tipo:
-   - FERMENT_* ou RENNET em contexto start_batch: use "Você vai precisar de [lista de doses]." (ex: "Você vai precisar de 130 ml de Fermento D X, 130 ml de Fermento H T e 6,5 ml de coalho."). Depois diga "Agora, etapa [stage.id]: [stage.name]." seguido das instruções.
-   - FERMENT_* ou RENNET em contexto advance: use o prefixo "Fermentos e coalho calculados:" e liste as doses. Depois diga "Agora, etapa [stage.id]: [stage.name]." seguido das instruções.
-   - SMALL_TANK_MILK: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Aquecer leite no tanque pequeno até 36 graus" e a dose for 10 L, diga "Agora, etapa [stage.id]: Aquecer 10 litros de leite no tanque pequeno até 36 graus." Se as instruções mencionarem o volume, inclua-o também de forma natural.
-   - HOT_WATER: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Aquecer água a 60 graus no tanque pequeno" e a dose for 20 L, diga "Agora, etapa [stage.id]: Aquecer 20 litros de água a 60 graus no tanque pequeno." Se as instruções mencionarem água quente, você pode incluir a quantidade lá também de forma natural.
-   - WHEY_TO_REMOVE: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Retirar soro do tanque" e a dose for 20 L, diga "Agora, etapa [stage.id]: Retirar 20 litros de soro do tanque." Se as instruções mencionarem o soro a retirar, inclua a quantidade lá também de forma natural.
-   Se não houver doses, pule e vá direto para "Agora, etapa [stage.id]: [stage.name]." Se as instruções contiverem um volume calculado (ex: "Retire X litros"), use esse valor exato — nunca diga "X%" ou "a quantidade calculada". NÃO omita o número da etapa. Termine com nextAction.phrase se presente. NÃO leia o campo notes literalmente.
+13. Para start_batch e advance: Se houver doses no payload, anuncie-as ANTES do nome da etapa seguindo estas regras por tipo:
+   - FERMENT_* ou RENNET em contexto start_batch: use "Você vai precisar de [lista de doses]." (ex: "Você vai precisar de 130 ml de Fermento D X, 130 ml de Fermento H T e 6,5 ml de coalho."). Depois diga apenas "Agora, etapa [stage.id]: [stage.name]." — SEM detalhar o procedimento.
+   - FERMENT_* ou RENNET em contexto advance: use o prefixo "Fermentos e coalho calculados:" e liste as doses. Depois diga apenas "Agora, etapa [stage.id]: [stage.name]."
+   - SMALL_TANK_MILK: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Aquecer leite no tanque pequeno até 36 graus" e a dose for 10 L, diga "Agora, etapa [stage.id]: Aquecer 10 litros de leite no tanque pequeno até 36 graus." — sem mais detalhe além disso.
+   - HOT_WATER: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Aquecer água a 60 graus no tanque pequeno" e a dose for 20 L, diga "Agora, etapa [stage.id]: Aquecer 20 litros de água a 60 graus no tanque pequeno."
+   - WHEY_TO_REMOVE: NÃO crie frase separada. Integre a quantidade ao nome da etapa de forma natural. Por exemplo, se o nome for "Retirar soro do tanque" e a dose for 20 L, diga "Agora, etapa [stage.id]: Retirar 20 litros de soro do tanque."
+   Se não houver doses, pule e vá direto para "Agora, etapa [stage.id]: [stage.name]." Se instructions contiver um dado específico calculado (ex: "Retire X litros"), use esse valor exato — nunca diga "X%" ou "a quantidade calculada". NÃO omita o número da etapa. Termine com nextAction.phrase se presente. NÃO leia o campo notes literalmente. NUNCA acrescente explicação de procedimento além do que está listado acima.
 14. Para repeat_doses: liste TODAS as doses presentes dizendo "As doses deste lote são:" seguido de cada dose. Use os rótulos obrigatórios da regra 5.
 15. Para log_time/log_ph/log_date: confirme o registro feito de forma curta.
-16. Máximo: 5 frases para start_batch (doses + instrução), 4 para auto_advance, 3 para outros contextos.
+16. Máximo: 3 frases para start_batch (doses + etapa), 3 para auto_advance, 2 para outros contextos.
 17. NUNCA repita o nome da etapa 2 vezes. Evitar "Etapa X… Prossiga com etapa X…"
+18. NUNCA explique "como fazer", "por que fazer" ou detalhe técnicas/procedimentos de uma etapa. Isso vale mesmo se parecer útil — o operador já tem o manual da receita; a fala é só um lembrete objetivo.
 
 Responda APENAS com o texto de fala, sem aspas, sem explicações.`;
 
@@ -425,7 +429,8 @@ export function buildStatusPayload(
       id: stage.id,
       name: stage.name
     },
-    instructions: stage.instructions || [],
+    // Recipe step-by-step instructions are intentionally NOT included: speech stays
+    // limited to stage id/name + specific data (doses, timers, pending input reminder).
     doses: Object.keys(doses).length > 0 ? doses : undefined,
     timers: timers.length > 0 ? timers : undefined,
     allowedUtterances: getContextualUtterances(stage, batch),
@@ -503,15 +508,14 @@ export function buildAdvancePayload(
     }
   }
   
-  const instructions = nextStage.id === 19 ? [] : (nextStage.instructions || []);
-  
+  // Recipe step-by-step instructions are intentionally NOT included: speech stays
+  // limited to stage id/name + specific data (doses, timers, expected command).
   return {
     context: "advance",
     stage: {
       id: nextStage.id,
       name: nextStage.name
     },
-    instructions,
     doses: Object.keys(doses).length > 0 ? doses : undefined,
     timers: timers.length > 0 ? timers : undefined,
     allowedUtterances: getContextualUtterances(nextStage, batch)
@@ -625,14 +629,13 @@ export function buildStartBatchPayload(
     instructions.push('Retire os fermentos DX e HT do freezer agora para atingirem temperatura ambiente antes de serem usados.');
   }
 
-  // Inject the stage-specific calculated hint first so the LLM uses the real value
+  // Inject the stage-specific calculated hint so the LLM uses the real value.
+  // The recipe's generic step-by-step instructions are intentionally NOT included —
+  // only specific, operational data (calculated quantities, target temperature) is spoken.
   if (calcHint) instructions.push(calcHint.trim());
 
-  const stageInstructions: string[] = currentStage.instructions || [];
-  if (stageInstructions.length === 0 && currentStage.type === 'heat' && currentStage.parameters?.target_temp_c) {
+  if (currentStage.type === 'heat' && currentStage.parameters?.target_temp_c) {
     instructions.push(`Aqueça o leite até ${currentStage.parameters.target_temp_c}°C.`);
-  } else {
-    instructions = [...instructions, ...stageInstructions];
   }
 
   return {
@@ -751,7 +754,8 @@ export function buildAutoAdvancePayload(
     }
   }
   
-  const instructions = nextStage.id === 19 ? [] : (nextStage.instructions || []);
+  // Recipe step-by-step instructions are intentionally NOT included: speech stays
+  // limited to confirmation + stage id/name + specific data (doses, timers, command).
   return {
     context: "auto_advance",
     confirmation: confirmationMessage,
@@ -759,7 +763,6 @@ export function buildAutoAdvancePayload(
       id: nextStage.id,
       name: nextStage.name
     },
-    instructions,
     doses: Object.keys(doses).length > 0 ? doses : undefined,
     timers: timers.length > 0 ? timers : undefined,
     allowedUtterances: getContextualUtterances(nextStage, batch)
