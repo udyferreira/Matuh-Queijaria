@@ -1110,8 +1110,11 @@ export function getCalculatedInputHint(batch: any, stageId: number): string {
     if (stageId === 10 && calculatedInputs.HOT_WATER) {
       hints.push(`Aquecer ${calculatedInputs.HOT_WATER} litros de água a 60°C.`);
     }
-    const wheyStageId = rm.getStageByVolumeSource('WHEY_TO_REMOVE')?.id ?? 15;
-    if (stageId === wheyStageId && calculatedInputs.WHEY_TO_REMOVE) {
+    // Only versions where a stage still declares volume_source: WHEY_TO_REMOVE get this
+    // hint — newer recipe versions may drop the calculation entirely (e.g. "retirar todo
+    // o soro", no volume), so there is no hardcoded fallback stage id here.
+    const wheyStageId = rm.getStageByVolumeSource('WHEY_TO_REMOVE')?.id;
+    if (wheyStageId !== undefined && stageId === wheyStageId && calculatedInputs.WHEY_TO_REMOVE) {
       hints.push(`Retirar ${calculatedInputs.WHEY_TO_REMOVE} litros de soro.`);
     }
   }
