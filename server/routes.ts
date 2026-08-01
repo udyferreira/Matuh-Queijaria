@@ -1022,7 +1022,8 @@ export async function registerRoutes(
     pendingInputReminder?: string,
     resolvedBatch?: any,
     apiCtxParam?: ApiContext | null,
-    alexaUserId?: string | null
+    alexaUserId?: string | null,
+    pendingInputPrompt?: string
   ): Promise<{ speech: string; shouldEndSession: boolean; card?: any }> {
     
     const activeBatch = resolvedBatch || await batchService.getActiveBatch();
@@ -1340,6 +1341,14 @@ export async function registerRoutes(
       
       case "unknown":
       default: {
+        // If there's a specific pending input (e.g. flocculation time), repeat that exact
+        // question instead of a generic "diga ajuda" — the operator still needs to answer it.
+        if (pendingInputPrompt) {
+          return {
+            speech: `Não entendi. ${pendingInputPrompt}`,
+            shouldEndSession: false
+          };
+        }
         return {
           speech: "Não entendi o comando. Diga 'ajuda' para ver as opções disponíveis.",
           shouldEndSession: false
@@ -2157,6 +2166,10 @@ export async function registerRoutes(
 
         const activeBatchForGating = activeBatchResolved;
         let pendingInputReminder: string | undefined;
+        // Full reprompt text for the specific pending input (e.g. flocculation time example).
+        // Used to re-ask the exact same question when the operator's command isn't understood,
+        // instead of a generic "diga ajuda" that doesn't move the batch forward.
+        let pendingInputPrompt: string | undefined;
         
         if (activeBatchForGating && !isGuidedStartExpectedIntent) {
           const stageLock = getRecipeForBatch(activeBatchForGating).getStageInputLock(activeBatchForGating.currentStageId);
@@ -2183,6 +2196,7 @@ export async function registerRoutes(
                 'chamber_2_entry_date': 'registrar data de entrada na câmara 2'
               };
               pendingInputReminder = `Falta ${inputLabels[pendingInputs[0]] || pendingInputs[0]}.`;
+              pendingInputPrompt = stageLock.inputPrompt || undefined;
               
               console.log(`[GATING] stage=${activeBatchForGating.currentStageId} intent=${intentName} pendingInputs=${pendingInputs.join(',')} expected=${stageLock.expectedIntent}`);
             }
@@ -3384,7 +3398,7 @@ export async function registerRoutes(
           const command = await interpretCommand(textToInterpret);
           console.log("LLM interpreted command:", JSON.stringify(command));
           // Pass pendingInputReminder from GATING to status/instructions handlers
-          const result = await executeIntent(command, pendingInputReminder, activeBatchResolved || undefined, apiCtx, userId) as any;
+          const result = await executeIntent(command, pendingInputReminder, activeBatchResolved || undefined, apiCtx, userId, pendingInputPrompt) as any;
           
           if (result.sessionAttrsOverride) {
             const mergedAttrs = { ...sessionAttributes, ...result.sessionAttrsOverride };
