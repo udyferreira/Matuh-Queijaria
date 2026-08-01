@@ -2141,10 +2141,24 @@ export async function registerRoutes(
         }
 
         // === STAGE-AWARE INTENT GATING ===
+        // Guided "start new batch" flows (pending=START_BATCH_TEMP/START_BATCH_PH) must bypass
+        // this generic gate: it is keyed to whatever batch is "active"/resumed in session, but
+        // these intents are answering the NEW batch draft, not the old active batch's stage lock.
+        // The GUIDED PENDING STATE GUARD above only *permits* these intents through — it does not
+        // dispatch them — so without this bypass they fall through into the old batch's stage gate.
+        const guidedStartExpectedIntents: Record<string, string[]> = {
+          "START_BATCH_TEMP": ["RegisterMilkTemperatureIntent"],
+          "START_BATCH_PH": ["RegisterMilkPHIntent", "RegisterPHAndPiecesIntent"],
+        };
+        const isGuidedStartExpectedIntent = !!(
+          pendingState &&
+          guidedStartExpectedIntents[pendingState]?.includes(intentName || '')
+        );
+
         const activeBatchForGating = activeBatchResolved;
         let pendingInputReminder: string | undefined;
         
-        if (activeBatchForGating) {
+        if (activeBatchForGating && !isGuidedStartExpectedIntent) {
           const stageLock = getRecipeForBatch(activeBatchForGating).getStageInputLock(activeBatchForGating.currentStageId);
           
           if (stageLock.locked && stageLock.expectedIntent) {
