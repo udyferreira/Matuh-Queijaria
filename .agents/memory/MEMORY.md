@@ -2,4 +2,4 @@
 - [logPh timer reset](logph-timer-reset.md) — use getIntervalDurationMinutes() not direct timer.interval_hours access for Nina loop stage timer reset.
 - [Loop interval timer init](loop-interval-timer-init.md) — loop stages with interval_hours need explicit activeTimers entry in advanceBatch; the interval block only creates activeReminders otherwise.
 - [Stable ids for history entries](measurement-history-stable-ids.md) — edit `_history`/`ph_measurements` entries by `id`, not positional historyIndex/timestamp, which drift under concurrent loop-stage writes.
-- [Nina has two whey-removal stages](nina-duplicate-whey-stages.md) — confirm which one (partial 20% vs. final "todo o soro") before changing either; they have near-identical names.
+- [Speech dose matching must be structural](nina-duplicate-whey-stages.md) — getRelevantDosesForStage must match via stage.parameters.volume_source, never stage-name/instruction text or unrelated fields like heat_source.

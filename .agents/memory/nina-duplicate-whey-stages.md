@@ -1,12 +1,10 @@
 ---
-name: Nina has two whey-removal stages
-description: Nina's recipe has two separate "retirar soro" stages with near-identical names; verify which one before touching either.
+name: Speech dose matching must be structural, not text-based
+description: getRelevantDosesForStage in server/speechRenderer.ts must match doses to stages via stage.parameters.volume_source, never via stage name/instruction text keywords or unrelated parameter fields (e.g. heat_source).
 ---
 
-Queijo Nina's recipe has **two** distinct whey-removal stages, both named almost identically in Portuguese:
-- An earlier stage ("Retirar soro do tanque") that removes a **calculated partial volume** (~20% of milk) before the semi-cozimento/hot-water step — this calculation is intentional and correct.
-- A later stage ("Retirar todo o soro do tanque") that removes **all** remaining whey with no calculation at all — already implemented correctly, using `parameters.volume_note` instead of `parameters.volume_source`.
+Nina's recipe has multiple stages with near-identical wording (two "retirar soro" stages, a "tanque pequeno"/leite stage that appears in both a calc stage and a later "juntar" stage, an "água quente" stage used both to prepare water with a volume and later to reuse that water in an unrelated heating loop). Any dose-matching logic in `getRelevantDosesForStage` that keys off substrings in the stage name/instructions (or off an unrelated field like `heat_source` that merely says "this stage uses that resource") will falsely re-announce a calculated volume on a stage that doesn't own it.
 
-**Why:** A user bug report about "soro" removal saying a calculated volume when it shouldn't can easily be misattributed to the wrong one of these two stages, since both mention "soro"/"retirar" and sit only ~2 stages apart. Fixing the wrong stage (e.g. removing the calc from the partial-removal stage) breaks working behavior while leaving the actual complaint (if any) unaddressed.
+**Why:** Already found and fixed this exact bug independently for WHEY_TO_REMOVE (stage 18 inherited stage 16's volume) and HOT_WATER (stage 17's heating loop inherited stage 10's volume via a stray `heat_source` match). A third instance (SMALL_TANK_MILK leaking from stage 3 into stage 5) was found but left as a follow-up task since it was out of scope.
 
-**How to apply:** Before changing a Nina whey-removal stage, read both stages' current `id`, `name`, and `parameters` from the recipe YAML (and check logs/DB for the batch's actual `currentStageId` and spoken text) to confirm exactly which one the user means, rather than assuming from the stage name alone.
+**How to apply:** When touching `getRelevantDosesForStage`, require an exact `stage.parameters?.volume_source === '<DOSE_KEY>'` check for every dose type instead of any text/keyword condition. Before trusting any existing text-based branch left in that function, check whether a similar leak exists at another same-named stage and prefer converting it to the structural check pattern.

@@ -915,11 +915,7 @@ export function getRelevantDosesForStage(
   ) {
     doses["SMALL_TANK_MILK"] = { value: calculatedInputs.SMALL_TANK_MILK, unit: "L" };
   }
-  if (
-    (stageText.includes('água quente') || stageText.includes('hot_water') ||
-     stage.parameters?.volume_source === 'HOT_WATER' || stage.parameters?.heat_source === 'HOT_WATER') &&
-    calculatedInputs.HOT_WATER
-  ) {
+  if (stage.parameters?.volume_source === 'HOT_WATER' && calculatedInputs.HOT_WATER) {
     doses["HOT_WATER"] = { value: calculatedInputs.HOT_WATER, unit: "L" };
   }
   if (stage.parameters?.volume_source === 'WHEY_TO_REMOVE' && calculatedInputs.WHEY_TO_REMOVE) {
